@@ -76,6 +76,17 @@
 - [ ] 現在地取得（Geolocation API）のオプション実装
 - [ ] PDS への `net.shino3.trailcast.post` レコード作成（`putRecord`）
 
+### Bluesky 投稿からのインポート
+
+- [ ] 「Bluesky 投稿からインポート」ボタンの設置（スレッド詳細画面内）
+- [ ] `app.bsky.feed.getAuthorFeed` で自分の過去投稿を一覧取得
+- [ ] 投稿一覧の表示 UI（テキスト・画像プレビュー、チェックボックス付き）
+- [ ] 選択した投稿からテキスト・画像を抽出し、チェックポイントに変換
+- [ ] チェックポイント時刻に元投稿の `createdAt` を初期値として設定
+- [ ] `sourceRef` に元投稿の AT URI を記録
+- [ ] 位置情報は付与しない（Bluesky の画像は EXIF 削除済み）
+- [ ] PDS への `net.shino3.trailcast.post` レコード作成（`putRecord`）
+
 ### 一覧表示（スレッド詳細内）
 
 - [ ] スレッド AT URI に紐づく `post` レコードを `listRecords` で取得
