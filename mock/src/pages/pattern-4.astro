@@ -195,8 +195,29 @@ const selectedPosts = blueskyPosts.filter((p) => p.selected);
 
         {/* Masonry grid */}
         <div class="masonry-grid columns-2 gap-3 sm:gap-4 lg:columns-3 xl:columns-4">
-          {thread.checkpoints.flatMap((cp, ci) =>
-            cp.images.map((img, ii) => {
+          {thread.checkpoints.flatMap((cp, ci) => {
+            if (cp.images.length === 0) {
+              return [(
+                <div class="mb-3 break-inside-avoid sm:mb-4">
+                  <div class="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-surface-50 to-surface-100 p-5 shadow-md transition-all duration-300 hover:shadow-xl hover:scale-[1.02]">
+                    <p class="text-sm leading-relaxed text-surface-700">{cp.text}</p>
+                    <div class="mt-3 flex items-center gap-2 text-xs text-surface-400">
+                      <span>{cp.time}</span>
+                      {cp.location && (
+                        <>
+                          <span>·</span>
+                          <span>{cp.location}</span>
+                        </>
+                      )}
+                    </div>
+                    <button data-goto="checkpoint-edit" class="absolute top-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-surface-200 text-surface-500 opacity-0 transition group-hover:opacity-100 hover:bg-rose-500 hover:text-white">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                    </button>
+                  </div>
+                </div>
+              )];
+            }
+            return cp.images.map((img, ii) => {
               const h = heights[(ci + ii) % heights.length];
               return (
                 <div class="mb-3 break-inside-avoid sm:mb-4">
@@ -229,15 +250,14 @@ const selectedPosts = blueskyPosts.filter((p) => p.selected);
                         )}
                       </div>
                     </div>
-                    {/* Edit icon */}
                     <button data-goto="checkpoint-edit" class="pointer-events-auto absolute top-2.5 right-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:bg-rose-500">
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
                     </button>
                   </div>
                 </div>
               );
-            })
-          )}
+            });
+          })}
         </div>
 
         {/* Add checkpoint */}
@@ -274,10 +294,32 @@ const selectedPosts = blueskyPosts.filter((p) => p.selected);
 
         {/* Masonry grid with author indicators */}
         <div class="masonry-grid columns-2 gap-3 sm:gap-4 lg:columns-3 xl:columns-4">
-          {publicThread.checkpoints.flatMap((cp, ci) =>
-            cp.images.map((img, ii) => {
+          {publicThread.checkpoints.flatMap((cp, ci) => {
+            const borderColor = authorColors[cp.author] ?? "border-surface-300";
+            if (cp.images.length === 0) {
+              return [(
+                <div class="mb-3 break-inside-avoid sm:mb-4">
+                  <div class={`group relative overflow-hidden rounded-2xl border-2 ${borderColor} bg-gradient-to-br from-surface-50 to-surface-100 p-5 shadow-md transition-all duration-300 hover:shadow-xl hover:scale-[1.02]`}>
+                    <div class="mb-3 flex items-center gap-2">
+                      <img src={cp.authorAvatar} alt={cp.author} class="h-6 w-6 rounded-full object-cover" />
+                      <span class="text-xs font-medium text-surface-600">@{cp.author}</span>
+                    </div>
+                    <p class="text-sm leading-relaxed text-surface-700">{cp.text}</p>
+                    <div class="mt-3 flex items-center gap-2 text-xs text-surface-400">
+                      <span>{cp.time}</span>
+                      {cp.location && (
+                        <>
+                          <span>·</span>
+                          <span>{cp.location}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )];
+            }
+            return cp.images.map((img, ii) => {
               const h = heights[(ci + ii) % heights.length];
-              const borderColor = authorColors[cp.author] ?? "border-surface-300";
               return (
                 <div class="mb-3 break-inside-avoid sm:mb-4">
                   <div class={`group relative overflow-hidden rounded-2xl shadow-md border-2 ${borderColor} transition-all duration-300 hover:shadow-xl hover:scale-[1.02]`}>
@@ -315,8 +357,8 @@ const selectedPosts = blueskyPosts.filter((p) => p.selected);
                   </div>
                 </div>
               );
-            })
-          )}
+            });
+          })}
         </div>
       </div>
     </section>
@@ -331,7 +373,7 @@ const selectedPosts = blueskyPosts.filter((p) => p.selected);
         <div class="overflow-hidden rounded-3xl bg-white shadow-xl">
           <div class="grid grid-cols-2 gap-1">
             <div class="relative aspect-square bg-surface-100">
-              <img src={thread.checkpoints[0].images[0]} alt="Preview" class="h-full w-full object-cover" />
+              <img src={thread.checkpoints.find(c => c.images.length > 0)?.images[0] ?? ""} alt="Preview" class="h-full w-full object-cover" />
             </div>
             <div class="flex aspect-square items-center justify-center bg-surface-100">
               <div class="text-center">
@@ -384,7 +426,7 @@ const selectedPosts = blueskyPosts.filter((p) => p.selected);
         </button>
         <div class="overflow-hidden rounded-3xl bg-white shadow-xl">
           <div class="grid grid-cols-3 gap-1 p-2">
-            {thread.checkpoints[3].images.slice(0, 3).map((img) => (
+            {thread.checkpoints[3].images.length > 0 && thread.checkpoints[3].images.slice(0, 3).map((img) => (
               <div class="group relative aspect-square overflow-hidden rounded-xl">
                 <img src={img} alt="Checkpoint image" class="h-full w-full object-cover" />
                 <button class="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100">
@@ -447,29 +489,46 @@ const selectedPosts = blueskyPosts.filter((p) => p.selected);
           {blueskyPosts.map((post, i) => {
             const h = heights[i % heights.length];
             const isSelected = post.selected;
+            const hasImages = post.images.length > 0;
             return (
               <div class="mb-3 break-inside-avoid sm:mb-4">
-                <div class={`group relative cursor-pointer overflow-hidden rounded-2xl shadow-md transition-all duration-300 hover:shadow-xl hover:scale-[1.02] ${isSelected ? "ring-3 ring-rose-500 ring-offset-2" : ""}`}>
-                  <div class={`${h} w-full`}>
-                    <img src={post.images[0]} alt={post.text} class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
-                  </div>
-                  <div class={`absolute top-3 left-3 flex h-7 w-7 items-center justify-center rounded-full shadow ${isSelected ? "bg-rose-500" : "bg-black/30 backdrop-blur-sm"}`}>
-                    {isSelected ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
-                    ) : (
-                      <div class="h-4 w-4 rounded-full border-2 border-white/70" />
+                {hasImages ? (
+                  <div class={`group relative cursor-pointer overflow-hidden rounded-2xl shadow-md transition-all duration-300 hover:shadow-xl hover:scale-[1.02] ${isSelected ? "ring-3 ring-rose-500 ring-offset-2" : ""}`}>
+                    <div class={`${h} w-full`}>
+                      <img src={post.images[0]} alt={post.text} class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+                    </div>
+                    <div class={`absolute top-3 left-3 flex h-7 w-7 items-center justify-center rounded-full shadow ${isSelected ? "bg-rose-500" : "bg-black/30 backdrop-blur-sm"}`}>
+                      {isSelected ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                      ) : (
+                        <div class="h-4 w-4 rounded-full border-2 border-white/70" />
+                      )}
+                    </div>
+                    {post.images.length > 1 && (
+                      <span class="absolute top-3 right-3 rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
+                        +{post.images.length - 1}
+                      </span>
                     )}
+                    <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8">
+                      <p class="line-clamp-2 text-xs leading-relaxed text-white/90">{post.text}</p>
+                      <span class="mt-1 block text-[10px] text-white/50">{post.createdAt}</span>
+                    </div>
                   </div>
-                  {post.images.length > 1 && (
-                    <span class="absolute top-3 right-3 rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
-                      +{post.images.length - 1}
-                    </span>
-                  )}
-                  <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8">
-                    <p class="line-clamp-2 text-xs leading-relaxed text-white/90">{post.text}</p>
-                    <span class="mt-1 block text-[10px] text-white/50">{post.createdAt}</span>
+                ) : (
+                  <div class={`group relative cursor-pointer overflow-hidden rounded-2xl bg-gradient-to-br from-surface-50 to-surface-100 p-5 shadow-md transition-all duration-300 hover:shadow-xl hover:scale-[1.02] ${isSelected ? "ring-3 ring-rose-500 ring-offset-2" : ""}`}>
+                    <div class={`absolute top-3 left-3 flex h-7 w-7 items-center justify-center rounded-full shadow ${isSelected ? "bg-rose-500" : "bg-surface-300"}`}>
+                      {isSelected ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                      ) : (
+                        <div class="h-4 w-4 rounded-full border-2 border-surface-400" />
+                      )}
+                    </div>
+                    <div class="pt-6">
+                      <p class="text-sm leading-relaxed text-surface-700">{post.text}</p>
+                      <span class="mt-2 block text-xs text-surface-400">{post.createdAt}</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             );
           })}
