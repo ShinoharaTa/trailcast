@@ -1,0 +1,106 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+const patterns = [
+  {
+    id: 1,
+    name: "Timeline Feed",
+    description:
+      "SNS ライクな縦スクロールのフィード。使い慣れた操作感で投稿のハードルを最小化。PC は 2 カラム、スマホはシングルカラム。",
+    tags: ["汎用的", "投稿が手軽", "SNS風"],
+    color: "from-blue-500 to-cyan-400",
+  },
+  {
+    id: 3,
+    name: "Journal",
+    description:
+      "雑誌やブログのような読み心地。写真が大きく余白を活かしたエディトリアルデザイン。共有リンク先の見栄えが最も良い。",
+    tags: ["共有映え", "閲覧体験", "エディトリアル"],
+    color: "from-amber-500 to-orange-400",
+  },
+  {
+    id: 4,
+    name: "Card Mosaic",
+    description:
+      "Pinterest のようなビジュアルファーストのグリッド。写真が主役で、テキストは補助。ギャラリー的な体験。",
+    tags: ["写真重視", "ギャラリー", "ビジュアル"],
+    color: "from-rose-500 to-pink-400",
+  },
+];
+
+const screens = [
+  "ログイン",
+  "スレッド一覧（ホーム）",
+  "スレッド作成",
+  "スレッド詳細",
+  "チェックポイント投稿",
+  "チェックポイント編集",
+  "Bluesky インポート",
+  "Bluesky クロスポスト",
+  "ブックマーク一覧",
+  "共有ダイアログ",
+];
+---
+
+<Layout title="UI Mock Index">
+  <main class="mx-auto max-w-5xl px-4 py-12">
+    <div class="mb-12 text-center">
+      <h1 class="mb-3 text-3xl font-bold tracking-tight">
+        Trailcast UI Mock
+      </h1>
+      <p class="text-surface-500">
+        3 パターン、各 10 画面。ボタンクリックで画面遷移します。
+      </p>
+    </div>
+
+    <div class="grid gap-6 sm:grid-cols-3">
+      {
+        patterns.map((p) => (
+          <a
+            href={`/pattern-${p.id}`}
+            class="group relative overflow-hidden rounded-2xl border border-surface-200 bg-white shadow-sm transition hover:shadow-lg"
+          >
+            <div
+              class={`h-32 bg-gradient-to-br ${p.color} flex items-end p-5`}
+            >
+              <span class="text-4xl font-bold text-white/30">
+                {String(p.id).padStart(2, "0")}
+              </span>
+            </div>
+            <div class="p-5">
+              <h2 class="mb-1.5 text-lg font-semibold group-hover:text-primary-600">
+                {p.name}
+              </h2>
+              <p class="mb-3 text-sm leading-relaxed text-surface-500">
+                {p.description}
+              </p>
+              <div class="flex flex-wrap gap-1.5">
+                {p.tags.map((tag) => (
+                  <span class="rounded-full bg-surface-100 px-2.5 py-0.5 text-xs font-medium text-surface-600">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </a>
+        ))
+      }
+    </div>
+
+    <div class="mt-12 rounded-2xl border border-surface-200 bg-white p-6">
+      <h2 class="mb-4 text-sm font-semibold uppercase tracking-wider text-surface-400">
+        各パターン共通の画面構成
+      </h2>
+      <ol class="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {screens.map((s, i) => (
+          <li class="flex items-center gap-2 rounded-lg bg-surface-50 px-3 py-2 text-sm">
+            <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-surface-200 text-xs font-bold text-surface-600">
+              {i + 1}
+            </span>
+            {s}
+          </li>
+        ))}
+      </ol>
+    </div>
+  </main>
+</Layout>

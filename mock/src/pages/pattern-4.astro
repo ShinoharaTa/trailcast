@@ -1,0 +1,626 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { thread, publicThread, threadList, bookmarks, blueskyPosts } from "../data/mock.ts";
+
+const heights = ["aspect-[3/4]", "aspect-square", "aspect-[4/5]", "aspect-[3/5]", "aspect-[2/3]", "aspect-[5/6]"];
+const authorColors: Record<string, string> = {
+  shino3: "border-rose-400",
+  yuki: "border-violet-400",
+  taro: "border-amber-400",
+};
+const selectedPosts = blueskyPosts.filter((p) => p.selected);
+---
+
+<Layout title="Pattern 4: Card Mosaic">
+  <main class="pb-24">
+
+    {/* ═══════════ login ═══════════ */}
+    <section data-screen="login" class="hidden">
+      <div class="mx-auto max-w-7xl px-4 py-8">
+        <div class="relative min-h-[600px] overflow-hidden rounded-3xl shadow-2xl lg:grid lg:grid-cols-2 lg:min-h-[700px]">
+          <div class="absolute inset-0 lg:relative lg:inset-auto">
+            <img src={thread.coverImage} alt="Cover" class="h-full w-full object-cover" />
+            <div class="absolute inset-0 bg-black/40 lg:bg-gradient-to-r lg:from-black/20 lg:to-black/60" />
+            <div class="absolute bottom-8 left-8 hidden lg:block">
+              <h2 class="text-4xl font-bold text-white drop-shadow-lg">Trailcast</h2>
+              <p class="mt-2 text-lg text-white/80">旅の軌跡を、写真で紡ぐ</p>
+            </div>
+          </div>
+          <div class="relative flex min-h-[600px] items-center justify-center p-6 lg:min-h-0 lg:bg-white lg:p-12">
+            <div class="w-full max-w-sm rounded-2xl bg-white/95 p-8 shadow-xl backdrop-blur-md lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
+              <div class="mb-8 text-center">
+                <span class="text-3xl font-bold tracking-tight text-rose-600">Trailcast</span>
+                <p class="mt-2 text-sm text-surface-500">写真で旅のスレッドを紡ごう</p>
+              </div>
+              <label class="mb-1 block text-xs font-semibold text-surface-600">ハンドル</label>
+              <input type="text" placeholder="@shino3.bsky.social" class="mb-4 w-full rounded-xl border border-surface-200 bg-surface-50 px-4 py-3 text-sm focus:border-rose-400 focus:ring-2 focus:ring-rose-200 focus:outline-none" />
+              <label class="mb-1 block text-xs font-semibold text-surface-600">App Password</label>
+              <input type="password" placeholder="xxxx-xxxx-xxxx-xxxx" class="mb-6 w-full rounded-xl border border-surface-200 bg-surface-50 px-4 py-3 text-sm focus:border-rose-400 focus:ring-2 focus:ring-rose-200 focus:outline-none" />
+              <button data-goto="home" class="w-full rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 py-3 text-sm font-bold text-white shadow-lg shadow-rose-200 transition hover:shadow-xl hover:brightness-110">
+                ログイン
+              </button>
+              <p class="mt-4 text-center text-xs text-surface-400">Bluesky アカウントでログイン</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* ═══════════ home ═══════════ */}
+    <section data-screen="home" class="hidden">
+      <div class="mx-auto max-w-7xl px-4 py-8">
+        <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <button data-goto="thread-create" class="rounded-full bg-rose-500 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-rose-200 transition hover:bg-rose-600">
+            + 新しいスレッド
+          </button>
+          <div class="flex rounded-full bg-surface-100 p-1" id="home-tabs">
+            <button data-tab="threads" class="rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-surface-800 shadow-sm">スレッド</button>
+            <button data-tab="bookmarks" class="rounded-full px-4 py-1.5 text-sm font-medium text-surface-500 hover:text-surface-700">ブックマーク</button>
+          </div>
+        </div>
+
+        {/* Thread grid */}
+        <div id="tab-threads" class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          {threadList.map((t, i) => (
+            <div
+              data-goto={i === 0 ? "thread-private" : i === 1 ? "thread-public" : undefined}
+              class="group relative cursor-pointer overflow-hidden rounded-2xl shadow-md transition-transform duration-300 hover:scale-[1.02] hover:shadow-xl"
+            >
+              <div class="aspect-[3/4] w-full">
+                <img src={t.coverImage} alt={t.title} class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+              </div>
+              <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+              <span class="absolute top-3 right-3 rounded-full bg-rose-500/90 px-2.5 py-0.5 text-[11px] font-semibold text-white shadow backdrop-blur-sm">
+                {t.createdAt.slice(5).replace("-", "/")}
+              </span>
+              {t.visibility === "public" && (
+                <span class="absolute top-3 left-3 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">Public</span>
+              )}
+              <div class="absolute inset-x-0 bottom-0 p-4">
+                <h3 class="text-base font-bold leading-snug text-white drop-shadow-md sm:text-lg">{t.title}</h3>
+                <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-white/75 sm:text-sm">{t.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Bookmark grid */}
+        <div id="tab-bookmarks" class="hidden grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          {bookmarks.map((bm) => (
+            <div class="group relative overflow-hidden rounded-2xl shadow-md ring-2 ring-rose-200 transition-transform duration-300 hover:scale-[1.02] hover:shadow-xl">
+              <div class="aspect-[3/4] w-full">
+                <img src={bm.thread.coverImage} alt={bm.thread.title} class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+              </div>
+              <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+              <svg xmlns="http://www.w3.org/2000/svg" class="absolute top-3 right-3 h-5 w-5 text-rose-400 drop-shadow" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
+              </svg>
+              <div class="absolute inset-x-0 bottom-0 p-4">
+                <h3 class="text-base font-bold leading-snug text-white drop-shadow-md">{bm.thread.title}</h3>
+                <p class="mt-1 text-xs text-white/70">by {bm.thread.author}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    {/* ═══════════ thread-create ═══════════ */}
+    <section data-screen="thread-create" class="hidden">
+      <div class="mx-auto max-w-2xl px-4 py-8">
+        <button data-back class="mb-6 flex items-center gap-1 text-sm font-medium text-surface-500 transition hover:text-rose-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>
+          戻る
+        </button>
+        <div class="overflow-hidden rounded-3xl bg-white shadow-xl">
+          <div class="relative aspect-[16/10] w-full bg-surface-100">
+            <img src={thread.coverImage} alt="Cover preview" class="h-full w-full object-cover opacity-60" />
+            <div class="absolute inset-0 flex flex-col items-center justify-center bg-black/20">
+              <div class="rounded-full bg-white/90 p-4 shadow-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <p class="mt-3 text-sm font-semibold text-white drop-shadow">カバー画像をアップロード</p>
+              <p class="text-xs text-white/70">クリックまたはドラッグ＆ドロップ</p>
+            </div>
+          </div>
+          <div class="space-y-5 p-6 sm:p-8">
+            <div>
+              <label class="mb-1 block text-xs font-semibold text-surface-600">タイトル</label>
+              <input type="text" placeholder="旅のタイトルを入力" class="w-full rounded-xl border border-surface-200 bg-surface-50 px-4 py-3 text-sm focus:border-rose-400 focus:ring-2 focus:ring-rose-200 focus:outline-none" />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold text-surface-600">説明</label>
+              <textarea rows="3" placeholder="旅の概要や目的など" class="w-full resize-none rounded-xl border border-surface-200 bg-surface-50 px-4 py-3 text-sm focus:border-rose-400 focus:ring-2 focus:ring-rose-200 focus:outline-none"></textarea>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-surface-700">公開設定</span>
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-surface-500">Private</span>
+                <div class="relative h-7 w-12 cursor-pointer rounded-full bg-rose-500 p-0.5">
+                  <div class="h-6 w-6 translate-x-5 rounded-full bg-white shadow transition-transform" />
+                </div>
+                <span class="text-xs font-semibold text-rose-600">Public</span>
+              </div>
+            </div>
+            <button data-goto="home" class="w-full rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 py-3 text-sm font-bold text-white shadow-lg shadow-rose-200 transition hover:shadow-xl hover:brightness-110">
+              作成
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* ═══════════ thread-private ═══════════ */}
+    <section data-screen="thread-private" class="hidden">
+      <div class="mx-auto max-w-7xl px-4 py-8">
+        <button data-back class="mb-6 flex items-center gap-1 text-sm font-medium text-surface-500 transition hover:text-rose-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>
+          戻る
+        </button>
+
+        {/* Header */}
+        <div class="mb-8">
+          <h2 class="text-3xl font-bold tracking-tight text-surface-900">{thread.title}</h2>
+          <p class="mt-2 max-w-2xl text-surface-500">{thread.description}</p>
+          <div class="mt-3 flex items-center gap-3">
+            <img src={thread.authorAvatar} alt={thread.author} class="h-8 w-8 rounded-full object-cover ring-2 ring-rose-200" />
+            <span class="text-sm font-medium text-surface-700">@{thread.author}</span>
+            <span class="text-xs text-surface-400">{thread.createdAt}</span>
+          </div>
+        </div>
+
+        {/* Action bar */}
+        <div class="mb-6 flex flex-wrap items-center gap-2">
+          <button data-goto="share" class="rounded-xl border border-surface-200 bg-white px-4 py-2 text-sm font-medium text-surface-700 shadow-sm transition hover:bg-surface-50">
+            <span class="flex items-center gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+              共有
+            </span>
+          </button>
+          <button data-goto="bsky-crosspost" class="rounded-xl border border-surface-200 bg-white px-4 py-2 text-sm font-medium text-surface-700 shadow-sm transition hover:bg-surface-50">
+            <span class="flex items-center gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.6 6.463.636 2.324 2.395 3.152 4.988 2.756-3.68.696-5.261 2.788-2.79 5.023C6.558 21.463 9.7 20.07 11.39 16.658c.307-.618.474-.96.61-.96.136 0 .303.342.61.96 1.69 3.412 4.832 4.805 8.592 1.352 2.471-2.235.89-4.327-2.79-5.023 2.593.396 4.352-.432 4.988-2.756.222-.814.6-5.774.6-6.463 0-.688-.139-1.86-.902-2.203-.659-.299-1.664-.621-4.3 1.24C16.046 4.747 13.087 8.686 12 10.8z" /></svg>
+              Blueskyに投稿
+            </span>
+          </button>
+          <button data-goto="bsky-import" class="rounded-xl border border-surface-200 bg-white px-4 py-2 text-sm font-medium text-surface-700 shadow-sm transition hover:bg-surface-50">
+            <span class="flex items-center gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+              インポート
+            </span>
+          </button>
+        </div>
+
+        {/* Masonry grid */}
+        <div class="masonry-grid columns-2 gap-3 sm:gap-4 lg:columns-3 xl:columns-4">
+          {thread.checkpoints.flatMap((cp, ci) =>
+            cp.images.map((img, ii) => {
+              const h = heights[(ci + ii) % heights.length];
+              return (
+                <div class="mb-3 break-inside-avoid sm:mb-4">
+                  <div class="group relative overflow-hidden rounded-2xl shadow-md transition-all duration-300 hover:shadow-xl hover:scale-[1.02]">
+                    <div class={`${h} w-full`}>
+                      <img src={img} alt={cp.text} class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+                    </div>
+                    <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-3 pb-3 pt-8 transition-opacity duration-300 group-hover:opacity-0">
+                      <div class="flex items-center gap-2 text-xs font-medium text-white/90">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" /></svg>
+                        <span>{cp.time}</span>
+                        {cp.location && (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="ml-1 h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>
+                            <span>{cp.location}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                      <p class="mb-2 text-sm leading-relaxed font-medium text-white drop-shadow">{cp.text}</p>
+                      <div class="flex items-center gap-2 text-xs text-white/80">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" /></svg>
+                        <span>{cp.time}</span>
+                        {cp.location && (
+                          <>
+                            <span class="text-rose-300">·</span>
+                            <span>{cp.location}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {/* Edit icon */}
+                    <button data-goto="checkpoint-edit" class="pointer-events-auto absolute top-2.5 right-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:bg-rose-500">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Add checkpoint */}
+        <div class="mt-8 text-center">
+          <button data-goto="checkpoint-post" class="rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 px-8 py-3 text-sm font-bold text-white shadow-lg shadow-rose-200 transition hover:shadow-xl hover:brightness-110">
+            + チェックポイントを追加
+          </button>
+        </div>
+      </div>
+    </section>
+
+    {/* ═══════════ thread-public ═══════════ */}
+    <section data-screen="thread-public" class="hidden">
+      <div class="mx-auto max-w-7xl px-4 py-8">
+        <button data-back class="mb-6 flex items-center gap-1 text-sm font-medium text-surface-500 transition hover:text-rose-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>
+          戻る
+        </button>
+
+        {/* Header */}
+        <div class="mb-8">
+          <div class="flex flex-wrap items-center gap-3 mb-3">
+            <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Public</span>
+            <div class="flex -space-x-2">
+              {[...new Map(publicThread.checkpoints.map((cp) => [cp.author, cp.authorAvatar])).entries()].map(([author, avatar]) => (
+                <img src={avatar} alt={author} class="h-8 w-8 rounded-full object-cover ring-2 ring-white" title={author} />
+              ))}
+            </div>
+            <span class="text-xs text-surface-500">{new Set(publicThread.checkpoints.map((cp) => cp.author)).size} participants</span>
+          </div>
+          <h2 class="text-3xl font-bold tracking-tight text-surface-900">{publicThread.title}</h2>
+          <p class="mt-2 max-w-2xl text-surface-500">{publicThread.description}</p>
+        </div>
+
+        {/* Masonry grid with author indicators */}
+        <div class="masonry-grid columns-2 gap-3 sm:gap-4 lg:columns-3 xl:columns-4">
+          {publicThread.checkpoints.flatMap((cp, ci) =>
+            cp.images.map((img, ii) => {
+              const h = heights[(ci + ii) % heights.length];
+              const borderColor = authorColors[cp.author] ?? "border-surface-300";
+              return (
+                <div class="mb-3 break-inside-avoid sm:mb-4">
+                  <div class={`group relative overflow-hidden rounded-2xl shadow-md border-2 ${borderColor} transition-all duration-300 hover:shadow-xl hover:scale-[1.02]`}>
+                    <div class={`${h} w-full`}>
+                      <img src={img} alt={cp.text} class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+                    </div>
+                    <div class="absolute top-2.5 right-2.5">
+                      <img src={cp.authorAvatar} alt={cp.author} class="h-7 w-7 rounded-full object-cover ring-2 ring-white shadow" />
+                    </div>
+                    <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-3 pb-3 pt-8 transition-opacity duration-300 group-hover:opacity-0">
+                      <div class="flex items-center gap-2 text-xs font-medium text-white/90">
+                        <span>{cp.time}</span>
+                        {cp.location && (
+                          <>
+                            <span class="text-white/50">·</span>
+                            <span>{cp.location}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                      <p class="mb-2 text-sm leading-relaxed font-medium text-white drop-shadow">{cp.text}</p>
+                      <div class="flex items-center gap-2 text-xs text-white/80">
+                        <span>@{cp.author}</span>
+                        <span class="text-rose-300">·</span>
+                        <span>{cp.time}</span>
+                        {cp.location && (
+                          <>
+                            <span class="text-rose-300">·</span>
+                            <span>{cp.location}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </section>
+
+    {/* ═══════════ checkpoint-post ═══════════ */}
+    <section data-screen="checkpoint-post" class="hidden">
+      <div class="mx-auto max-w-lg px-4 py-8">
+        <button data-back class="mb-6 flex items-center gap-1 text-sm font-medium text-surface-500 transition hover:text-rose-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>
+          戻る
+        </button>
+        <div class="overflow-hidden rounded-3xl bg-white shadow-xl">
+          <div class="grid grid-cols-2 gap-1">
+            <div class="relative aspect-square bg-surface-100">
+              <img src={thread.checkpoints[0].images[0]} alt="Preview" class="h-full w-full object-cover" />
+            </div>
+            <div class="flex aspect-square items-center justify-center bg-surface-100">
+              <div class="text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-8 w-8 text-surface-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                <span class="mt-1 block text-xs text-surface-400">追加</span>
+              </div>
+            </div>
+            <div class="flex aspect-square items-center justify-center bg-surface-50">
+              <div class="text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-8 w-8 text-surface-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                <span class="mt-1 block text-xs text-surface-400">追加</span>
+              </div>
+            </div>
+            <div class="flex aspect-square items-center justify-center bg-surface-50">
+              <div class="text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-8 w-8 text-surface-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                <span class="mt-1 block text-xs text-surface-400">追加</span>
+              </div>
+            </div>
+          </div>
+          <div class="space-y-4 p-5 sm:p-6">
+            <div class="relative">
+              <textarea rows="3" placeholder="今どこ？何してる？" class="w-full resize-none rounded-xl border border-surface-200 bg-surface-50 px-4 py-3 text-sm focus:border-rose-400 focus:ring-2 focus:ring-rose-200 focus:outline-none"></textarea>
+              <span class="absolute right-3 bottom-3 text-xs text-surface-400">0/200</span>
+            </div>
+            <div class="flex items-center gap-4">
+              <button class="flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>
+                位置情報 ON
+              </button>
+              <button class="flex items-center gap-1.5 rounded-full bg-surface-100 px-3 py-1.5 text-xs font-medium text-surface-500 transition hover:bg-surface-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                EXIF OFF
+              </button>
+            </div>
+            <button data-back class="w-full rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 py-3 text-sm font-bold text-white shadow-lg shadow-rose-200 transition hover:shadow-xl hover:brightness-110">
+              投稿する
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* ═══════════ checkpoint-edit ═══════════ */}
+    <section data-screen="checkpoint-edit" class="hidden">
+      <div class="mx-auto max-w-lg px-4 py-8">
+        <button data-back class="mb-6 flex items-center gap-1 text-sm font-medium text-surface-500 transition hover:text-rose-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>
+          戻る
+        </button>
+        <div class="overflow-hidden rounded-3xl bg-white shadow-xl">
+          <div class="grid grid-cols-3 gap-1 p-2">
+            {thread.checkpoints[3].images.slice(0, 3).map((img) => (
+              <div class="group relative aspect-square overflow-hidden rounded-xl">
+                <img src={img} alt="Checkpoint image" class="h-full w-full object-cover" />
+                <button class="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                </button>
+              </div>
+            ))}
+          </div>
+          <div class="space-y-4 p-5 sm:p-6">
+            <div>
+              <label class="mb-1 block text-xs font-semibold text-surface-600">時刻</label>
+              <input type="time" value="14:00" class="w-full rounded-xl border border-surface-200 bg-surface-50 px-4 py-2.5 text-sm focus:border-rose-400 focus:ring-2 focus:ring-rose-200 focus:outline-none" />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold text-surface-600">テキスト</label>
+              <textarea rows="3" class="w-full resize-none rounded-xl border border-surface-200 bg-surface-50 px-4 py-3 text-sm focus:border-rose-400 focus:ring-2 focus:ring-rose-200 focus:outline-none">{thread.checkpoints[3].text}</textarea>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold text-surface-600">場所</label>
+              <div class="flex items-center gap-2">
+                <input type="text" value={thread.checkpoints[3].location} class="flex-1 rounded-xl border border-surface-200 bg-surface-50 px-4 py-2.5 text-sm focus:border-rose-400 focus:ring-2 focus:ring-rose-200 focus:outline-none" />
+                <button class="rounded-xl border border-red-200 p-2.5 text-red-400 transition hover:bg-red-50">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                </button>
+              </div>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold text-surface-600">EXIF 情報</label>
+              <div class="flex items-center justify-between rounded-xl border border-surface-200 bg-surface-50 px-4 py-2.5">
+                <span class="text-xs text-surface-500">ISO 400 · f/2.8 · 1/250s · 24mm</span>
+                <button class="text-red-400 transition hover:text-red-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                </button>
+              </div>
+            </div>
+            <div class="flex gap-3 pt-2">
+              <button data-back class="flex-1 rounded-xl border border-surface-200 py-2.5 text-sm font-medium text-surface-600 transition hover:bg-surface-50">
+                キャンセル
+              </button>
+              <button data-back class="flex-1 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 py-2.5 text-sm font-bold text-white shadow-lg shadow-rose-200 transition hover:shadow-xl hover:brightness-110">
+                保存する
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* ═══════════ bsky-import ═══════════ */}
+    <section data-screen="bsky-import" class="hidden">
+      <div class="mx-auto max-w-5xl px-4 py-8">
+        <button data-back class="mb-6 flex items-center gap-1 text-sm font-medium text-surface-500 transition hover:text-rose-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>
+          戻る
+        </button>
+        <h2 class="mb-2 text-2xl font-bold tracking-tight text-surface-900">Bluesky から投稿を選択</h2>
+        <p class="mb-6 text-sm text-surface-500">インポートしたい投稿の写真をタップして選択してください</p>
+
+        <div class="masonry-grid columns-2 gap-3 sm:gap-4 lg:columns-3">
+          {blueskyPosts.map((post, i) => {
+            const h = heights[i % heights.length];
+            const isSelected = post.selected;
+            return (
+              <div class="mb-3 break-inside-avoid sm:mb-4">
+                <div class={`group relative cursor-pointer overflow-hidden rounded-2xl shadow-md transition-all duration-300 hover:shadow-xl hover:scale-[1.02] ${isSelected ? "ring-3 ring-rose-500 ring-offset-2" : ""}`}>
+                  <div class={`${h} w-full`}>
+                    <img src={post.images[0]} alt={post.text} class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+                  </div>
+                  <div class={`absolute top-3 left-3 flex h-7 w-7 items-center justify-center rounded-full shadow ${isSelected ? "bg-rose-500" : "bg-black/30 backdrop-blur-sm"}`}>
+                    {isSelected ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                    ) : (
+                      <div class="h-4 w-4 rounded-full border-2 border-white/70" />
+                    )}
+                  </div>
+                  {post.images.length > 1 && (
+                    <span class="absolute top-3 right-3 rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
+                      +{post.images.length - 1}
+                    </span>
+                  )}
+                  <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8">
+                    <p class="line-clamp-2 text-xs leading-relaxed text-white/90">{post.text}</p>
+                    <span class="mt-1 block text-[10px] text-white/50">{post.createdAt}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div class="sticky bottom-0 mt-6 rounded-2xl border border-rose-200 bg-white/95 p-4 shadow-xl backdrop-blur-md">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-xs text-surface-500">
+              <svg xmlns="http://www.w3.org/2000/svg" class="mr-1 inline h-3.5 w-3.5 text-amber-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+              位置情報は付与されません
+            </p>
+            <button data-back class="rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-rose-200 transition hover:shadow-xl hover:brightness-110">
+              選択した投稿をインポート ({selectedPosts.length}件)
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* ═══════════ bsky-crosspost ═══════════ */}
+    <section data-screen="bsky-crosspost" class="hidden">
+      <div class="mx-auto max-w-md px-4 py-8">
+        <button data-back class="mb-6 flex items-center gap-1 text-sm font-medium text-surface-500 transition hover:text-rose-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>
+          戻る
+        </button>
+        <div class="overflow-hidden rounded-3xl bg-white shadow-xl">
+          <div class="p-6 sm:p-8">
+            <div class="mb-5 flex items-center gap-3">
+              <div class="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-sky-600" viewBox="0 0 24 24" fill="currentColor"><path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.6 6.463.636 2.324 2.395 3.152 4.988 2.756-3.68.696-5.261 2.788-2.79 5.023C6.558 21.463 9.7 20.07 11.39 16.658c.307-.618.474-.96.61-.96.136 0 .303.342.61.96 1.69 3.412 4.832 4.805 8.592 1.352 2.471-2.235.89-4.327-2.79-5.023 2.593.396 4.352-.432 4.988-2.756.222-.814.6-5.774.6-6.463 0-.688-.139-1.86-.902-2.203-.659-.299-1.664-.621-4.3 1.24C16.046 4.747 13.087 8.686 12 10.8z" /></svg>
+              </div>
+              <h3 class="text-lg font-bold text-surface-900">Bluesky に共有</h3>
+            </div>
+            <textarea rows="4" class="mb-4 w-full resize-none rounded-xl border border-surface-200 bg-surface-50 px-4 py-3 text-sm focus:border-rose-400 focus:ring-2 focus:ring-rose-200 focus:outline-none">京都日帰り旅の記録をまとめました！桜の季節に京都を満喫 🌸
+
+#Trailcast で見る 👇</textarea>
+            <div class="mb-5 overflow-hidden rounded-xl border border-surface-200">
+              <div class="relative aspect-[1.91/1]">
+                <img src={thread.coverImage} alt="OGP preview" class="h-full w-full object-cover" />
+                <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                <div class="absolute inset-x-0 bottom-0 p-4">
+                  <p class="text-xs font-medium text-white/70">trailcast.app</p>
+                  <h4 class="text-sm font-bold text-white">{thread.title}</h4>
+                </div>
+              </div>
+            </div>
+            <button data-back class="w-full rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 py-3 text-sm font-bold text-white shadow-lg shadow-sky-200 transition hover:shadow-xl hover:brightness-110">
+              Bluesky に投稿する
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* ═══════════ share ═══════════ */}
+    <section data-screen="share" class="hidden">
+      <div class="mx-auto max-w-md px-4 py-8">
+        <button data-back class="mb-6 flex items-center gap-1 text-sm font-medium text-surface-500 transition hover:text-rose-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>
+          戻る
+        </button>
+        <div class="overflow-hidden rounded-3xl bg-white shadow-xl">
+          <div class="p-6 sm:p-8">
+            <h3 class="mb-5 text-lg font-bold text-surface-900">スレッドを共有</h3>
+
+            <div class="mb-5 flex items-center gap-2 rounded-xl border border-surface-200 bg-surface-50 p-1.5 pl-4">
+              <span class="flex-1 truncate text-sm text-surface-600">https://trailcast.app/t/{thread.id}</span>
+              <button class="shrink-0 rounded-lg bg-rose-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-rose-600">
+                コピー
+              </button>
+            </div>
+
+            <div class="mb-5 overflow-hidden rounded-xl border border-surface-200 shadow-sm">
+              <div class="relative aspect-[1.91/1]">
+                <img src={thread.coverImage} alt="OGP preview" class="h-full w-full object-cover" />
+                <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                <div class="absolute inset-x-0 bottom-0 p-4">
+                  <p class="text-xs font-medium text-white/70">trailcast.app</p>
+                  <h4 class="text-base font-bold text-white">{thread.title}</h4>
+                  <p class="mt-0.5 text-xs text-white/70">{thread.description}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-3">
+              <button data-goto="bsky-crosspost" class="flex w-full items-center gap-3 rounded-xl border border-surface-200 px-4 py-3 text-sm font-medium text-surface-700 transition hover:bg-surface-50">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-sky-500" viewBox="0 0 24 24" fill="currentColor"><path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.6 6.463.636 2.324 2.395 3.152 4.988 2.756-3.68.696-5.261 2.788-2.79 5.023C6.558 21.463 9.7 20.07 11.39 16.658c.307-.618.474-.96.61-.96.136 0 .303.342.61.96 1.69 3.412 4.832 4.805 8.592 1.352 2.471-2.235.89-4.327-2.79-5.023 2.593.396 4.352-.432 4.988-2.756.222-.814.6-5.774.6-6.463 0-.688-.139-1.86-.902-2.203-.659-.299-1.664-.621-4.3 1.24C16.046 4.747 13.087 8.686 12 10.8z" /></svg>
+                Bluesky でシェア
+              </button>
+              <div class="flex items-center justify-center rounded-xl border-2 border-dashed border-surface-200 py-8">
+                <div class="text-center">
+                  <div class="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-xl bg-surface-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-surface-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+                  </div>
+                  <span class="text-xs text-surface-400">QR コード</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</Layout>
+
+<script>
+  const screens = document.querySelectorAll<HTMLElement>('[data-screen]');
+  const history: string[] = ['login'];
+
+  function show(id: string, pushHistory = true) {
+    screens.forEach(s => s.classList.add('hidden'));
+    const target = document.querySelector(`[data-screen="${id}"]`);
+    if (target) {
+      target.classList.remove('hidden');
+      target.classList.add('animate-fade-in');
+      setTimeout(() => target.classList.remove('animate-fade-in'), 300);
+      window.scrollTo(0, 0);
+    }
+    if (pushHistory && history[history.length - 1] !== id) history.push(id);
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('[data-goto]') as HTMLElement;
+    if (btn) { show(btn.dataset.goto!); return; }
+    const back = (e.target as HTMLElement).closest('[data-back]') as HTMLElement;
+    if (back) { history.pop(); show(history[history.length - 1] || 'login', false); }
+  });
+
+  // Tab switching on home screen
+  document.querySelectorAll('#home-tabs [data-tab]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = (tab as HTMLElement).dataset.tab;
+      document.querySelectorAll('#home-tabs [data-tab]').forEach(t => {
+        t.classList.remove('bg-white', 'shadow-sm', 'font-semibold', 'text-surface-800');
+        t.classList.add('font-medium', 'text-surface-500');
+      });
+      tab.classList.add('bg-white', 'shadow-sm', 'font-semibold', 'text-surface-800');
+      tab.classList.remove('font-medium', 'text-surface-500');
+
+      document.getElementById('tab-threads')!.classList.toggle('hidden', target !== 'threads');
+      document.getElementById('tab-bookmarks')!.classList.toggle('hidden', target !== 'bookmarks');
+    });
+  });
+
+  show('login', false);
+</script>
+
+<style>
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .animate-fade-in { animation: fadeIn 0.25s ease-out; }
+  .masonry-grid { column-fill: balance; }
+</style>
