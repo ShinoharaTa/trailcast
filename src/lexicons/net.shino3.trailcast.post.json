@@ -1,0 +1,72 @@
+{
+  "lexicon": 1,
+  "id": "net.shino3.trailcast.post",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A checkpoint (post) within a thread",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["thread", "checkpointAt", "createdAt"],
+        "properties": {
+          "thread": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the parent thread"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Checkpoint text"
+          },
+          "images": {
+            "type": "array",
+            "maxLength": 4,
+            "items": {
+              "type": "blob",
+              "accept": ["image/jpeg", "image/png", "image/webp"],
+              "maxSize": 1000000
+            },
+            "description": "Up to 4 images"
+          },
+          "location": {
+            "type": "object",
+            "properties": {
+              "latitude": { "type": "number" },
+              "longitude": { "type": "number" },
+              "altitude": { "type": "number" }
+            },
+            "required": ["latitude", "longitude"],
+            "description": "Device GPS location"
+          },
+          "checkpointAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Checkpoint timestamp (editable)"
+          },
+          "exif": {
+            "type": "object",
+            "description": "EXIF metadata from photos (opt-in)"
+          },
+          "sourceRef": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the original Bluesky post (if imported)"
+          },
+          "imageUrls": {
+            "type": "array",
+            "maxLength": 4,
+            "items": { "type": "string", "format": "uri" },
+            "description": "External image URLs (for imported posts whose blobs cannot be copied)"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Record creation timestamp"
+          }
+        }
+      }
+    }
+  }
+}

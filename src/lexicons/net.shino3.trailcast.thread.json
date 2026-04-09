@@ -1,0 +1,43 @@
+{
+  "lexicon": 1,
+  "id": "net.shino3.trailcast.thread",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A trail / event thread",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["title", "visibility", "createdAt"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Thread title"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Thread description"
+          },
+          "visibility": {
+            "type": "string",
+            "knownValues": ["private", "public"],
+            "description": "Visibility setting"
+          },
+          "coverImage": {
+            "type": "blob",
+            "accept": ["image/jpeg", "image/png", "image/webp"],
+            "maxSize": 1000000,
+            "description": "Cover image"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Creation timestamp"
+          }
+        }
+      }
+    }
+  }
+}
