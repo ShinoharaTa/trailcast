@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { LoginScreen } from "@/components/screens/login-screen";
 import { HomeScreen } from "@/components/screens/home-screen";
 import { ThreadCreateScreen } from "@/components/screens/thread-create-screen";
@@ -10,23 +11,44 @@ import { BlueskyImportScreen } from "@/components/screens/bsky-import-screen";
 import { BlueskyCrosspostScreen } from "@/components/screens/bsky-crosspost-screen";
 import { ShareScreen } from "@/components/screens/share-screen";
 import { useNavigation } from "@/lib/use-navigation";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function Page() {
-  const { currentScreen, navigate, goBack } = useNavigation("login");
+  const { currentScreen, params, navigate, goBack } = useNavigation("login");
+  const { isAuthenticated, isLoading, restore } = useAuthStore();
 
-  const nav = { navigate, goBack };
+  useEffect(() => {
+    restore();
+  }, [restore]);
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && currentScreen === "login") {
+      navigate("home");
+    }
+    if (!isLoading && !isAuthenticated && currentScreen !== "login") {
+      navigate("login");
+    }
+  }, [isLoading, isAuthenticated, currentScreen, navigate]);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="size-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+          <p className="text-sm text-white/40">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const nav = { navigate, goBack, params };
 
   return (
     <main>
       {currentScreen === "login" && <LoginScreen {...nav} />}
       {currentScreen === "home" && <HomeScreen {...nav} />}
       {currentScreen === "thread-create" && <ThreadCreateScreen {...nav} />}
-      {currentScreen === "thread-private" && (
-        <ThreadDetailScreen variant="private" {...nav} />
-      )}
-      {currentScreen === "thread-public" && (
-        <ThreadDetailScreen variant="public" {...nav} />
-      )}
+      {currentScreen === "thread-detail" && <ThreadDetailScreen {...nav} />}
       {currentScreen === "checkpoint-post" && (
         <CheckpointPostScreen {...nav} />
       )}
