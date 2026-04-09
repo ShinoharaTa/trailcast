@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "npx serve out",
+    "preview": "npx wrangler pages dev out",
+    "deploy": "npm run build && npx wrangler pages deploy out",
     "lint": "next lint",
     "tauri": "tauri"
   },
