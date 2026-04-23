@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a0e1a"/>
+      <stop offset="100%" stop-color="#1e1440"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="0.85" cy="0.15" r="0.9">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.45"/>
+      <stop offset="60%" stop-color="#6366f1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.1" cy="0.9" r="0.85">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="logo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow1)"/>
+  <rect width="1200" height="630" fill="url(#glow2)"/>
+
+  <!-- Subtle grid -->
+  <g stroke="#ffffff" stroke-opacity="0.04" stroke-width="1">
+    <line x1="0"  y1="210" x2="1200" y2="210"/>
+    <line x1="0"  y1="420" x2="1200" y2="420"/>
+    <line x1="400" y1="0"  x2="400"  y2="630"/>
+    <line x1="800" y1="0"  x2="800"  y2="630"/>
+  </g>
+
+  <!-- Logo badge -->
+  <g transform="translate(100 120)">
+    <rect width="130" height="130" rx="30" fill="url(#logo)"/>
+    <g transform="translate(24 22)" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 11l22 -6l18 6l22 -6v62l-22 6l-18 -6l-22 6z"/>
+      <path d="M31 5v62"/>
+      <path d="M49 11v62"/>
+    </g>
+  </g>
+
+  <!-- Title -->
+  <text x="100" y="370" font-family="'Inter', 'Noto Sans JP', system-ui, sans-serif"
+        font-size="132" font-weight="800" fill="#ffffff" letter-spacing="-4">
+    Trailcast
+  </text>
+
+  <!-- Subtitle -->
+  <text x="100" y="450" font-family="'Noto Sans JP', system-ui, sans-serif"
+        font-size="40" font-weight="500" fill="#ffffff" fill-opacity="0.7">
+    Ån2’À¤ÊßÃ¯k‹Y
+  </text>
+
+  <!-- Features row -->
+  <g transform="translate(100 520)" font-family="'Noto Sans JP', system-ui, sans-serif"
+     font-size="22" fill="#ffffff" fill-opacity="0.55">
+    <g>
+      <circle cx="8" cy="-8" r="5" fill="#6366f1"/>
+      <text x="24" y="0">Á§Ã¯Ý¤óÈb</text>
+    </g>
+    <g transform="translate(270 0)">
+      <circle cx="8" cy="-8" r="5" fill="#8b5cf6"/>
+      <text x="24" y="0">AT Protocol</text>
+    </g>
+    <g transform="translate(480 0)">
+      <circle cx="8" cy="-8" r="5" fill="#a855f7"/>
+      <text x="24" y="0">Bluesky #:</text>
+    </g>
+  </g>
+
+  <!-- URL -->
+  <text x="1100" y="590" font-family="'Inter', system-ui, sans-serif" font-size="20"
+        fill="#ffffff" fill-opacity="0.4" text-anchor="end">
+    trailcast.shino3.net
+  </text>
+</svg>
