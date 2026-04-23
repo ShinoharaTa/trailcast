@@ -29,6 +29,7 @@ import { CheckpointPostScreen } from "@/components/screens/checkpoint-post-scree
 import { CheckpointEditScreen } from "@/components/screens/checkpoint-edit-screen";
 import { BlueskyImportScreen } from "@/components/screens/bsky-import-screen";
 import { ThreadEditScreen } from "@/components/screens/thread-edit-screen";
+import { LoginModal } from "@/components/auth/login-modal";
 
 type ModalKind =
   | "share"
@@ -118,6 +119,7 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
   const [modal, setModal] = useState<ModalKind | null>(null);
   const [editingPost, setEditingPost] = useState<PostWithMeta | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
 
   // ヘッダーのスクロール連動（0 = ヒーロー全表示、1 = コンパクトヘッダー）
   const HEADER_HEIGHT = 80;
@@ -376,7 +378,7 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
               style={{ opacity: Math.max(0, 1 - progress * 1.6) }}
             >
               <button
-                onClick={() => navigate("login")}
+                onClick={() => setLoginOpen(true)}
                 className="rounded-lg bg-indigo-500/20 px-3.5 py-2 text-xs font-medium text-indigo-300 backdrop-blur-sm transition hover:bg-indigo-500/30"
               >
                 ログインして投稿する
@@ -434,6 +436,14 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
           >
             <ShareIcon className="size-5" />
           </button>
+          {!isAuthenticated && (
+            <button
+              onClick={() => setLoginOpen(true)}
+              className="shrink-0 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-indigo-500/20 transition hover:brightness-110"
+            >
+              ログイン
+            </button>
+          )}
           {isOwner && (
             <button
               onClick={handleEditThread}
@@ -647,6 +657,9 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
           )}
         </Modal>
       )}
+
+      {/* ログインダイアログ (未認証時の共通導線) */}
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
     </div>
   );
 }

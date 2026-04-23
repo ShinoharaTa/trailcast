@@ -9,8 +9,9 @@ import { parseAtUri } from "@/lib/types";
 import { listThreads } from "@/lib/pds/threads";
 import { listBookmarks } from "@/lib/pds/bookmarks";
 import { getAgent } from "@/lib/atp-agent";
-import { MapIcon, PlusIcon } from "@/components/ui/icons";
+import { PlusIcon } from "@/components/ui/icons";
 import { BlobImage } from "@/components/ui/blob-image";
+import { LandingScreen } from "@/components/screens/landing-screen";
 
 function isModifiedClick(e: React.MouseEvent): boolean {
   return (
@@ -89,37 +90,16 @@ export function HomeScreen({ navigate }: NavigationProps) {
     loadBookmarks();
   }, [isAuthenticated, loadThreads, loadBookmarks]);
 
-  // 未認証: 自分のコンテンツが無いので、ログイン誘導のランディングを表示
+  // 未認証: ランディング (ログインフォーム埋め込み)
   if (!isAuthenticated) {
-    return (
-      <div className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-6 py-16 text-center">
-        <div className="mb-6 flex size-16 items-center justify-center rounded-2xl bg-indigo-500 shadow-lg shadow-indigo-500/30">
-          <MapIcon className="size-8 text-white" />
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-          Trailcast
-        </h1>
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-white/50">
-          旅の記録を、ダイナミックに残す。
-          <br />
-          共有されたスレッドは URL から誰でも閲覧できます。
-          投稿や編集を行うにはログインしてください。
-        </p>
-        <button
-          onClick={() => navigate("login")}
-          className="mt-8 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:brightness-110"
-        >
-          ログインして始める
-        </button>
-      </div>
-    );
+    return <LandingScreen />;
   }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white">Chronicle</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-white">Dashboard</h2>
           <p className="mt-1 text-sm text-white/40">
             {handle ? `@${handle}` : "あなたの旅の記録"}
           </p>
