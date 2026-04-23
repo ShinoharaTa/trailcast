@@ -6,6 +6,7 @@ import { BackButton } from "@/components/ui/back-button";
 import { PhotoIcon } from "@/components/ui/icons";
 import { createThread } from "@/lib/pds/threads";
 import { uploadImage } from "@/lib/pds/posts";
+import { processCoverImage } from "@/lib/image-processing";
 
 export function ThreadCreateScreen({ navigate, goBack }: NavigationProps) {
   const [title, setTitle] = useState("");
@@ -35,8 +36,8 @@ export function ThreadCreateScreen({ navigate, goBack }: NavigationProps) {
     try {
       let coverImage = undefined;
       if (coverFile) {
-        const buf = new Uint8Array(await coverFile.arrayBuffer());
-        coverImage = await uploadImage(buf, coverFile.type);
+        const processed = await processCoverImage(coverFile);
+        coverImage = await uploadImage(processed.bytes, processed.mimeType);
       }
       const thread = await createThread({
         title: title.trim(),
@@ -114,7 +115,7 @@ export function ThreadCreateScreen({ navigate, goBack }: NavigationProps) {
           </div>
           <div
             onClick={() => fileRef.current?.click()}
-            className="flex aspect-[16/9] cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-white/10 bg-white/[0.02] transition hover:border-indigo-400/40"
+            className="flex aspect-[3/1] cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-white/10 bg-white/[0.02] transition hover:border-indigo-400/40"
           >
             {coverPreview ? (
               // eslint-disable-next-line @next/next/no-img-element

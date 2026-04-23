@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { NavigationProps } from "@/lib/use-navigation";
 import type {
   ThreadWithMeta,
@@ -10,30 +10,63 @@ import { parseAtUri } from "@/lib/types";
 import { getThread, deleteThread, listPostsForThread } from "@/lib/pds/threads";
 import { deletePost, refreshFromSource } from "@/lib/pds/posts";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { PinIcon, EditIcon, TrashIcon, RefreshIcon, LinkIcon } from "@/components/ui/icons";
+import {
+  PinIcon,
+  EditIcon,
+  TrashIcon,
+  RefreshIcon,
+  LinkIcon,
+  ChevronLeftIcon,
+  ShareIcon,
+  PlusIcon,
+} from "@/components/ui/icons";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Modal } from "@/components/ui/modal";
+import { useBlobUrl, usePdsUrl } from "@/components/ui/blob-image";
+import { extractBlobCid, buildBlobUrl } from "@/lib/pds/blob-url";
+import { ShareScreen } from "@/components/screens/share-screen";
+import { CheckpointPostScreen } from "@/components/screens/checkpoint-post-screen";
+import { CheckpointEditScreen } from "@/components/screens/checkpoint-edit-screen";
+import { BlueskyImportScreen } from "@/components/screens/bsky-import-screen";
+import { ThreadEditScreen } from "@/components/screens/thread-edit-screen";
 
-function blobUrl(uri: string, blobRef: unknown): string | null {
-  if (!blobRef || typeof blobRef !== "object") return null;
-  const ref = (blobRef as { ref?: { $link?: string } }).ref?.$link;
-  if (!ref) return null;
-  const did = parseAtUri(uri).repo;
-  return `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${ref}`;
+type ModalKind =
+  | "share"
+  | "checkpoint-post"
+  | "checkpoint-edit"
+  | "bsky-import"
+  | "thread-edit";
+
+function modalMaxWidth(kind: ModalKind): "lg" | "2xl" | "3xl" {
+  switch (kind) {
+    case "bsky-import":
+      return "3xl";
+    case "thread-edit":
+    case "checkpoint-post":
+    case "checkpoint-edit":
+      return "2xl";
+    default:
+      return "lg";
+  }
 }
 
-function resolveImageUrls(post: PostWithMeta): string[] {
+function PostImages({
+  post,
+  pdsUrl,
+}: {
+  post: PostWithMeta;
+  pdsUrl: string | null;
+}) {
+  const urls: string[] = [];
   if (post.imageUrls && post.imageUrls.length > 0) {
-    return post.imageUrls;
+    urls.push(...post.imageUrls);
+  } else if (post.images && post.images.length > 0 && pdsUrl) {
+    const did = parseAtUri(post.uri).repo;
+    for (const img of post.images) {
+      const cid = extractBlobCid(img);
+      if (cid) urls.push(buildBlobUrl(pdsUrl, did, cid));
+    }
   }
-  if (post.images && post.images.length > 0) {
-    return post.images
-      .map((img) => blobUrl(post.uri, img))
-      .filter(Boolean) as string[];
-  }
-  return [];
-}
-
-function PostImages({ urls }: { urls: string[] }) {
   if (urls.length === 0) return null;
   if (urls.length === 1) {
     return (
@@ -68,7 +101,7 @@ function formatTime(dt: string): string {
 }
 
 export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps) {
-  const { did: myDid } = useAuthStore();
+  const { did: myDid, isAuthenticated } = useAuthStore();
   const [thread, setThread] = useState<ThreadWithMeta | null>(null);
   const [posts, setPosts] = useState<PostWithMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +113,43 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
     | { type: "post"; post: PostWithMeta }
     | null
   >(null);
+
+  // モーダル状態（URL には現れないローカル state）
+  const [modal, setModal] = useState<ModalKind | null>(null);
+  const [editingPost, setEditingPost] = useState<PostWithMeta | null>(null);
+  const [fabOpen, setFabOpen] = useState(false);
+
+  // ヘッダーのスクロール連動（0 = ヒーロー全表示、1 = コンパクトヘッダー）
+  const HEADER_HEIGHT = 80;
+  const heroRef = useRef<HTMLDivElement | null>(null);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const compute = () => {
+      const h = heroRef.current?.offsetHeight ?? 0;
+      const start = h * 0.4;
+      const end = Math.max(start + 1, h - HEADER_HEIGHT);
+      const y = window.scrollY;
+      const p = Math.max(0, Math.min(1, (y - start) / (end - start)));
+      setProgress(p);
+    };
+    compute();
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        compute();
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", compute);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", compute);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [thread]);
 
   const threadUri = params.threadUri ?? "";
 
@@ -101,9 +171,31 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
     }
   }, [threadUri]);
 
+  // スピナーを出さずにバックグラウンドで再取得
+  const refresh = useCallback(async () => {
+    if (!threadUri) return;
+    try {
+      const { repo, rkey } = parseAtUri(threadUri);
+      const [t, p] = await Promise.all([
+        getThread(repo, rkey),
+        listPostsForThread(threadUri),
+      ]);
+      setThread(t);
+      setPosts(p);
+    } catch (e) {
+      console.error("Failed to refresh thread:", e);
+    }
+  }, [threadUri]);
+
   useEffect(() => {
     load();
   }, [load]);
+
+  // 画像表示用の PDS / blob URL (hooks はトップレベルで呼び出す必要があるため
+  // thread が未ロードの間は null 引数で保持だけして、ロード後に自動で URL が入る)
+  const threadDidForBlobs = thread ? parseAtUri(thread.uri).repo : null;
+  const coverUrl = useBlobUrl(threadDidForBlobs, thread?.coverImage);
+  const pdsUrl = usePdsUrl(threadDidForBlobs);
 
   const executeDeleteThread = async () => {
     if (!thread) return;
@@ -128,6 +220,10 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
     }
   };
 
+  const handleEditThread = () => {
+    setModal("thread-edit");
+  };
+
   const handleRefreshFromSource = async (post: PostWithMeta) => {
     if (!post.sourceRef) return;
     setRefreshingUri(post.uri);
@@ -142,6 +238,37 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
       setRefreshingUri(null);
     }
   };
+
+  const closeModal = useCallback(() => {
+    setModal(null);
+    setEditingPost(null);
+  }, []);
+
+  const onModalSubmitted = useCallback(() => {
+    setModal(null);
+    setEditingPost(null);
+    void refresh();
+  }, [refresh]);
+
+  const openCheckpointEdit = (post: PostWithMeta) => {
+    setEditingPost(post);
+    setModal("checkpoint-edit");
+  };
+
+  const openFromFab = (kind: ModalKind) => {
+    setFabOpen(false);
+    setModal(kind);
+  };
+
+  // FAB 展開中の ESC 閉じ
+  useEffect(() => {
+    if (!fabOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFabOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fabOpen]);
 
   if (loading) {
     return (
@@ -160,8 +287,8 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
     );
   }
 
-  const isOwner = myDid === parseAtUri(thread.uri).repo;
-  const coverUrl = blobUrl(thread.uri, thread.coverImage);
+  const threadDid = parseAtUri(thread.uri).repo;
+  const isOwner = myDid === threadDid;
 
   return (
     <div>
@@ -188,54 +315,143 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
       />
 
       {/* Hero */}
-      <div className="relative h-[50vh] min-h-[320px] overflow-hidden">
+      <div ref={heroRef} className="relative h-[55vh] min-h-[360px] overflow-hidden">
         {coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={coverUrl} alt={thread.title} className="h-full w-full object-cover" />
+          <img
+            src={coverUrl}
+            alt={thread.title}
+            className="h-full w-full object-cover will-change-transform"
+            style={{
+              transform: `scale(${1 - progress * 0.22})`,
+              transformOrigin: "center center",
+              opacity: 1 - progress,
+            }}
+          />
         ) : (
-          <div className="flex h-full items-center justify-center bg-gradient-to-br from-indigo-600/30 to-violet-600/30">
+          <div
+            className="flex h-full items-center justify-center bg-gradient-to-br from-indigo-600/30 to-violet-600/30"
+            style={{
+              transform: `scale(${1 - progress * 0.22})`,
+              transformOrigin: "center center",
+              opacity: 1 - progress,
+            }}
+          >
             <span className="text-8xl font-bold text-white/10">{thread.title.charAt(0)}</span>
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/50 to-surface-950/20" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/50 to-surface-950/20" />
         <div className="absolute inset-x-0 bottom-0 mx-auto max-w-3xl px-5 pb-8">
-          <button onClick={goBack} className="mb-4 flex items-center gap-1.5 text-sm font-medium text-white/60 transition hover:text-white">
-            <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-            スレッド一覧
-          </button>
-          <div className="mb-3 flex items-center gap-2">
+          {/* バッジ行 (ヒーローでのみ表示) */}
+          <div
+            className="mb-3 flex items-center gap-2"
+            style={{
+              opacity: Math.max(0, 1 - progress * 1.4),
+              transform: `translate3d(0, ${progress * -8}px, 0)`,
+            }}
+          >
             <span className={`rounded-full px-3 py-0.5 text-[11px] font-bold backdrop-blur-sm ${thread.visibility === "public" ? "bg-emerald-500/20 text-emerald-400" : "bg-white/10 text-white/60"}`}>
               {thread.visibility === "public" ? "Public" : "Private"}
             </span>
             <span className="text-xs text-white/40">{formatTime(thread.createdAt)}</span>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">{thread.title}</h1>
+          <h1
+            className="text-3xl font-bold tracking-tight text-white sm:text-4xl"
+            style={{ opacity: Math.max(0, 1 - progress * 1.2) }}
+          >
+            {thread.title}
+          </h1>
           {thread.description && (
-            <p className="mt-3 max-w-xl text-base leading-relaxed text-white/60">{thread.description}</p>
+            <p
+              className="mt-3 max-w-xl text-base leading-relaxed text-white/60"
+              style={{ opacity: Math.max(0, 1 - progress * 1.6) }}
+            >
+              {thread.description}
+            </p>
+          )}
+          {!isAuthenticated && (
+            <div
+              className="mt-6"
+              style={{ opacity: Math.max(0, 1 - progress * 1.6) }}
+            >
+              <button
+                onClick={() => navigate("login")}
+                className="rounded-lg bg-indigo-500/20 px-3.5 py-2 text-xs font-medium text-indigo-300 backdrop-blur-sm transition hover:bg-indigo-500/30"
+              >
+                ログインして投稿する
+              </button>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Action bar */}
-      <div className="sticky top-0 z-30 border-b border-white/5 bg-surface-950/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-3xl items-center gap-2 overflow-x-auto px-5 py-3">
-          <button onClick={() => navigate("share", params)} className="shrink-0 rounded-lg bg-white/5 px-3.5 py-2 text-xs font-medium text-white/70 transition hover:bg-white/10">共有</button>
-          <button onClick={() => navigate("bsky-crosspost", params)} className="shrink-0 rounded-lg bg-[#0085ff]/10 px-3.5 py-2 text-xs font-medium text-[#0085ff] transition hover:bg-[#0085ff]/20">Blueskyに投稿</button>
-          <button onClick={() => navigate("bsky-import", params)} className="shrink-0 rounded-lg bg-white/5 px-3.5 py-2 text-xs font-medium text-white/70 transition hover:bg-white/10">インポート</button>
+      {/* ===== 上部に固定表示するヘッダー =====
+          - 戻る / 共有 / 編集 は常に同じ位置に表示
+          - タイトルはスクロール量に応じてフェードイン
+          - 背景グラデーションも同様にフェードインし、ヒーローに自然に馴染む */}
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-40">
+        {/* 背景層 (フェードのみ。位置移動なし) */}
+        <div
+          className="absolute inset-x-0 top-0 bg-gradient-to-b from-surface-950 from-0% via-surface-950/85 via-55% to-transparent backdrop-blur-md [mask-image:linear-gradient(to_bottom,black_65%,transparent_100%)]"
+          style={{ height: HEADER_HEIGHT, opacity: progress }}
+          aria-hidden
+        />
+
+        {/* コンテンツ行 */}
+        <div className="pointer-events-auto relative mx-auto flex h-14 max-w-3xl items-center gap-2 px-3">
+          <button
+            onClick={goBack}
+            aria-label="戻る"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full text-white transition hover:bg-white/10"
+            style={{
+              backgroundColor: `rgba(0,0,0,${0.35 * (1 - progress)})`,
+              backdropFilter: progress < 0.95 ? "blur(6px)" : undefined,
+              WebkitBackdropFilter: progress < 0.95 ? "blur(6px)" : undefined,
+            }}
+          >
+            <ChevronLeftIcon className="size-5" />
+          </button>
+
+          {/* 固定タイトル (スクロールで浮き出る) */}
+          <h2
+            className="min-w-0 flex-1 truncate px-1 text-[15px] font-semibold text-white"
+            style={{ opacity: Math.max(0, progress * 1.4 - 0.4) }}
+            aria-hidden={progress < 0.3}
+          >
+            {thread.title}
+          </h2>
+
+          <button
+            onClick={() => setModal("share")}
+            aria-label="共有"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full text-white transition hover:bg-white/10"
+            style={{
+              backgroundColor: `rgba(0,0,0,${0.35 * (1 - progress)})`,
+              backdropFilter: progress < 0.95 ? "blur(6px)" : undefined,
+              WebkitBackdropFilter: progress < 0.95 ? "blur(6px)" : undefined,
+            }}
+          >
+            <ShareIcon className="size-5" />
+          </button>
           {isOwner && (
             <button
-              onClick={() => setConfirmTarget({ type: "thread" })}
-              disabled={deleting}
-              className="ml-auto shrink-0 rounded-lg bg-red-500/10 px-3.5 py-2 text-xs font-medium text-red-400 transition hover:bg-red-500/20 disabled:opacity-50"
+              onClick={handleEditThread}
+              aria-label="編集"
+              className="flex size-10 shrink-0 items-center justify-center rounded-full text-white transition hover:bg-white/10"
+              style={{
+                backgroundColor: `rgba(0,0,0,${0.35 * (1 - progress)})`,
+                backdropFilter: progress < 0.95 ? "blur(6px)" : undefined,
+                WebkitBackdropFilter: progress < 0.95 ? "blur(6px)" : undefined,
+              }}
             >
-              {deleting ? "削除中..." : "スレッド削除"}
+              <EditIcon className="size-5" />
             </button>
           )}
         </div>
       </div>
 
       {/* Timeline */}
-      <div className="mx-auto max-w-3xl px-5 py-10">
+      <div className="mx-auto max-w-3xl px-5 pt-10 pb-28">
         {posts.length === 0 && (
           <div className="py-16 text-center">
             <p className="text-white/30">まだチェックポイントがありません</p>
@@ -282,7 +498,7 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
                 {isOwner && (
                   <div className="ml-auto flex gap-1 opacity-0 transition group-hover:opacity-100">
                     <button
-                      onClick={() => navigate("checkpoint-edit", { ...params, postUri: cp.uri })}
+                      onClick={() => openCheckpointEdit(cp)}
                       className="rounded-md px-2 py-1 text-white/20 hover:bg-white/5 hover:text-white/60"
                     >
                       <EditIcon className="size-3.5" />
@@ -297,9 +513,10 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
                 )}
               </div>
 
-              {resolveImageUrls(cp).length > 0 ? (
+              {(cp.imageUrls && cp.imageUrls.length > 0) ||
+              (cp.images && cp.images.length > 0) ? (
                 <>
-                  <PostImages urls={resolveImageUrls(cp)} />
+                  <PostImages post={cp} pdsUrl={pdsUrl} />
                   {cp.text && (
                     <p className="mt-4 text-base leading-relaxed text-white/70">{cp.text}</p>
                   )}
@@ -319,18 +536,116 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
             <span className="text-xs text-white/30">{posts.length} チェックポイント</span>
           </div>
         )}
+      </div>
 
-        {isOwner && (
-          <div className="mt-8 pl-12 sm:pl-16">
+      {/* Floating Action Button (bottom-right) */}
+      {isOwner && (
+        <>
+          {/* Backdrop when expanded */}
+          <div
+            onClick={() => setFabOpen(false)}
+            aria-hidden
+            className={`fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity duration-200 ${
+              fabOpen ? "opacity-100" : "pointer-events-none opacity-0"
+            }`}
+          />
+          <div
+            className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          >
+            {/* Speed dial items */}
             <button
-              onClick={() => navigate("checkpoint-post", params)}
-              className="w-full rounded-xl border border-dashed border-indigo-500/30 bg-indigo-500/5 py-4 text-sm font-medium text-indigo-400 transition hover:border-indigo-400 hover:bg-indigo-500/10"
+              type="button"
+              onClick={() => openFromFab("bsky-import")}
+              aria-hidden={!fabOpen}
+              tabIndex={fabOpen ? 0 : -1}
+              className={`flex items-center gap-3 rounded-full bg-surface-800/95 py-2 pl-4 pr-2 text-left shadow-xl ring-1 ring-white/10 backdrop-blur transition-all duration-200 hover:bg-surface-700 ${
+                fabOpen
+                  ? "translate-y-0 scale-100 opacity-100"
+                  : "pointer-events-none translate-y-3 scale-95 opacity-0"
+              }`}
             >
-              + チェックポイントを追加
+              <span className="text-sm font-medium text-white/90">
+                Bluesky からインポート
+              </span>
+              <span className="flex size-10 items-center justify-center rounded-full bg-[#0085ff]/20 text-[#0085ff]">
+                <LinkIcon className="size-5" />
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openFromFab("checkpoint-post")}
+              aria-hidden={!fabOpen}
+              tabIndex={fabOpen ? 0 : -1}
+              className={`flex items-center gap-3 rounded-full bg-surface-800/95 py-2 pl-4 pr-2 text-left shadow-xl ring-1 ring-white/10 backdrop-blur transition-all duration-200 hover:bg-surface-700 ${
+                fabOpen
+                  ? "translate-y-0 scale-100 opacity-100"
+                  : "pointer-events-none translate-y-3 scale-95 opacity-0"
+              }`}
+              style={{ transitionDelay: fabOpen ? "40ms" : "0ms" }}
+            >
+              <span className="text-sm font-medium text-white/90">
+                チェックポイントを追加
+              </span>
+              <span className="flex size-10 items-center justify-center rounded-full bg-indigo-500/25 text-indigo-300">
+                <PinIcon className="size-5" />
+              </span>
+            </button>
+
+            {/* Main FAB */}
+            <button
+              type="button"
+              onClick={() => setFabOpen((v) => !v)}
+              aria-label={fabOpen ? "閉じる" : "追加メニューを開く"}
+              aria-expanded={fabOpen}
+              className="flex size-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-xl shadow-indigo-900/40 ring-1 ring-white/15 transition hover:brightness-110 active:scale-95"
+            >
+              <PlusIcon
+                className={`size-6 transition-transform duration-200 ${
+                  fabOpen ? "rotate-45" : ""
+                }`}
+              />
             </button>
           </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {/* Modals */}
+      {modal && (
+        <Modal open onClose={closeModal} maxWidth={modalMaxWidth(modal)}>
+          {modal === "share" && <ShareScreen threadUri={threadUri} />}
+          {modal === "checkpoint-post" && (
+            <CheckpointPostScreen
+              threadUri={threadUri}
+              onSubmitted={onModalSubmitted}
+            />
+          )}
+          {modal === "checkpoint-edit" && editingPost && (
+            <CheckpointEditScreen
+              post={editingPost}
+              onSubmitted={onModalSubmitted}
+              onCancel={closeModal}
+            />
+          )}
+          {modal === "bsky-import" && (
+            <BlueskyImportScreen
+              threadUri={threadUri}
+              onSubmitted={onModalSubmitted}
+            />
+          )}
+          {modal === "thread-edit" && thread && (
+            <ThreadEditScreen
+              thread={thread}
+              onSubmitted={onModalSubmitted}
+              onCancel={closeModal}
+              onRequestDelete={() => {
+                setModal(null);
+                setConfirmTarget({ type: "thread" });
+              }}
+            />
+          )}
+        </Modal>
+      )}
     </div>
   );
 }

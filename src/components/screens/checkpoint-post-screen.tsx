@@ -1,27 +1,61 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { NavigationProps } from "@/lib/use-navigation";
-import { BackButton } from "@/components/ui/back-button";
 import { PlusIcon, PinIcon, CloseIcon } from "@/components/ui/icons";
 import { createPost, uploadImage } from "@/lib/pds/posts";
+import { getAgent } from "@/lib/atp-agent";
 import type { Location } from "@/lib/types";
 
 const MAX_IMAGES = 4;
 const MAX_TEXT = 200;
 
-export function CheckpointPostScreen({ goBack, params }: NavigationProps) {
+// Bluesky 同時投稿の設定は端末ごとに localStorage で記憶する
+const CROSSPOST_PREF_KEY = "trailcast_crosspost_to_bsky";
+
+function loadCrosspostPref(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(CROSSPOST_PREF_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveCrosspostPref(value: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CROSSPOST_PREF_KEY, value ? "true" : "false");
+  } catch {
+    // quota / denied: silent
+  }
+}
+
+export interface CheckpointPostScreenProps {
+  threadUri: string;
+  onSubmitted: () => void;
+}
+
+export function CheckpointPostScreen({
+  threadUri,
+  onSubmitted,
+}: CheckpointPostScreenProps) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [locationOn, setLocationOn] = useState(true);
   const [location, setLocation] = useState<Location | null>(null);
   const [locating, setLocating] = useState(false);
+  const [crosspostToBsky, setCrosspostToBsky] = useState<boolean>(
+    () => loadCrosspostPref(),
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const threadUri = params.threadUri ?? "";
+  const handleCrosspostChange = (value: boolean) => {
+    setCrosspostToBsky(value);
+    saveCrosspostPref(value);
+  };
 
   const handleAddImages = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newFiles = Array.from(e.target.files ?? []);
@@ -76,6 +110,26 @@ export function CheckpointPostScreen({ goBack, params }: NavigationProps) {
         }),
       );
 
+      // Bluesky にも投稿する場合は先に Bluesky 側を作成し、その URI を
+      // チェックポイントの sourceRef に記録する（後で「元投稿から再取得」が効く）
+      let sourceRef: string | undefined;
+      if (crosspostToBsky) {
+        const agent = getAgent();
+        const embed =
+          blobs.length > 0
+            ? {
+                $type: "app.bsky.embed.images",
+                images: blobs.map((blob) => ({ alt: "", image: blob })),
+              }
+            : undefined;
+        const res = await agent.post({
+          text: text.trim(),
+          embed,
+          createdAt: new Date().toISOString(),
+        });
+        sourceRef = res.uri;
+      }
+
       const now = new Date().toISOString();
       await createPost({
         thread: threadUri,
@@ -83,113 +137,151 @@ export function CheckpointPostScreen({ goBack, params }: NavigationProps) {
         images: blobs.length > 0 ? blobs : undefined,
         location: locationOn && location ? location : undefined,
         checkpointAt: now,
+        sourceRef,
         createdAt: now,
       });
-      goBack();
+      onSubmitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : "投稿に失敗しました");
       setSubmitting(false);
     }
   };
 
+  const hasContent = text.trim().length > 0 || files.length > 0;
+
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
-      <BackButton onClick={goBack} label="スレッドに戻る" className="mb-6" />
-      <div className="rounded-2xl bg-surface-800 p-6 shadow-lg sm:p-8">
-        <h2 className="mb-6 text-lg font-bold text-white">
-          チェックポイントを追加
-        </h2>
-        <div className="space-y-5">
-          <div className="relative">
-            <textarea
-              rows={4}
-              placeholder="何があった？"
-              value={text}
-              onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT))}
-              className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
-            />
-            <span className="absolute bottom-3 right-3 text-xs text-white/20">
-              {text.length}/{MAX_TEXT}
+    <>
+      <h2 className="mb-6 pr-10 text-lg font-bold text-white">
+        チェックポイントを追加
+      </h2>
+      <div className="space-y-5">
+        <div className="relative">
+          <textarea
+            rows={4}
+            placeholder="何があった？"
+            value={text}
+            onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT))}
+            className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+          />
+          <span className="absolute bottom-3 right-3 text-xs text-white/20">
+            {text.length}/{MAX_TEXT}
+          </span>
+        </div>
+
+        <div>
+          <label className="mb-2 block text-xs font-medium text-white/50">
+            写真（最大{MAX_IMAGES}枚）
+          </label>
+          <div className="grid grid-cols-4 gap-2">
+            {previews.map((url, i) => (
+              <div key={i} className="group relative aspect-square overflow-hidden rounded-xl">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="h-full w-full object-cover" />
+                <button
+                  onClick={() => handleRemoveImage(i)}
+                  className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100"
+                >
+                  <CloseIcon className="size-3" />
+                </button>
+              </div>
+            ))}
+            {files.length < MAX_IMAGES && (
+              <div
+                onClick={() => fileRef.current?.click()}
+                className="flex aspect-square cursor-pointer items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] transition hover:border-indigo-400/40"
+              >
+                <PlusIcon className="size-6 text-white/15" strokeWidth={1.5} />
+              </div>
+            )}
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleAddImages}
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleToggleLocation}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+              locationOn
+                ? "bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20"
+                : "bg-white/5 text-white/40 hover:bg-white/10"
+            }`}
+          >
+            <PinIcon className="size-3.5" />
+            {locating ? "取得中..." : locationOn ? "位置情報 ON" : "位置情報 OFF"}
+          </button>
+          {location && (
+            <span className="text-xs text-white/30">
+              {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
+            </span>
+          )}
+        </div>
+
+        <label
+          className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 transition ${
+            crosspostToBsky
+              ? "border-[#0085ff]/40 bg-[#0085ff]/5"
+              : "border-white/10 bg-white/5 hover:border-white/15"
+          }`}
+        >
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="flex items-center gap-2 text-sm font-medium text-white/90">
+              <span className="text-[#0085ff]">Bluesky</span>
+              にも投稿
+            </span>
+            <span className="text-[11px] text-white/40">
+              同じテキストと写真を Bluesky に同時投稿します
             </span>
           </div>
-
-          <div>
-            <label className="mb-2 block text-xs font-medium text-white/50">
-              写真（最大{MAX_IMAGES}枚）
-            </label>
-            <div className="grid grid-cols-4 gap-2">
-              {previews.map((url, i) => (
-                <div key={i} className="group relative aspect-square overflow-hidden rounded-xl">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt="" className="h-full w-full object-cover" />
-                  <button
-                    onClick={() => handleRemoveImage(i)}
-                    className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100"
-                  >
-                    <CloseIcon className="size-3" />
-                  </button>
-                </div>
-              ))}
-              {files.length < MAX_IMAGES && (
-                <div
-                  onClick={() => fileRef.current?.click()}
-                  className="flex aspect-square cursor-pointer items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] transition hover:border-indigo-400/40"
-                >
-                  <PlusIcon className="size-6 text-white/15" strokeWidth={1.5} />
-                </div>
-              )}
-            </div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={handleAddImages}
-            />
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleToggleLocation}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                locationOn
-                  ? "bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20"
-                  : "bg-white/5 text-white/40 hover:bg-white/10"
-              }`}
-            >
-              <PinIcon className="size-3.5" />
-              {locating ? "取得中..." : locationOn ? "位置情報 ON" : "位置情報 OFF"}
-            </button>
-            {location && (
-              <span className="text-xs text-white/30">
-                {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
-              </span>
-            )}
-          </div>
-
-          {error && (
-            <div className="rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
-              {error}
-            </div>
-          )}
-
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || (!text.trim() && files.length === 0)}
-            className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:opacity-50 disabled:pointer-events-none"
+          <input
+            type="checkbox"
+            checked={crosspostToBsky}
+            onChange={(e) => handleCrosspostChange(e.target.checked)}
+            className="peer sr-only"
+          />
+          <span
+            aria-hidden
+            className={`relative ml-4 h-6 w-11 shrink-0 rounded-full p-0.5 transition ${
+              crosspostToBsky ? "bg-[#0085ff]" : "bg-surface-700"
+            }`}
           >
-            {submitting ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                投稿中...
-              </span>
-            ) : (
-              "投稿する"
-            )}
-          </button>
-        </div>
+            <span
+              className={`block size-5 rounded-full bg-white shadow transition-transform ${
+                crosspostToBsky ? "translate-x-5" : ""
+              }`}
+            />
+          </span>
+        </label>
+
+        {error && (
+          <div className="rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
+            {error}
+          </div>
+        )}
+
+        <button
+          onClick={handleSubmit}
+          disabled={submitting || !hasContent}
+          className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:opacity-50 disabled:pointer-events-none"
+        >
+          {submitting ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              {crosspostToBsky ? "投稿中（Blueskyにも投稿中）..." : "投稿中..."}
+            </span>
+          ) : crosspostToBsky ? (
+            "投稿する（Blueskyにも）"
+          ) : (
+            "投稿する"
+          )}
+        </button>
       </div>
-    </div>
+    </>
   );
 }

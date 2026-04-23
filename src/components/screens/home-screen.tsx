@@ -2,28 +2,29 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { NavigationProps } from "@/lib/use-navigation";
+import { getThreadDetailHref } from "@/lib/app-routes";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import type { ThreadWithMeta, BookmarkWithMeta, ThreadRecord } from "@/lib/types";
 import { parseAtUri } from "@/lib/types";
 import { listThreads } from "@/lib/pds/threads";
 import { listBookmarks } from "@/lib/pds/bookmarks";
 import { getAgent } from "@/lib/atp-agent";
-import { PlusIcon } from "@/components/ui/icons";
+import { MapIcon, PlusIcon } from "@/components/ui/icons";
+import { BlobImage } from "@/components/ui/blob-image";
 
-function getCoverUrl(thread: ThreadWithMeta): string | null {
-  if (!thread.coverImage) return null;
-  const agent = getAgent();
-  const did = parseAtUri(thread.uri).repo;
-  const ref =
-    typeof thread.coverImage === "object" && "ref" in thread.coverImage
-      ? (thread.coverImage as { ref: { $link: string } }).ref.$link
-      : null;
-  if (!ref) return null;
-  return `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${ref}`;
+function isModifiedClick(e: React.MouseEvent): boolean {
+  return (
+    e.defaultPrevented ||
+    e.button !== 0 ||
+    e.metaKey ||
+    e.ctrlKey ||
+    e.shiftKey ||
+    e.altKey
+  );
 }
 
 export function HomeScreen({ navigate }: NavigationProps) {
-  const { handle, logout } = useAuthStore();
+  const { handle, isAuthenticated, logout } = useAuthStore();
   const [activeTab, setActiveTab] = useState<"threads" | "bookmarks">("threads");
   const [threads, setThreads] = useState<ThreadWithMeta[]>([]);
   const [bookmarksData, setBookmarksData] = useState<
@@ -78,9 +79,41 @@ export function HomeScreen({ navigate }: NavigationProps) {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      setThreads([]);
+      setBookmarksData([]);
+      return;
+    }
     loadThreads();
     loadBookmarks();
-  }, [loadThreads, loadBookmarks]);
+  }, [isAuthenticated, loadThreads, loadBookmarks]);
+
+  // 未認証: 自分のコンテンツが無いので、ログイン誘導のランディングを表示
+  if (!isAuthenticated) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-6 py-16 text-center">
+        <div className="mb-6 flex size-16 items-center justify-center rounded-2xl bg-indigo-500 shadow-lg shadow-indigo-500/30">
+          <MapIcon className="size-8 text-white" />
+        </div>
+        <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          Trailcast
+        </h1>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-white/50">
+          旅の記録を、ダイナミックに残す。
+          <br />
+          共有されたスレッドは URL から誰でも閲覧できます。
+          投稿や編集を行うにはログインしてください。
+        </p>
+        <button
+          onClick={() => navigate("login")}
+          className="mt-8 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:brightness-110"
+        >
+          ログインして始める
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -149,29 +182,34 @@ export function HomeScreen({ navigate }: NavigationProps) {
       {activeTab === "threads" && threads.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2">
           {threads.map((t) => {
-            const coverUrl = getCoverUrl(t);
+            const threadDid = parseAtUri(t.uri).repo;
+            const href = getThreadDetailHref(t.uri);
             return (
-              <div
+              <a
                 key={t.uri}
-                onClick={() => navigate("thread-detail", { threadUri: t.uri })}
-                className="group relative cursor-pointer overflow-hidden rounded-2xl bg-surface-800 shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.01]"
+                href={href}
+                onClick={(e) => {
+                  if (isModifiedClick(e)) return;
+                  e.preventDefault();
+                  navigate("thread-detail", { threadUri: t.uri });
+                }}
+                className="group relative block cursor-pointer overflow-hidden rounded-2xl bg-surface-800 shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.01]"
               >
                 <div className="aspect-[16/9] overflow-hidden bg-gradient-to-br from-indigo-500/20 to-violet-500/20">
-                  {coverUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={coverUrl}
-                      alt={t.title}
-                      className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center">
-                      <span className="text-4xl font-bold text-white/10">
-                        {t.title.charAt(0)}
-                      </span>
-                    </div>
-                  )}
+                  <BlobImage
+                    did={threadDid}
+                    blobRef={t.coverImage}
+                    alt={t.title}
+                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    loading="lazy"
+                    fallback={
+                      <div className="flex h-full items-center justify-center">
+                        <span className="text-4xl font-bold text-white/10">
+                          {t.title.charAt(0)}
+                        </span>
+                      </div>
+                    }
+                  />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface-900 via-surface-900/40 to-transparent" />
                 </div>
                 <div className="absolute inset-x-0 bottom-0 p-5">
@@ -193,7 +231,7 @@ export function HomeScreen({ navigate }: NavigationProps) {
                     </p>
                   )}
                 </div>
-              </div>
+              </a>
             );
           })}
         </div>
@@ -208,11 +246,14 @@ export function HomeScreen({ navigate }: NavigationProps) {
           )}
           {bookmarksData.map((bm) =>
             bm.thread ? (
-              <div
+              <a
                 key={bm.uri}
-                onClick={() =>
-                  navigate("thread-detail", { threadUri: bm.thread!.uri })
-                }
+                href={getThreadDetailHref(bm.thread.uri)}
+                onClick={(e) => {
+                  if (isModifiedClick(e)) return;
+                  e.preventDefault();
+                  navigate("thread-detail", { threadUri: bm.thread!.uri });
+                }}
                 className="group flex cursor-pointer gap-4 rounded-2xl bg-surface-800 p-4 transition hover:bg-surface-700"
               >
                 <div className="size-20 shrink-0 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20" />
@@ -226,7 +267,7 @@ export function HomeScreen({ navigate }: NavigationProps) {
                     </p>
                   )}
                 </div>
-              </div>
+              </a>
             ) : null,
           )}
         </div>

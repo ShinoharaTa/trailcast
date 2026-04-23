@@ -1,15 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { NavigationProps } from "@/lib/use-navigation";
-import { BackButton } from "@/components/ui/back-button";
 import { CheckIcon, InfoIcon } from "@/components/ui/icons";
 import { getAgent } from "@/lib/atp-agent";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { createPost } from "@/lib/pds/posts";
-import {
-  extractImagesFromEmbed,
-} from "@/lib/bsky-helpers";
+import { extractImagesFromEmbed } from "@/lib/bsky-helpers";
 
 interface BskyPost {
   uri: string;
@@ -20,14 +16,20 @@ interface BskyPost {
   selected: boolean;
 }
 
-export function BlueskyImportScreen({ goBack, params }: NavigationProps) {
+export interface BlueskyImportScreenProps {
+  threadUri: string;
+  onSubmitted: () => void;
+}
+
+export function BlueskyImportScreen({
+  threadUri,
+  onSubmitted,
+}: BlueskyImportScreenProps) {
   const { did } = useAuthStore();
   const [posts, setPosts] = useState<BskyPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const threadUri = params.threadUri ?? "";
 
   const loadPosts = useCallback(async () => {
     if (!did) return;
@@ -102,7 +104,7 @@ export function BlueskyImportScreen({ goBack, params }: NavigationProps) {
           createdAt: new Date().toISOString(),
         });
       }
-      goBack();
+      onSubmitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : "インポートに失敗しました");
       setImporting(false);
@@ -110,9 +112,8 @@ export function BlueskyImportScreen({ goBack, params }: NavigationProps) {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <BackButton onClick={goBack} label="スレッドに戻る" className="mb-6" />
-      <h2 className="mb-1 text-xl font-bold text-white">
+    <>
+      <h2 className="mb-1 pr-10 text-xl font-bold text-white">
         Bluesky 投稿からインポート
       </h2>
       <p className="mb-6 text-sm text-white/40">
@@ -215,6 +216,6 @@ export function BlueskyImportScreen({ goBack, params }: NavigationProps) {
           `選択した投稿をインポート (${selectedCount}件)`
         )}
       </button>
-    </div>
+    </>
   );
 }

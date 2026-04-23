@@ -5,30 +5,22 @@ import { LoginScreen } from "@/components/screens/login-screen";
 import { HomeScreen } from "@/components/screens/home-screen";
 import { ThreadCreateScreen } from "@/components/screens/thread-create-screen";
 import { ThreadDetailScreen } from "@/components/screens/thread-detail-screen";
-import { CheckpointPostScreen } from "@/components/screens/checkpoint-post-screen";
-import { CheckpointEditScreen } from "@/components/screens/checkpoint-edit-screen";
-import { BlueskyImportScreen } from "@/components/screens/bsky-import-screen";
-import { BlueskyCrosspostScreen } from "@/components/screens/bsky-crosspost-screen";
-import { ShareScreen } from "@/components/screens/share-screen";
+import type { ScreenId } from "@/lib/app-routes";
 import { useNavigation } from "@/lib/use-navigation";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
+// 未認証だと操作できない画面（URL は保持したまま LoginScreen に差し替える）
+const AUTH_REQUIRED_SCREENS: ReadonlySet<ScreenId> = new Set<ScreenId>([
+  "thread-create",
+]);
+
 export default function Page() {
-  const { currentScreen, params, navigate, goBack } = useNavigation("login");
+  const { currentScreen, params, navigate, goBack } = useNavigation();
   const { isAuthenticated, isLoading, restore } = useAuthStore();
 
   useEffect(() => {
     restore();
   }, [restore]);
-
-  useEffect(() => {
-    if (!isLoading && isAuthenticated && currentScreen === "login") {
-      navigate("home");
-    }
-    if (!isLoading && !isAuthenticated && currentScreen !== "login") {
-      navigate("login");
-    }
-  }, [isLoading, isAuthenticated, currentScreen, navigate]);
 
   if (isLoading) {
     return (
@@ -43,23 +35,29 @@ export default function Page() {
 
   const nav = { navigate, goBack, params };
 
+  // /login を直接叩いたときは常にログインフォーム
+  if (currentScreen === "login") {
+    return (
+      <main>
+        <LoginScreen {...nav} />
+      </main>
+    );
+  }
+
+  // 書き込み系は未認証なら LoginScreen にフォールバック（URL はそのまま残す）
+  if (!isAuthenticated && AUTH_REQUIRED_SCREENS.has(currentScreen)) {
+    return (
+      <main>
+        <LoginScreen {...nav} />
+      </main>
+    );
+  }
+
   return (
     <main>
-      {currentScreen === "login" && <LoginScreen {...nav} />}
       {currentScreen === "home" && <HomeScreen {...nav} />}
       {currentScreen === "thread-create" && <ThreadCreateScreen {...nav} />}
       {currentScreen === "thread-detail" && <ThreadDetailScreen {...nav} />}
-      {currentScreen === "checkpoint-post" && (
-        <CheckpointPostScreen {...nav} />
-      )}
-      {currentScreen === "checkpoint-edit" && (
-        <CheckpointEditScreen {...nav} />
-      )}
-      {currentScreen === "bsky-import" && <BlueskyImportScreen {...nav} />}
-      {currentScreen === "bsky-crosspost" && (
-        <BlueskyCrosspostScreen {...nav} />
-      )}
-      {currentScreen === "share" && <ShareScreen {...nav} />}
     </main>
   );
 }

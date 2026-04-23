@@ -14,7 +14,15 @@ export function LoginScreen({ navigate }: NavigationProps) {
     if (!identifier.trim() || !password.trim()) return;
     try {
       await login(identifier.trim(), password);
-      navigate("home");
+      // /login を直接叩いてきたときは home へ遷移。
+      // 書き込み系画面（thread-create 等）の URL のままフォールバックで来た場合は、
+      // 認証状態が変わったことで自動的にその画面が再描画される。
+      if (
+        typeof window !== "undefined" &&
+        window.location.pathname === "/login"
+      ) {
+        navigate("home", {}, { replace: true });
+      }
     } catch {
       // error is set in the store
     }
