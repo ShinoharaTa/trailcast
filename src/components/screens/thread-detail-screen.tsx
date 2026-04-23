@@ -203,7 +203,8 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
     setDeleting(true);
     try {
       await deleteThread(thread.rkey);
-      navigate("home");
+      // 削除済みの URL に戻れないように replace
+      navigate("home", {}, { replace: true });
     } catch (e) {
       console.error("Failed to delete thread:", e);
       setDeleting(false);

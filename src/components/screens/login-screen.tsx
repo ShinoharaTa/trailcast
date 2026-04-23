@@ -5,7 +5,7 @@ import type { NavigationProps } from "@/lib/use-navigation";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { MapIcon } from "@/components/ui/icons";
 
-export function LoginScreen({ navigate }: NavigationProps) {
+export function LoginScreen({ goBack }: NavigationProps) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const { login, error, isLoading, clearError } = useAuthStore();
@@ -14,14 +14,15 @@ export function LoginScreen({ navigate }: NavigationProps) {
     if (!identifier.trim() || !password.trim()) return;
     try {
       await login(identifier.trim(), password);
-      // /login を直接叩いてきたときは home へ遷移。
-      // 書き込み系画面（thread-create 等）の URL のままフォールバックで来た場合は、
-      // 認証状態が変わったことで自動的にその画面が再描画される。
+      // 書き込み系画面の URL のままフォールバック LoginScreen を出している場合は、
+      // 認証状態が変わったことで自動的にその画面が再描画される (URL はそのまま)。
+      // それ以外 (/login を踏んで来た等) は、元いた画面に戻す。
+      // goBack は SPA 内 push があれば history.back()、無ければ home に replace。
       if (
         typeof window !== "undefined" &&
         window.location.pathname === "/login"
       ) {
-        navigate("home", {}, { replace: true });
+        goBack();
       }
     } catch {
       // error is set in the store

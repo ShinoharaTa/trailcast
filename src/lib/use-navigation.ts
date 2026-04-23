@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   parsePathname,
   screenToPathname,
@@ -40,6 +40,10 @@ function samePath(a: string, b: string): boolean {
 export function useNavigation() {
   const [pathname, setPathname] = useState<string>("/");
   const [route, setRoute] = useState<Route>({ screen: "home", params: {} });
+  // SPA 内で push した深さ。history.back() で戻れる範囲の目安。
+  // window.history.length はタブ全体の履歴を含むので、外部から直接
+  // /thread/... に来た場合に back() でアプリ外へ出てしまう。
+  const spaDepthRef = useRef(0);
 
   useEffect(() => {
     const current = readPathname();
@@ -47,6 +51,9 @@ export function useNavigation() {
     setRoute(parsePathname(current));
 
     const onPop = () => {
+      // popstate は back/forward の両方で発火するが、フォールバック目的
+      // ではやや多めに減るぶんには安全側 (home に落ちるだけ)。
+      if (spaDepthRef.current > 0) spaDepthRef.current -= 1;
       const p = readPathname();
       setPathname(p);
       setRoute(parsePathname(p));
@@ -67,6 +74,7 @@ export function useNavigation() {
           window.history.replaceState({}, "", nextPath);
         } else {
           window.history.pushState({}, "", nextPath);
+          spaDepthRef.current += 1;
         }
       }
       setPathname(nextPath);
@@ -80,9 +88,11 @@ export function useNavigation() {
 
   const goBack = useCallback(() => {
     if (typeof window === "undefined") return;
-    if (window.history.length > 1) {
+    if (spaDepthRef.current > 0) {
+      // SPA 内で push した履歴がある → ブラウザ履歴を戻す (popstate で state 同期)
       window.history.back();
     } else {
+      // 外部から直接この URL に来た等、戻る先が無い → home に replace
       navigate("home", {}, { replace: true });
     }
   }, [navigate]);
