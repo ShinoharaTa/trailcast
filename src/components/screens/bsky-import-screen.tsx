@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckIcon, InfoIcon } from "@/components/ui/icons";
 import { getAgent } from "@/lib/atp-agent";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -16,6 +16,39 @@ interface BskyPost {
   selected: boolean;
 }
 
+const PAGE_SIZE = 100;
+
+// app.bsky.feed.getAuthorFeed の 1 アイテムを BskyPost に整形
+type FeedItem = {
+  post: {
+    uri: string;
+    author: { did: string };
+    record: unknown;
+    embed?: unknown;
+    indexedAt: string;
+  };
+};
+
+function feedItemToPost(item: FeedItem): BskyPost {
+  const record = item.post.record as {
+    text?: string;
+    createdAt?: string;
+  };
+  const viewEmbed = item.post.embed as Record<string, unknown> | undefined;
+  const imageUrls = extractImagesFromEmbed(viewEmbed);
+  const hasQuote =
+    viewEmbed?.$type === "app.bsky.embed.recordWithMedia#view" ||
+    viewEmbed?.$type === "app.bsky.embed.record#view";
+  return {
+    uri: item.post.uri,
+    text: record.text ?? "",
+    imageUrls,
+    hasQuote,
+    createdAt: record.createdAt ?? item.post.indexedAt,
+    selected: false,
+  };
+}
+
 export interface BlueskyImportScreenProps {
   threadUri: string;
   onSubmitted: () => void;
@@ -28,53 +61,51 @@ export function BlueskyImportScreen({
   const { did } = useAuthStore();
   const [posts, setPosts] = useState<BskyPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // getAuthorFeed の次ページ用 cursor。ref で持って useCallback の依存を安定化
+  const cursorRef = useRef<string | undefined>(undefined);
 
-  const loadPosts = useCallback(async () => {
-    if (!did) return;
-    setLoading(true);
-    try {
-      const agent = getAgent();
-      const res = await agent.getAuthorFeed({
-        actor: did,
-        limit: 50,
-        filter: "posts_no_replies",
-      });
-      const items: BskyPost[] = res.data.feed
-        .filter((item) => item.post.author.did === did)
-        .map((item) => {
-          const record = item.post.record as {
-            text?: string;
-            createdAt?: string;
-          };
-          const viewEmbed = item.post.embed as
-            | Record<string, unknown>
-            | undefined;
-          const imageUrls = extractImagesFromEmbed(viewEmbed);
-          const hasQuote =
-            viewEmbed?.$type === "app.bsky.embed.recordWithMedia#view" ||
-            viewEmbed?.$type === "app.bsky.embed.record#view";
-          return {
-            uri: item.post.uri,
-            text: record.text ?? "",
-            imageUrls,
-            hasQuote,
-            createdAt: record.createdAt ?? item.post.indexedAt,
-            selected: false,
-          };
+  const fetchPage = useCallback(
+    async (append: boolean): Promise<void> => {
+      if (!did) return;
+      if (append) setLoadingMore(true);
+      else setLoading(true);
+      try {
+        const agent = getAgent();
+        const res = await agent.getAuthorFeed({
+          actor: did,
+          limit: PAGE_SIZE,
+          filter: "posts_no_replies",
+          cursor: append ? cursorRef.current : undefined,
         });
-      setPosts(items);
-    } catch (e) {
-      console.error("Failed to load Bluesky posts:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [did]);
+        const items = (res.data.feed as unknown as FeedItem[])
+          .filter((item) => item.post.author.did === did)
+          .map(feedItemToPost);
+        setPosts((prev) => (append ? [...prev, ...items] : items));
+        cursorRef.current = res.data.cursor;
+        setHasMore(!!res.data.cursor);
+      } catch (e) {
+        console.error("Failed to load Bluesky posts:", e);
+      } finally {
+        if (append) setLoadingMore(false);
+        else setLoading(false);
+      }
+    },
+    [did],
+  );
 
   useEffect(() => {
-    loadPosts();
-  }, [loadPosts]);
+    cursorRef.current = undefined;
+    fetchPage(false);
+  }, [fetchPage]);
+
+  const loadMore = () => {
+    if (loadingMore || !hasMore) return;
+    fetchPage(true);
+  };
 
   const toggleSelect = (uri: string) => {
     setPosts((prev) =>
@@ -188,6 +219,32 @@ export function BlueskyImportScreen({
           </button>
         ))}
       </div>
+
+      {!loading && posts.length > 0 && hasMore && (
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-white/80 transition hover:bg-white/10 disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {loadingMore ? (
+              <>
+                <span className="size-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+                読み込み中...
+              </>
+            ) : (
+              "もっと読み込む"
+            )}
+          </button>
+        </div>
+      )}
+
+      {!loading && posts.length > 0 && !hasMore && (
+        <p className="mt-4 text-center text-xs text-white/30">
+          これ以上の投稿はありません
+        </p>
+      )}
 
       <div className="mt-6 rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
         <p className="flex items-center gap-2 text-xs text-white/40">
