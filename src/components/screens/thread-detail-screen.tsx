@@ -268,19 +268,20 @@ function DateBadge({ date }: { date: string }) {
     <div
       role="img"
       aria-label={valid ? `${month}月${day}日` : ""}
-      className="relative h-7 w-14 shrink-0 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-lg shadow-indigo-900/40 ring-1 ring-white/15"
+      className="relative h-5 w-10 shrink-0 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-lg shadow-indigo-900/40 ring-1 ring-white/15 sm:h-7 sm:w-14"
     >
       {/* 数字 (左: 月, 右: 日) 。pill の 1/4 / 3/4 の位置で中央合わせ。
           tabular-nums で 1 桁と 2 桁が混ざっても揃える。 */}
-      <span className="absolute left-1/4 top-1/2 -translate-x-1/2 -translate-y-1/2 font-mono text-sm font-bold leading-none tabular-nums text-white">
+      <span className="absolute left-1/4 top-1/2 -translate-x-1/2 -translate-y-1/2 font-mono text-[10px] font-bold leading-none tabular-nums text-white sm:text-sm">
         {month}
       </span>
-      <span className="absolute left-3/4 top-1/2 -translate-x-1/2 -translate-y-1/2 font-mono text-sm font-bold leading-none tabular-nums text-white">
+      <span className="absolute left-3/4 top-1/2 -translate-x-1/2 -translate-y-1/2 font-mono text-[10px] font-bold leading-none tabular-nums text-white sm:text-sm">
         {day}
       </span>
       {/* 斜め分割線 (/ 方向)。数字に被らないよう中央 (x=23〜33) にコンパクトに配置。 */}
       <svg
         viewBox="0 0 56 28"
+        preserveAspectRatio="none"
         className="pointer-events-none absolute inset-0 h-full w-full"
         aria-hidden
       >
@@ -291,6 +292,7 @@ function DateBadge({ date }: { date: string }) {
           y2="4"
           strokeWidth="1.5"
           strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
           className="stroke-white/75"
         />
       </svg>
@@ -549,14 +551,14 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
         {/* Author: 画像とグラデーションに重なる位置 */}
         <div className="absolute inset-x-0 bottom-0">
-          <div className="mx-auto max-w-3xl px-5 pb-3">
+          <div className="mx-auto max-w-3xl px-4 pb-3 sm:px-5">
             <AuthorRow did={threadDid} navigate={navigate} floating />
           </div>
         </div>
       </div>
 
       {/* ===== 情報ブロック (タイトル / 説明) ===== */}
-      <div className="mx-auto max-w-3xl px-5 pt-5 pb-8">
+      <div className="mx-auto max-w-3xl px-4 pt-5 pb-8 sm:px-5">
         <div className="mb-3 flex items-center gap-2">
           <span
             className={`rounded-full px-3 py-0.5 text-[11px] font-bold ${
@@ -664,7 +666,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       </div>
 
       {/* Timeline */}
-      <div className="mx-auto max-w-3xl px-5 pt-10 pb-28">
+      <div className="mx-auto max-w-3xl px-4 pt-10 pb-28 sm:px-5">
         {posts.length === 0 && (
           <div className="py-16 text-center">
             <p className="text-white/30">まだチェックポイントがありません</p>
@@ -674,12 +676,12 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         {groupPostsByDay(posts).map((group) => (
           <div key={group.key} className="relative">
             {/* 縦線: その日のブロック全体を貫く。pill の中央 (x=28) を通る。 */}
-            <div className="absolute bottom-0 left-7 top-0 w-px -translate-x-1/2 bg-gradient-to-b from-indigo-500/40 to-violet-500/40" />
+            <div className="absolute bottom-0 left-6 top-0 w-px -translate-x-1/2 bg-gradient-to-b from-indigo-500/40 to-violet-500/40 sm:left-7" />
             {/* 日付バッジ: その日のブロック内で sticky。先頭 post の日付を表示し、
                 同日の後続 post をスクロール中もヘッダー直下 (80px + 16px) に残る。
                 h-0 ラッパー + absolute 子で後続レイアウトに影響を出さない。 */}
             <div className="sticky top-24 z-10 h-0">
-              <div className="absolute left-7 top-0 -translate-x-1/2">
+              <div className="absolute left-6 top-0 -translate-x-1/2 sm:left-7">
                 <DateBadge date={group.posts[0].checkpointAt} />
               </div>
             </div>
@@ -689,9 +691,9 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 {/* 2 件目以降は従来どおり小さな○。先頭 post の位置は DateBadge に
                     重なるので ○ は描画しない。 */}
                 {i > 0 && (
-                  <div className="absolute left-7 top-1 size-3 -translate-x-1/2 rounded-full border-2 border-indigo-400 bg-surface-950" />
+                  <div className="absolute left-6 top-1 size-3 -translate-x-1/2 rounded-full border-2 border-indigo-400 bg-surface-950 sm:left-7" />
                 )}
-                <div className="pb-10 pl-16">
+                <div className="pb-10 pl-14 sm:pl-16">
               <div className="mb-3 flex min-h-5 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 <span className="font-mono font-bold text-indigo-400">{formatTimeOnly(cp.checkpointAt)}</span>
                 {cp.location && (
@@ -762,7 +764,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         ))}
 
         {posts.length > 0 && (
-          <div className="flex items-center gap-3 pl-16">
+          <div className="flex items-center gap-3 pl-14 sm:pl-16">
             <div className="h-px flex-1 bg-gradient-to-r from-indigo-500/30 to-transparent" />
             <span className="text-xs text-white/30">{posts.length} チェックポイント</span>
           </div>
