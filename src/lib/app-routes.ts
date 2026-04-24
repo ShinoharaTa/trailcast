@@ -15,8 +15,27 @@ export interface Route {
   params: ScreenParams;
 }
 
+// DID (`did:plc:xxx`) や rkey は RFC 3986 の pchar で許容される文字
+// (英数字 / `.` `-` `_` `~` `!` `$` `&` `'` `(` `)` `*` `+` `,` `;` `=` `:` `@`)
+// しか含まないため、URL パスセグメントとして安全。
+// あえて `:` を `%3A` にエンコードすると Cloudflare Pages の _redirects が
+// percent-encoded path を取りこぼし 404.html を返してしまうため、
+// パス用エンコードからは `:` (と一部の sub-delims) を除外する。
 function enc(s: string): string {
-  return encodeURIComponent(s);
+  return encodeURIComponent(s)
+    .replace(/%3A/gi, ":")
+    .replace(/%40/gi, "@")
+    .replace(/%21/gi, "!")
+    .replace(/%24/gi, "$")
+    .replace(/%26/gi, "&")
+    .replace(/%27/gi, "'")
+    .replace(/%28/gi, "(")
+    .replace(/%29/gi, ")")
+    .replace(/%2A/gi, "*")
+    .replace(/%2B/gi, "+")
+    .replace(/%2C/gi, ",")
+    .replace(/%3B/gi, ";")
+    .replace(/%3D/gi, "=");
 }
 
 function dec(s: string): string {
