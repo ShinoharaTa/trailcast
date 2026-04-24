@@ -24,6 +24,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { useBlobUrl, usePdsUrl } from "@/components/ui/blob-image";
 import { extractBlobCid, buildBlobUrl } from "@/lib/pds/blob-url";
+import { getProfile, type ProfileView } from "@/lib/pds/identity";
+import { getUserProfileHref } from "@/lib/app-routes";
 import { ShareScreen } from "@/components/screens/share-screen";
 import { CheckpointPostScreen } from "@/components/screens/checkpoint-post-screen";
 import { CheckpointEditScreen } from "@/components/screens/checkpoint-edit-screen";
@@ -87,6 +89,119 @@ function PostImages({
   );
 }
 
+function isModifiedClick(e: React.MouseEvent): boolean {
+  return (
+    e.defaultPrevented ||
+    e.button !== 0 ||
+    e.metaKey ||
+    e.ctrlKey ||
+    e.shiftKey ||
+    e.altKey
+  );
+}
+
+function shortenDid(did: string): string {
+  if (!did.startsWith("did:")) return did;
+  return did.length > 24 ? `${did.slice(0, 12)}…${did.slice(-8)}` : did;
+}
+
+/**
+ * スレッド著者 (DID) のアバター/表示名/handle を表示し、プロフィール画面へ遷移する行。
+ * 公開 AppView (getProfile) から取得するため未ログインでも表示される。
+ */
+function AuthorRow({
+  did,
+  navigate,
+  floating = false,
+}: {
+  did: string;
+  navigate: NavigationProps["navigate"];
+  /** true の場合は画像の上に重ねる用のスタイル (背景/シャドウを少し強める) */
+  floating?: boolean;
+}) {
+  const [profile, setProfile] = useState<ProfileView | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getProfile(did)
+      .then((p) => {
+        if (!cancelled) setProfile(p);
+      })
+      .catch(() => {
+        // 未登録 DID 等は静かにフォールバック
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [did]);
+
+  const identifier = profile?.handle ?? did;
+  const displayName =
+    profile?.displayName?.trim() || profile?.handle || shortenDid(did);
+  const handleLabel = profile?.handle ?? shortenDid(did);
+
+  const containerClass = floating
+    ? "inline-flex max-w-full items-center gap-3.5 rounded-full py-1 pr-1 text-white transition hover:opacity-90 [text-shadow:0_1px_4px_rgba(0,0,0,0.8)]"
+    : "mt-6 inline-flex max-w-full items-center gap-3 rounded-full bg-white/5 p-1.5 pr-4 transition hover:bg-white/10";
+
+  const avatarSizeClass = floating ? "size-[52px]" : "size-10";
+  const avatarInitialClass = floating ? "text-base" : "text-sm";
+  const nameClass = floating ? "text-lg" : "text-sm";
+  const handleClass = floating ? "text-sm" : "text-xs";
+
+  return (
+    <a
+      href={getUserProfileHref(identifier)}
+      onClick={(e) => {
+        if (isModifiedClick(e)) return;
+        e.preventDefault();
+        navigate("user-profile", { userIdentifier: identifier });
+      }}
+      className={`group ${containerClass}`}
+    >
+      <div
+        className={`${avatarSizeClass} shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-indigo-500/30 to-violet-500/30 ${
+          floating
+            ? "ring-2 ring-surface-950/70 shadow-lg shadow-black/40"
+            : "ring-1 ring-white/10"
+        }`}
+      >
+        {profile?.avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={profile.avatar}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div
+            className={`flex h-full items-center justify-center font-bold text-white/80 ${avatarInitialClass}`}
+          >
+            {displayName.charAt(0).toUpperCase()}
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 leading-tight">
+        <div
+          className={`truncate font-semibold ${nameClass} ${
+            floating ? "text-white" : "text-white group-hover:text-white"
+          }`}
+        >
+          {displayName}
+        </div>
+        <div
+          className={`truncate ${handleClass} ${
+            floating ? "text-white/75" : "text-white/40"
+          }`}
+        >
+          @{handleLabel}
+        </div>
+      </div>
+    </a>
+  );
+}
+
 function formatTime(dt: string): string {
   try {
     const d = new Date(dt);
@@ -129,8 +244,10 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
   useEffect(() => {
     const compute = () => {
       const h = heroRef.current?.offsetHeight ?? 0;
-      const start = h * 0.4;
-      const end = Math.max(start + 1, h - HEADER_HEIGHT);
+      // 3:1 のカバー画像はモバイルで ~125px と低くなるため、
+      // スティッキーヘッダーが瞬時に切り替わらないよう遷移距離の下限を確保する。
+      const end = Math.max(140, h - HEADER_HEIGHT);
+      const start = end * 0.3;
       const y = window.scrollY;
       const p = Math.max(0, Math.min(1, (y - start) / (end - start)));
       setProgress(p);
@@ -317,75 +434,77 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
         onCancel={() => setConfirmTarget(null)}
       />
 
-      {/* Hero */}
-      <div ref={heroRef} className="relative h-[55vh] min-h-[360px] overflow-hidden">
+      {/* ===== Hero カバー画像 =====
+          カバー画像は 3:1 でアップロードされるため、アスペクト比はそのまま維持しつつ
+          max-h で上限を設ける。Author (アバター+名前+handle) は画像下端のグラデーションに
+          重ねて配置し、タイトル/説明はその下の情報ブロックに置く。 */}
+      <div
+        ref={heroRef}
+        className="relative aspect-[3/1] max-h-[380px] w-full overflow-hidden"
+      >
         {coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={coverUrl}
             alt={thread.title}
-            className="h-full w-full object-cover will-change-transform"
-            style={{
-              transform: `scale(${1 - progress * 0.22})`,
-              transformOrigin: "center center",
-              opacity: 1 - progress,
-            }}
+            className="h-full w-full object-cover"
           />
         ) : (
-          <div
-            className="flex h-full items-center justify-center bg-gradient-to-br from-indigo-600/30 to-violet-600/30"
-            style={{
-              transform: `scale(${1 - progress * 0.22})`,
-              transformOrigin: "center center",
-              opacity: 1 - progress,
-            }}
-          >
-            <span className="text-8xl font-bold text-white/10">{thread.title.charAt(0)}</span>
+          <div className="flex h-full items-center justify-center bg-gradient-to-br from-indigo-600/30 to-violet-600/30">
+            <span className="text-7xl font-bold text-white/10">
+              {thread.title.charAt(0)}
+            </span>
           </div>
         )}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/50 to-surface-950/20" />
-        <div className="absolute inset-x-0 bottom-0 mx-auto max-w-3xl px-5 pb-8">
-          {/* バッジ行 (ヒーローでのみ表示) */}
-          <div
-            className="mb-3 flex items-center gap-2"
-            style={{
-              opacity: Math.max(0, 1 - progress * 1.4),
-              transform: `translate3d(0, ${progress * -8}px, 0)`,
-            }}
-          >
-            <span className={`rounded-full px-3 py-0.5 text-[11px] font-bold backdrop-blur-sm ${thread.visibility === "public" ? "bg-emerald-500/20 text-emerald-400" : "bg-white/10 text-white/60"}`}>
-              {thread.visibility === "public" ? "Public" : "Private"}
-            </span>
-            <span className="text-xs text-white/40">{formatTime(thread.createdAt)}</span>
+
+        {/* 下端のグラデーション: Author を読みやすくするためやや濃いめにする */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/60 via-30% to-transparent" />
+
+        {/* Author: 画像とグラデーションに重なる位置 */}
+        <div className="absolute inset-x-0 bottom-0">
+          <div className="mx-auto max-w-3xl px-5 pb-3">
+            <AuthorRow did={threadDid} navigate={navigate} floating />
           </div>
-          <h1
-            className="text-3xl font-bold tracking-tight text-white sm:text-4xl"
-            style={{ opacity: Math.max(0, 1 - progress * 1.2) }}
-          >
-            {thread.title}
-          </h1>
-          {thread.description && (
-            <p
-              className="mt-3 max-w-xl text-base leading-relaxed text-white/60"
-              style={{ opacity: Math.max(0, 1 - progress * 1.6) }}
-            >
-              {thread.description}
-            </p>
-          )}
-          {!isAuthenticated && (
-            <div
-              className="mt-6"
-              style={{ opacity: Math.max(0, 1 - progress * 1.6) }}
-            >
-              <button
-                onClick={() => setLoginOpen(true)}
-                className="rounded-lg bg-indigo-500/20 px-3.5 py-2 text-xs font-medium text-indigo-300 backdrop-blur-sm transition hover:bg-indigo-500/30"
-              >
-                ログインして投稿する
-              </button>
-            </div>
-          )}
         </div>
+      </div>
+
+      {/* ===== 情報ブロック (タイトル / 説明) ===== */}
+      <div className="mx-auto max-w-3xl px-5 pt-5 pb-8">
+        <div className="mb-3 flex items-center gap-2">
+          <span
+            className={`rounded-full px-3 py-0.5 text-[11px] font-bold ${
+              thread.visibility === "public"
+                ? "bg-emerald-500/20 text-emerald-400"
+                : "bg-white/10 text-white/60"
+            }`}
+          >
+            {thread.visibility === "public" ? "Public" : "Private"}
+          </span>
+          <span className="text-xs text-white/40">
+            {formatTime(thread.createdAt)}
+          </span>
+        </div>
+
+        <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          {thread.title}
+        </h1>
+
+        {thread.description && (
+          <p className="mt-3 max-w-2xl whitespace-pre-wrap text-base leading-relaxed text-white/60">
+            {thread.description}
+          </p>
+        )}
+
+        {!isAuthenticated && (
+          <div className="mt-6">
+            <button
+              onClick={() => setLoginOpen(true)}
+              className="rounded-lg bg-indigo-500/15 px-3.5 py-2 text-xs font-medium text-indigo-300 transition hover:bg-indigo-500/25"
+            >
+              ログインして投稿する
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ===== 上部に固定表示するヘッダー =====
