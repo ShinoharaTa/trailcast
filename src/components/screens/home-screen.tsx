@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { NavigationProps } from "@/lib/use-navigation";
-import { getThreadDetailHref } from "@/lib/app-routes";
+import { getThreadDetailHref, getUserProfileHref } from "@/lib/app-routes";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import type { ThreadWithMeta, BookmarkWithMeta, ThreadRecord } from "@/lib/types";
 import { parseAtUri } from "@/lib/types";
@@ -100,9 +100,21 @@ export function HomeScreen({ navigate }: NavigationProps) {
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-white">Dashboard</h2>
-          <p className="mt-1 text-sm text-white/40">
-            {handle ? `@${handle}` : "あなたの旅の記録"}
-          </p>
+          {handle ? (
+            <a
+              href={getUserProfileHref(handle)}
+              onClick={(e) => {
+                if (isModifiedClick(e)) return;
+                e.preventDefault();
+                navigate("user-profile", { userIdentifier: handle });
+              }}
+              className="mt-1 inline-block text-sm text-white/40 transition hover:text-white/70"
+            >
+              @{handle}
+            </a>
+          ) : (
+            <p className="mt-1 text-sm text-white/40">あなたの旅の記録</p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <button

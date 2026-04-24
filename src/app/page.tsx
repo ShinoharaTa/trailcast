@@ -5,6 +5,7 @@ import { LoginScreen } from "@/components/screens/login-screen";
 import { HomeScreen } from "@/components/screens/home-screen";
 import { ThreadCreateScreen } from "@/components/screens/thread-create-screen";
 import { ThreadDetailScreen } from "@/components/screens/thread-detail-screen";
+import { UserProfileScreen } from "@/components/screens/user-profile-screen";
 import type { ScreenId } from "@/lib/app-routes";
 import { useNavigation } from "@/lib/use-navigation";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -58,6 +59,7 @@ export default function Page() {
       {currentScreen === "home" && <HomeScreen {...nav} />}
       {currentScreen === "thread-create" && <ThreadCreateScreen {...nav} />}
       {currentScreen === "thread-detail" && <ThreadDetailScreen {...nav} />}
+      {currentScreen === "user-profile" && <UserProfileScreen {...nav} />}
     </main>
   );
 }

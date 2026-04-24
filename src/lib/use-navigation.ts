@@ -42,7 +42,7 @@ export function useNavigation() {
   const [route, setRoute] = useState<Route>({ screen: "home", params: {} });
   // SPA 内で push した深さ。history.back() で戻れる範囲の目安。
   // window.history.length はタブ全体の履歴を含むので、外部から直接
-  // /thread/... に来た場合に back() でアプリ外へ出てしまう。
+  // 深い URL に来た場合に back() でアプリ外へ出てしまう。
   const spaDepthRef = useRef(0);
 
   useEffect(() => {

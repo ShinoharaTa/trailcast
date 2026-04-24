@@ -46,7 +46,7 @@ export function ThreadCreateScreen({ navigate, goBack }: NavigationProps) {
         coverImage,
         createdAt: new Date().toISOString(),
       });
-      // 作成後に戻る操作で "/thread/new" に戻らないよう replace
+      // 作成後に戻る操作で "/new" に戻らないよう replace
       navigate("thread-detail", { threadUri: thread.uri }, { replace: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "作成に失敗しました");

@@ -4,10 +4,12 @@ export type ScreenId =
   | "login"
   | "home"
   | "thread-create"
-  | "thread-detail";
+  | "thread-detail"
+  | "user-profile";
 
 export interface ScreenParams {
   threadUri?: string;
+  userIdentifier?: string; // DID (did:...) または handle (例: foo.bsky.social)
 }
 
 export interface Route {
@@ -28,8 +30,40 @@ function dec(s: string): string {
 }
 
 /**
+ * URL パスの最上位セグメントとして使う予約ワード。
+ * これらにマッチした場合はユーザー識別子としては扱わない。
+ * 既存の Bluesky handle は FQDN 形式 (必ず `.` を含む) / DID は `did:` で始まるため、
+ * ここに列挙する単語と衝突しない。
+ */
+const RESERVED_TOP_SEGMENTS: ReadonlySet<string> = new Set([
+  "login",
+  "new",
+]);
+
+/**
+ * パス 1 段目の文字列がユーザー識別子 (DID or handle) として解釈できるか。
+ * - `did:` プレフィックスを持つ
+ * - もしくは `.` を含む FQDN 形式 (handle)
+ * 予約セグメントは除外。
+ */
+function isUserIdentifier(seg: string): boolean {
+  if (!seg) return false;
+  if (RESERVED_TOP_SEGMENTS.has(seg)) return false;
+  if (seg.startsWith("did:")) return true;
+  if (seg.includes(".")) return true;
+  return false;
+}
+
+/**
  * 画面とパラメータから、先頭 / のパスを返す。
- * home は "/"、必要な threadUri が無ければ home に落とす。
+ *
+ * ルート構造:
+ *   - /                    : home
+ *   - /login               : login
+ *   - /new                 : thread-create
+ *   - /{did|handle}        : user-profile
+ *   - /{did|handle}/{rkey} : thread-detail
+ *
  * 共有・チェックポイント作成などのアクションはモーダルで扱い、独自パスを持たない。
  */
 export function screenToPathname(
@@ -42,11 +76,15 @@ export function screenToPathname(
     case "login":
       return "/login";
     case "thread-create":
-      return "/thread/new";
+      return "/new";
     case "thread-detail": {
       if (!params.threadUri) return "/";
       const { repo, rkey } = parseAtUri(params.threadUri);
-      return `/thread/${enc(repo)}/${enc(rkey)}`;
+      return `/${enc(repo)}/${enc(rkey)}`;
+    }
+    case "user-profile": {
+      if (!params.userIdentifier) return "/";
+      return `/${enc(params.userIdentifier)}`;
     }
     default:
       return "/";
@@ -62,22 +100,24 @@ export function parsePathname(pathname: string): Route {
   if (parts.length === 0) {
     return { screen: "home", params: {} };
   }
-  if (parts.length === 1 && parts[0] === "login") {
-    return { screen: "login", params: {} };
-  }
-  if (parts[0] !== "thread") {
+
+  // 予約トップ: /login, /new
+  if (parts.length === 1) {
+    if (parts[0] === "login") return { screen: "login", params: {} };
+    if (parts[0] === "new") return { screen: "thread-create", params: {} };
+    if (isUserIdentifier(parts[0])) {
+      return {
+        screen: "user-profile",
+        params: { userIdentifier: parts[0] },
+      };
+    }
     return { screen: "home", params: {} };
   }
 
-  // /thread/new
-  if (parts.length === 2 && parts[1] === "new") {
-    return { screen: "thread-create", params: {} };
-  }
-
-  // /thread/:repo/:rkey (それ以上のサブパスが付いていても thread-detail として扱う)
-  if (parts.length >= 3) {
-    const repo = parts[1];
-    const rkey = parts[2];
+  // /{did|handle}/{rkey} (それ以上のサブパスが付いていても thread-detail として扱う)
+  if (parts.length >= 2 && isUserIdentifier(parts[0])) {
+    const repo = parts[0];
+    const rkey = parts[1];
     const threadUri = buildAtUri(repo, NSID_THREAD, rkey);
     return { screen: "thread-detail", params: { threadUri } };
   }
@@ -90,6 +130,13 @@ export function parsePathname(pathname: string): Route {
  */
 export function getThreadDetailHref(threadUri: string): string {
   return screenToPathname("thread-detail", { threadUri });
+}
+
+/**
+ * ユーザープロフィール用のルート相対リンク
+ */
+export function getUserProfileHref(userIdentifier: string): string {
+  return screenToPathname("user-profile", { userIdentifier });
 }
 
 /**
