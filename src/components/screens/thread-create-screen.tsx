@@ -2,13 +2,13 @@
 
 import { useRef, useState } from "react";
 import type { NavigationProps } from "@/lib/use-navigation";
-import { BackButton } from "@/components/ui/back-button";
+import { HomeLink } from "@/components/ui/home-link";
 import { PhotoIcon } from "@/components/ui/icons";
 import { createThread } from "@/lib/pds/threads";
 import { uploadImage } from "@/lib/pds/posts";
 import { processCoverImage } from "@/lib/image-processing";
 
-export function ThreadCreateScreen({ navigate, goBack }: NavigationProps) {
+export function ThreadCreateScreen({ navigate }: NavigationProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<"private" | "public">("private");
@@ -56,7 +56,9 @@ export function ThreadCreateScreen({ navigate, goBack }: NavigationProps) {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
-      <BackButton onClick={goBack} className="mb-6" />
+      <div className="mb-6">
+        <HomeLink navigate={navigate} className="-ml-2" />
+      </div>
       <div className="rounded-2xl bg-surface-800 p-6 shadow-lg sm:p-8">
         <h2 className="mb-6 text-xl font-bold text-white">
           新しいスレッドを作成

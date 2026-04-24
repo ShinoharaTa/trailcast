@@ -13,6 +13,7 @@ import {
   type ProfileView,
 } from "@/lib/pds/identity";
 import { BlobImage } from "@/components/ui/blob-image";
+import { HomeLink } from "@/components/ui/home-link";
 
 function isModifiedClick(e: React.MouseEvent): boolean {
   return (
@@ -91,6 +92,10 @@ export function UserProfileScreen({ navigate, params }: NavigationProps) {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="mb-6">
+        <HomeLink navigate={navigate} className="-ml-2" />
+      </div>
+
       {/* プロフィールヘッダ */}
       <header className="mb-10">
         {profile?.banner && (

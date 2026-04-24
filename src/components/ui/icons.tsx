@@ -18,10 +18,29 @@ export function PlusIcon(props: IconProps) {
   );
 }
 
-export function ChevronLeftIcon(props: IconProps) {
+export function HomeIcon(props: IconProps) {
   return (
-    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} {...props}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+    </svg>
+  );
+}
+
+/** Trailcast のロゴグリフ (favicon と同じ、山/旗のモチーフ) */
+export function TrailcastMarkIcon(props: IconProps) {
+  return (
+    <svg
+      fill="none"
+      viewBox="0 0 80 80"
+      stroke="currentColor"
+      strokeWidth={7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M9 11l22 -6l18 6l22 -6v52l-22 6l-18 -6l-22 6z" />
+      <path d="M31 5v62" />
+      <path d="M49 11v62" />
     </svg>
   );
 }

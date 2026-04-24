@@ -16,7 +16,7 @@ const AUTH_REQUIRED_SCREENS: ReadonlySet<ScreenId> = new Set<ScreenId>([
 ]);
 
 export default function Page() {
-  const { currentScreen, params, navigate, goBack } = useNavigation();
+  const { currentScreen, params, navigate } = useNavigation();
   const { isAuthenticated, isLoading, restore } = useAuthStore();
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export default function Page() {
     );
   }
 
-  const nav = { navigate, goBack, params };
+  const nav = { navigate, params };
 
   // /login を直接叩いたときは常にログインフォーム
   if (currentScreen === "login") {

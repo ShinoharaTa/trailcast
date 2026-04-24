@@ -16,10 +16,10 @@ import {
   TrashIcon,
   RefreshIcon,
   LinkIcon,
-  ChevronLeftIcon,
   ShareIcon,
   PlusIcon,
 } from "@/components/ui/icons";
+import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { useBlobUrl, usePdsUrl } from "@/components/ui/blob-image";
@@ -216,7 +216,7 @@ function formatTime(dt: string): string {
   }
 }
 
-export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps) {
+export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const { did: myDid, isAuthenticated } = useAuthStore();
   const [thread, setThread] = useState<ThreadWithMeta | null>(null);
   const [posts, setPosts] = useState<PostWithMeta[]>([]);
@@ -402,7 +402,12 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4">
         <p className="text-white/40">スレッドが見つかりません</p>
-        <button onClick={goBack} className="text-sm text-indigo-400 hover:underline">戻る</button>
+        <button
+          onClick={() => navigate("home")}
+          className="text-sm text-indigo-400 hover:underline"
+        >
+          ホームに戻る
+        </button>
       </div>
     );
   }
@@ -521,18 +526,14 @@ export function ThreadDetailScreen({ navigate, goBack, params }: NavigationProps
 
         {/* コンテンツ行 */}
         <div className="pointer-events-auto relative mx-auto flex h-14 max-w-3xl items-center gap-2 px-3">
-          <button
-            onClick={goBack}
-            aria-label="戻る"
-            className="flex size-10 shrink-0 items-center justify-center rounded-full text-white transition hover:bg-white/10"
+          <HomeLink
+            navigate={navigate}
             style={{
               backgroundColor: `rgba(0,0,0,${0.35 * (1 - progress)})`,
               backdropFilter: progress < 0.95 ? "blur(6px)" : undefined,
               WebkitBackdropFilter: progress < 0.95 ? "blur(6px)" : undefined,
             }}
-          >
-            <ChevronLeftIcon className="size-5" />
-          </button>
+          />
 
           {/* 固定タイトル (スクロールで浮き出る) */}
           <h2
