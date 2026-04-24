@@ -29,6 +29,7 @@ import {
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
+import { Lightbox } from "@/components/ui/lightbox";
 import { useBlobUrl, usePdsUrl } from "@/components/ui/blob-image";
 import { extractBlobCid, buildBlobUrl } from "@/lib/pds/blob-url";
 import { getProfile, type ProfileView } from "@/lib/pds/identity";
@@ -63,9 +64,12 @@ function modalMaxWidth(kind: ModalKind): "lg" | "2xl" | "3xl" {
 function PostImages({
   post,
   pdsUrl,
+  onOpenLightbox,
 }: {
   post: PostWithMeta;
   pdsUrl: string | null;
+  /** 画像クリック時に同じ post の全画像を Lightbox へ渡す */
+  onOpenLightbox: (urls: string[], initialIndex: number) => void;
 }) {
   const urls: string[] = [];
   if (post.imageUrls && post.imageUrls.length > 0) {
@@ -80,17 +84,38 @@ function PostImages({
   if (urls.length === 0) return null;
   if (urls.length === 1) {
     return (
-      <div className="overflow-hidden rounded-2xl">
+      <button
+        type="button"
+        onClick={() => onOpenLightbox(urls, 0)}
+        className="block w-full overflow-hidden rounded-2xl"
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={urls[0]} alt="" className="aspect-[16/9] w-full object-cover" loading="lazy" />
-      </div>
+        <img
+          src={urls[0]}
+          alt=""
+          className="aspect-[16/9] w-full cursor-zoom-in object-cover transition hover:opacity-95"
+          loading="lazy"
+        />
+      </button>
     );
   }
   return (
     <div className={`grid gap-1.5 overflow-hidden rounded-2xl ${urls.length <= 2 ? "grid-cols-2" : "grid-cols-2"}`}>
       {urls.map((url, i) => (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img key={i} src={url} alt="" className="aspect-[4/3] w-full object-cover" loading="lazy" />
+        <button
+          key={i}
+          type="button"
+          onClick={() => onOpenLightbox(urls, i)}
+          className="block overflow-hidden"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={url}
+            alt=""
+            className="aspect-[4/3] w-full cursor-zoom-in object-cover transition hover:opacity-95"
+            loading="lazy"
+          />
+        </button>
       ))}
     </div>
   );
@@ -333,6 +358,14 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     undefined,
   );
   const [bookmarkBusy, setBookmarkBusy] = useState(false);
+
+  // Lightbox: クリックされた post の画像群と開始 index を保持
+  const [lightbox, setLightbox] = useState<
+    { urls: string[]; index: number } | null
+  >(null);
+  const openLightbox = useCallback((urls: string[], index: number) => {
+    setLightbox({ urls, index });
+  }, []);
 
   // ヘッダーのスクロール連動（0 = ヒーロー全表示、1 = コンパクトヘッダー）
   const HEADER_HEIGHT = 80;
@@ -864,7 +897,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               {(cp.imageUrls && cp.imageUrls.length > 0) ||
               (cp.images && cp.images.length > 0) ? (
                 <>
-                  <PostImages post={cp} pdsUrl={pdsUrl} />
+                  <PostImages post={cp} pdsUrl={pdsUrl} onOpenLightbox={openLightbox} />
                   {cp.text && (
                     <p className="mt-4 text-xs leading-relaxed text-white/70">{cp.text}</p>
                   )}
@@ -958,6 +991,15 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             </button>
           </div>
         </>
+      )}
+
+      {/* Lightbox (画像クリック時の拡大表示) */}
+      {lightbox && (
+        <Lightbox
+          images={lightbox.urls}
+          initialIndex={lightbox.index}
+          onClose={() => setLightbox(null)}
+        />
       )}
 
       {/* Modals */}
