@@ -1,3 +1,4 @@
-# Cloudflare Pages: アプリ内の SPA ルートは index.html にフォールバック
-/thread/*  /index.html  200
-/login     /index.html  200
+# Cloudflare Pages SPA fallback
+# 静的アセット (/_next/*, /favicon.svg, /og-image.svg など) は
+# _redirects より先に配信されるため、全パスを index.html に戻して問題ない。
+/*  /index.html  200
