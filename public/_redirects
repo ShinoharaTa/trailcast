@@ -1,4 +1,3 @@
-# Cloudflare Pages SPA fallback
-# 静的アセット (/_next/*, /favicon.svg, /og-image.svg など) は
-# _redirects より先に配信されるため、全パスを index.html に戻して問題ない。
-/*  /index.html  200
+# SPA フォールバックは functions/_middleware.ts で行う。
+# Cloudflare Pages の _redirects パーサーは `/* /index.html 200` を
+# 「無限ループ」と判定して破棄してしまうため、ここではルールを定義しない。
