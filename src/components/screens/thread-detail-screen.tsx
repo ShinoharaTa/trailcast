@@ -6,9 +6,10 @@ import type {
   ThreadWithMeta,
   PostWithMeta,
 } from "@/lib/types";
-import { parseAtUri } from "@/lib/types";
+import { parseAtUri, buildAtUri, NSID_THREAD } from "@/lib/types";
 import { getThread, deleteThread, listPostsForThread } from "@/lib/pds/threads";
 import { deletePost, refreshFromSource } from "@/lib/pds/posts";
+import { resolveIdentifier } from "@/lib/pds/identity";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import {
   PinIcon,
@@ -354,16 +355,54 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     };
   }, [thread]);
 
-  const threadUri = params.threadUri ?? "";
+  const rawThreadUri = params.threadUri ?? "";
+
+  // URL から渡される threadUri は `/{did|handle}/{rkey}` 由来のため、
+  // repo 部分が handle の場合がある。post レコードの `thread` フィールドは
+  // 作成者の DID で保存されているため、文字列比較でマッチさせるには
+  // handle を DID に解決して正規化した URI を使う必要がある。
+  // 画像の blob URL 解決 (useBlobUrl/usePdsUrl) も DID 前提のため同様。
+  const [canonicalUri, setCanonicalUri] = useState<string | null>(() => {
+    if (!rawThreadUri) return null;
+    const { repo } = parseAtUri(rawThreadUri);
+    return repo.startsWith("did:") ? rawThreadUri : null;
+  });
+
+  useEffect(() => {
+    if (!rawThreadUri) {
+      setCanonicalUri(null);
+      return;
+    }
+    const { repo, rkey } = parseAtUri(rawThreadUri);
+    if (repo.startsWith("did:")) {
+      setCanonicalUri(rawThreadUri);
+      return;
+    }
+    let cancelled = false;
+    resolveIdentifier(repo)
+      .then((did) => {
+        if (!cancelled) setCanonicalUri(buildAtUri(did, NSID_THREAD, rkey));
+      })
+      .catch((e) => {
+        console.error("Failed to resolve handle:", e);
+        if (!cancelled) {
+          setCanonicalUri(null);
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rawThreadUri]);
 
   const load = useCallback(async () => {
-    if (!threadUri) return;
+    if (!canonicalUri) return;
     setLoading(true);
     try {
-      const { repo, rkey } = parseAtUri(threadUri);
+      const { repo, rkey } = parseAtUri(canonicalUri);
       const [t, p] = await Promise.all([
         getThread(repo, rkey),
-        listPostsForThread(threadUri),
+        listPostsForThread(canonicalUri),
       ]);
       setThread(t);
       setPosts(p);
@@ -372,23 +411,23 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     } finally {
       setLoading(false);
     }
-  }, [threadUri]);
+  }, [canonicalUri]);
 
   // スピナーを出さずにバックグラウンドで再取得
   const refresh = useCallback(async () => {
-    if (!threadUri) return;
+    if (!canonicalUri) return;
     try {
-      const { repo, rkey } = parseAtUri(threadUri);
+      const { repo, rkey } = parseAtUri(canonicalUri);
       const [t, p] = await Promise.all([
         getThread(repo, rkey),
-        listPostsForThread(threadUri),
+        listPostsForThread(canonicalUri),
       ]);
       setThread(t);
       setPosts(p);
     } catch (e) {
       console.error("Failed to refresh thread:", e);
     }
-  }, [threadUri]);
+  }, [canonicalUri]);
 
   useEffect(() => {
     load();
@@ -846,10 +885,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       {/* Modals */}
       {modal && (
         <Modal open onClose={closeModal} maxWidth={modalMaxWidth(modal)}>
-          {modal === "share" && <ShareScreen threadUri={threadUri} />}
+          {modal === "share" && <ShareScreen threadUri={thread.uri} />}
           {modal === "checkpoint-post" && (
             <CheckpointPostScreen
-              threadUri={threadUri}
+              threadUri={thread.uri}
               onSubmitted={onModalSubmitted}
             />
           )}
@@ -862,7 +901,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           )}
           {modal === "bsky-import" && (
             <BlueskyImportScreen
-              threadUri={threadUri}
+              threadUri={thread.uri}
               onSubmitted={onModalSubmitted}
             />
           )}
