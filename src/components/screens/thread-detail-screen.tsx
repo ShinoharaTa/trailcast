@@ -202,10 +202,47 @@ function AuthorRow({
   );
 }
 
-function formatTime(dt: string): string {
+function formatTimeOnly(dt: string): string {
+  try {
+    const d = new Date(dt);
+    return d.toLocaleTimeString("ja-JP", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return dt;
+  }
+}
+
+/**
+ * 連続する同日 post をグループ化する。同じ日の先頭 post だけ DateBadge を出す
+ * ための前処理。posts の並び順はそのまま維持する (並び替えはしない)。
+ */
+function groupPostsByDay<T extends { checkpointAt: string }>(
+  posts: T[],
+): Array<{ key: string; posts: T[] }> {
+  const groups: Array<{ key: string; posts: T[] }> = [];
+  for (const post of posts) {
+    const d = new Date(post.checkpointAt);
+    const key = Number.isNaN(d.getTime())
+      ? `invalid-${groups.length}`
+      : d.toDateString();
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.posts.push(post);
+    } else {
+      groups.push({ key, posts: [post] });
+    }
+  }
+  return groups;
+}
+
+/** Thread 情報部の作成日時用 (チェックポイント行とは別、日付も含めて表示) */
+function formatDateTime(dt: string): string {
   try {
     const d = new Date(dt);
     return d.toLocaleString("ja-JP", {
+      year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -214,6 +251,51 @@ function formatTime(dt: string): string {
   } catch {
     return dt;
   }
+}
+
+/**
+ * 日付を塗りつぶしの「長丸 (pill)」に入れて表示するバッジ。
+ * 中央を斜めの線 (/) で分割し、左に月、右に日を配置する。
+ * pill 形状にしたことで○の時より数字を大きく表示できる (text-sm bold)。
+ */
+function DateBadge({ date }: { date: string }) {
+  const d = new Date(date);
+  const valid = !Number.isNaN(d.getTime());
+  const month = valid ? String(d.getMonth() + 1) : "";
+  const day = valid ? String(d.getDate()) : "";
+
+  return (
+    <div
+      role="img"
+      aria-label={valid ? `${month}月${day}日` : ""}
+      className="relative h-7 w-14 shrink-0 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 shadow-lg shadow-indigo-900/40 ring-1 ring-white/15"
+    >
+      {/* 数字 (左: 月, 右: 日) 。pill の 1/4 / 3/4 の位置で中央合わせ。
+          tabular-nums で 1 桁と 2 桁が混ざっても揃える。 */}
+      <span className="absolute left-1/4 top-1/2 -translate-x-1/2 -translate-y-1/2 font-mono text-sm font-bold leading-none tabular-nums text-white">
+        {month}
+      </span>
+      <span className="absolute left-3/4 top-1/2 -translate-x-1/2 -translate-y-1/2 font-mono text-sm font-bold leading-none tabular-nums text-white">
+        {day}
+      </span>
+      {/* 斜め分割線 (/ 方向)。数字に被らないよう中央 (x=23〜33) にコンパクトに配置。 */}
+      <svg
+        viewBox="0 0 56 28"
+        className="pointer-events-none absolute inset-0 h-full w-full"
+        aria-hidden
+      >
+        <line
+          x1="23"
+          y1="24"
+          x2="33"
+          y2="4"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          className="stroke-white/75"
+        />
+      </svg>
+    </div>
+  );
 }
 
 export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
@@ -486,7 +568,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             {thread.visibility === "public" ? "Public" : "Private"}
           </span>
           <span className="text-xs text-white/40">
-            {formatTime(thread.createdAt)}
+            {formatDateTime(thread.createdAt)}
           </span>
         </div>
 
@@ -589,13 +671,29 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           </div>
         )}
 
-        {posts.map((cp) => (
-          <div key={cp.uri} className="group relative">
-            <div className="absolute bottom-0 left-5 top-0 w-px bg-gradient-to-b from-indigo-500/40 to-violet-500/40 sm:left-6" />
-            <div className="absolute left-[14px] top-3 size-3 rounded-full border-2 border-indigo-400 bg-surface-950 sm:left-[18px]" />
-            <div className="pb-10 pl-12 sm:pl-16">
-              <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                <span className="font-mono font-bold text-indigo-400">{formatTime(cp.checkpointAt)}</span>
+        {groupPostsByDay(posts).map((group) => (
+          <div key={group.key} className="relative">
+            {/* 縦線: その日のブロック全体を貫く。pill の中央 (x=28) を通る。 */}
+            <div className="absolute bottom-0 left-7 top-0 w-px -translate-x-1/2 bg-gradient-to-b from-indigo-500/40 to-violet-500/40" />
+            {/* 日付バッジ: その日のブロック内で sticky。先頭 post の日付を表示し、
+                同日の後続 post をスクロール中もヘッダー直下 (80px + 16px) に残る。
+                h-0 ラッパー + absolute 子で後続レイアウトに影響を出さない。 */}
+            <div className="sticky top-24 z-10 h-0">
+              <div className="absolute left-7 top-0 -translate-x-1/2">
+                <DateBadge date={group.posts[0].checkpointAt} />
+              </div>
+            </div>
+
+            {group.posts.map((cp, i) => (
+              <div key={cp.uri} className="group relative">
+                {/* 2 件目以降は従来どおり小さな○。先頭 post の位置は DateBadge に
+                    重なるので ○ は描画しない。 */}
+                {i > 0 && (
+                  <div className="absolute left-7 top-1 size-3 -translate-x-1/2 rounded-full border-2 border-indigo-400 bg-surface-950" />
+                )}
+                <div className="pb-10 pl-16">
+              <div className="mb-3 flex min-h-5 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className="font-mono font-bold text-indigo-400">{formatTimeOnly(cp.checkpointAt)}</span>
                 {cp.location && (
                   <span className="flex items-center gap-1 text-white/40">
                     <PinIcon className="size-3" />
@@ -649,20 +747,22 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 <>
                   <PostImages post={cp} pdsUrl={pdsUrl} />
                   {cp.text && (
-                    <p className="mt-4 text-base leading-relaxed text-white/70">{cp.text}</p>
+                    <p className="mt-4 text-xs leading-relaxed text-white/70">{cp.text}</p>
                   )}
                 </>
               ) : cp.text ? (
                 <div className="rounded-2xl border border-white/5 bg-gradient-to-br from-white/[0.04] to-white/[0.01] p-5">
-                  <p className="text-lg leading-relaxed text-white/80">{cp.text}</p>
+                  <p className="text-sm leading-relaxed text-white/80">{cp.text}</p>
                 </div>
               ) : null}
-            </div>
+                </div>
+              </div>
+            ))}
           </div>
         ))}
 
         {posts.length > 0 && (
-          <div className="flex items-center gap-3 pl-12 sm:pl-16">
+          <div className="flex items-center gap-3 pl-16">
             <div className="h-px flex-1 bg-gradient-to-r from-indigo-500/30 to-transparent" />
             <span className="text-xs text-white/30">{posts.length} チェックポイント</span>
           </div>
