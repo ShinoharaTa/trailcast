@@ -54,3 +54,15 @@ export async function deleteBookmark(rkey: string): Promise<void> {
     rkey,
   });
 }
+
+/**
+ * 自分の bookmark 一覧から、指定 subject (= thread at-uri) を持つ
+ * ブックマーク 1 件を探して返す。未登録なら null。
+ * 作成済みかどうかの判定とトグル (削除) のために rkey が必要。
+ */
+export async function findBookmarkBySubject(
+  subject: string,
+): Promise<BookmarkWithMeta | null> {
+  const bms = await listBookmarks();
+  return bms.find((b) => b.subject === subject) ?? null;
+}

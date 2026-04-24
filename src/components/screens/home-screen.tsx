@@ -12,6 +12,7 @@ import { getAgent } from "@/lib/atp-agent";
 import { PlusIcon } from "@/components/ui/icons";
 import { BlobImage } from "@/components/ui/blob-image";
 import { LandingScreen } from "@/components/screens/landing-screen";
+import { getProfile, type ProfileView } from "@/lib/pds/identity";
 
 function isModifiedClick(e: React.MouseEvent): boolean {
   return (
@@ -21,6 +22,80 @@ function isModifiedClick(e: React.MouseEvent): boolean {
     e.ctrlKey ||
     e.shiftKey ||
     e.altKey
+  );
+}
+
+/**
+ * ブックマーク一覧のカード。カバー画像をカード全体に広げ、
+ * グラデーションの上にタイトル / 説明 / 投稿者 @handle を重ねる。
+ */
+function BookmarkCard({
+  thread,
+  onOpen,
+}: {
+  thread: ThreadWithMeta;
+  onOpen: () => void;
+}) {
+  const threadDid = parseAtUri(thread.uri).repo;
+  const [profile, setProfile] = useState<ProfileView | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getProfile(threadDid)
+      .then((p) => {
+        if (!cancelled) setProfile(p);
+      })
+      .catch(() => {
+        // 取得失敗時は静かにフォールバック (表示なし)
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [threadDid]);
+
+  return (
+    <a
+      href={getThreadDetailHref(thread.uri)}
+      onClick={(e) => {
+        if (isModifiedClick(e)) return;
+        e.preventDefault();
+        onOpen();
+      }}
+      className="group relative block cursor-pointer overflow-hidden rounded-2xl bg-surface-800 shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.01]"
+    >
+      <div className="aspect-[16/9] overflow-hidden bg-gradient-to-br from-indigo-500/20 to-violet-500/20">
+        <BlobImage
+          did={threadDid}
+          blobRef={thread.coverImage}
+          alt={thread.title}
+          className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+          loading="lazy"
+          fallback={
+            <div className="flex h-full items-center justify-center">
+              <span className="text-4xl font-bold text-white/10">
+                {thread.title.charAt(0)}
+              </span>
+            </div>
+          }
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface-900 via-surface-900/60 via-40% to-transparent" />
+      </div>
+      <div className="absolute inset-x-0 bottom-0 p-5">
+        <h3 className="line-clamp-1 text-lg font-bold text-white">
+          {thread.title}
+        </h3>
+        {thread.description && (
+          <p className="mt-1 line-clamp-2 text-sm text-white/60">
+            {thread.description}
+          </p>
+        )}
+        {profile?.handle && (
+          <p className="mt-2 truncate text-xs text-white/50">
+            @{profile.handle}
+          </p>
+        )}
+      </div>
+    </a>
   );
 }
 
@@ -238,28 +313,13 @@ export function HomeScreen({ navigate }: NavigationProps) {
           )}
           {bookmarksData.map((bm) =>
             bm.thread ? (
-              <a
+              <BookmarkCard
                 key={bm.uri}
-                href={getThreadDetailHref(bm.thread.uri)}
-                onClick={(e) => {
-                  if (isModifiedClick(e)) return;
-                  e.preventDefault();
-                  navigate("thread-detail", { threadUri: bm.thread!.uri });
-                }}
-                className="group flex cursor-pointer gap-4 rounded-2xl bg-surface-800 p-4 transition hover:bg-surface-700"
-              >
-                <div className="size-20 shrink-0 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20" />
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate font-semibold text-white">
-                    {bm.thread.title}
-                  </h3>
-                  {bm.thread.description && (
-                    <p className="mt-1 text-sm text-white/40">
-                      {bm.thread.description}
-                    </p>
-                  )}
-                </div>
-              </a>
+                thread={bm.thread}
+                onOpen={() =>
+                  navigate("thread-detail", { threadUri: bm.thread!.uri })
+                }
+              />
             ) : null,
           )}
         </div>

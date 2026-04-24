@@ -9,6 +9,11 @@ import type {
 import { parseAtUri, buildAtUri, NSID_THREAD } from "@/lib/types";
 import { getThread, deleteThread, listPostsForThread } from "@/lib/pds/threads";
 import { deletePost, refreshFromSource } from "@/lib/pds/posts";
+import {
+  createBookmark,
+  deleteBookmark,
+  findBookmarkBySubject,
+} from "@/lib/pds/bookmarks";
 import { resolveIdentifier } from "@/lib/pds/identity";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import {
@@ -19,6 +24,7 @@ import {
   LinkIcon,
   ShareIcon,
   PlusIcon,
+  StarIcon,
 } from "@/components/ui/icons";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -321,6 +327,13 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const [fabOpen, setFabOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
 
+  // ブックマーク状態 (他人のスレッドのみ使用)。rkey を保持して 1 クリックで削除できるようにする。
+  // undefined = まだ取得していない, null = 未ブックマーク, string = その rkey でブックマーク済み
+  const [bookmarkRkey, setBookmarkRkey] = useState<string | null | undefined>(
+    undefined,
+  );
+  const [bookmarkBusy, setBookmarkBusy] = useState(false);
+
   // ヘッダーのスクロール連動（0 = ヒーロー全表示、1 = コンパクトヘッダー）
   const HEADER_HEIGHT = 80;
   const heroRef = useRef<HTMLDivElement | null>(null);
@@ -432,6 +445,53 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // ブックマーク状態の取得 (自分のスレッドは対象外)
+  useEffect(() => {
+    if (!isAuthenticated || !thread) {
+      setBookmarkRkey(undefined);
+      return;
+    }
+    const threadDid = parseAtUri(thread.uri).repo;
+    if (threadDid === myDid) {
+      // 自分のスレッドはブックマーク対象外なので未ロード扱いにしておく
+      setBookmarkRkey(undefined);
+      return;
+    }
+    let cancelled = false;
+    findBookmarkBySubject(thread.uri)
+      .then((bm) => {
+        if (!cancelled) setBookmarkRkey(bm?.rkey ?? null);
+      })
+      .catch((e) => {
+        console.error("Failed to fetch bookmark status:", e);
+        if (!cancelled) setBookmarkRkey(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, thread, myDid]);
+
+  const toggleBookmark = useCallback(async () => {
+    if (!thread || bookmarkBusy) return;
+    if (bookmarkRkey === undefined) return;
+    setBookmarkBusy(true);
+    try {
+      if (bookmarkRkey) {
+        await deleteBookmark(bookmarkRkey);
+        setBookmarkRkey(null);
+      } else {
+        const bm = await createBookmark(thread.uri);
+        setBookmarkRkey(bm.rkey);
+      }
+    } catch (e) {
+      console.error("Failed to toggle bookmark:", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(`ブックマークの更新に失敗しました\n\n${msg}`);
+    } finally {
+      setBookmarkBusy(false);
+    }
+  }, [thread, bookmarkRkey, bookmarkBusy]);
 
   // 画像表示用の PDS / blob URL (hooks はトップレベルで呼び出す必要があるため
   // thread が未ロードの間は null 引数で保持だけして、ロード後に自動で URL が入る)
@@ -667,6 +727,24 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             {thread.title}
           </h2>
 
+          {isAuthenticated && !isOwner && (
+            <button
+              onClick={toggleBookmark}
+              disabled={bookmarkRkey === undefined || bookmarkBusy}
+              aria-label={bookmarkRkey ? "ブックマークを外す" : "ブックマークに追加"}
+              aria-pressed={Boolean(bookmarkRkey)}
+              className={`flex size-10 shrink-0 items-center justify-center rounded-full transition hover:bg-white/10 disabled:opacity-50 ${
+                bookmarkRkey ? "text-amber-300" : "text-white"
+              }`}
+              style={{
+                backgroundColor: `rgba(0,0,0,${0.35 * (1 - progress)})`,
+                backdropFilter: progress < 0.95 ? "blur(6px)" : undefined,
+                WebkitBackdropFilter: progress < 0.95 ? "blur(6px)" : undefined,
+              }}
+            >
+              <StarIcon filled={Boolean(bookmarkRkey)} className="size-5" />
+            </button>
+          )}
           <button
             onClick={() => setModal("share")}
             aria-label="共有"
