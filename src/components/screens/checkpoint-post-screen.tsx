@@ -72,9 +72,11 @@ export function CheckpointPostScreen({
     Array<PreparedImage & { previewUrl: string }>
   >([]);
   const [processing, setProcessing] = useState(false);
-  const [locationOn, setLocationOn] = useState(true);
+  // 位置情報はデフォルト OFF。ユーザーが明示的に「現在地を取得」または
+  // 「写真Nの位置を使う」を押下したときだけ Location が入る。
   const [location, setLocation] = useState<Location | null>(null);
   const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [crosspostToBsky, setCrosspostToBsky] = useState<boolean>(
     () => loadCrosspostPref(),
   );
@@ -187,14 +189,9 @@ export function CheckpointPostScreen({
     setTimeMode("manual");
   };
 
-  const handleToggleLocation = async () => {
-    if (locationOn) {
-      setLocationOn(false);
-      setLocation(null);
-      return;
-    }
-    setLocationOn(true);
+  const handleAddCurrentLocation = async () => {
     setLocating(true);
+    setLocationError(null);
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -207,11 +204,25 @@ export function CheckpointPostScreen({
         longitude: pos.coords.longitude,
         altitude: pos.coords.altitude ?? undefined,
       });
-    } catch {
-      setLocation(null);
+    } catch (e) {
+      setLocationError(
+        e instanceof Error && e.message
+          ? `位置情報を取得できませんでした: ${e.message}`
+          : "位置情報を取得できませんでした",
+      );
     } finally {
       setLocating(false);
     }
+  };
+
+  const handleApplyPhotoLocation = (loc: Location) => {
+    setLocation(loc);
+    setLocationError(null);
+  };
+
+  const handleClearLocation = () => {
+    setLocation(null);
+    setLocationError(null);
   };
 
   const handleSubmit = async () => {
@@ -265,7 +276,7 @@ export function CheckpointPostScreen({
         thread: threadUri,
         text: text.trim() || undefined,
         images: blobs.length > 0 ? blobs : undefined,
-        location: locationOn && location ? location : undefined,
+        location: location ?? undefined,
         checkpointAt: checkpointIso,
         sourceRef,
         createdAt,
@@ -404,22 +415,60 @@ export function CheckpointPostScreen({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleToggleLocation}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-              locationOn
-                ? "bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20"
-                : "bg-white/5 text-white/40 hover:bg-white/10"
-            }`}
-          >
-            <PinIcon className="size-3.5" />
-            {locating ? "取得中..." : locationOn ? "位置情報 ON" : "位置情報 OFF"}
-          </button>
-          {location && (
-            <span className="text-xs text-white/30">
-              {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
-            </span>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-white/50">
+            位置情報
+          </label>
+          {location ? (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-indigo-400/20 bg-indigo-500/5 px-3 py-2">
+              <span className="flex items-center gap-1.5 text-xs text-indigo-200">
+                <PinIcon className="size-3.5" />
+                {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
+              </span>
+              <button
+                type="button"
+                onClick={handleClearLocation}
+                className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-white/50 transition hover:bg-white/10"
+              >
+                クリア
+              </button>
+            </div>
+          ) : (
+            <p className="text-[11px] text-white/30">
+              位置情報は付与されません
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={handleAddCurrentLocation}
+              disabled={locating}
+              className="flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-3 py-1 text-[11px] font-medium text-indigo-300 transition hover:bg-indigo-500/20 disabled:cursor-wait disabled:opacity-50"
+            >
+              <PinIcon className="size-3" />
+              {locating ? "取得中…" : "現在地を取得"}
+            </button>
+            {images.map((img, i) =>
+              img.location ? (
+                <button
+                  key={img.previewUrl}
+                  type="button"
+                  onClick={() => handleApplyPhotoLocation(img.location!)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                    location &&
+                    img.location.latitude === location.latitude &&
+                    img.location.longitude === location.longitude
+                      ? "bg-indigo-500/20 text-indigo-200"
+                      : "bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20"
+                  }`}
+                >
+                  写真{i + 1}の位置を使う
+                </button>
+              ) : null,
+            )}
+          </div>
+          {locationError && (
+            <p className="mt-2 text-[11px] text-red-400">{locationError}</p>
           )}
         </div>
 

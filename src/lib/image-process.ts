@@ -14,7 +14,8 @@
 // 戻り値の `blob` がそのままプレビューにも、PDS アップロードにも使える形。
 // 元の File への参照は呼び出し側で保持しなくて良い。
 
-import { extractPhotoTimestamp } from "@/lib/exif";
+import { extractPhotoMetadata } from "@/lib/exif";
+import type { Location } from "@/lib/types";
 
 const MAX_DIMENSION = 1000;
 const MAX_BYTES = 1_000_000; // 1MB
@@ -31,6 +32,8 @@ export interface PreparedImage {
   type: string;
   /** EXIF から取れた撮影日時。なければ null */
   timestamp: Date | null;
+  /** EXIF から取れた撮影位置 (GPS)。なければ null */
+  location: Location | null;
 }
 
 interface DecodedSource {
@@ -159,7 +162,7 @@ export async function processSelectedImage(file: File): Promise<PreparedImage> {
     type: file.type || OUTPUT_TYPE,
   });
 
-  const timestamp = await extractPhotoTimestamp(buffer);
+  const { timestamp, location } = await extractPhotoMetadata(buffer);
 
   const decoded = await decodeImage(sourceBlob);
   try {
@@ -172,6 +175,7 @@ export async function processSelectedImage(file: File): Promise<PreparedImage> {
       height,
       type: OUTPUT_TYPE,
       timestamp,
+      location,
     };
   } finally {
     decoded.close();
