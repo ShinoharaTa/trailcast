@@ -5,6 +5,12 @@ import { PlusIcon, PinIcon, CloseIcon } from "@/components/ui/icons";
 import { createPost, uploadImage } from "@/lib/pds/posts";
 import { getAgent } from "@/lib/atp-agent";
 import { extractPhotoTimestamp } from "@/lib/exif";
+import {
+  buildCrosspostText,
+  buildEmbedImages,
+  getImageDimensions,
+} from "@/lib/bsky-crosspost";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import type { Location } from "@/lib/types";
 
 const MAX_IMAGES = 4;
@@ -51,13 +57,17 @@ function saveCrosspostPref(value: boolean): void {
 
 export interface CheckpointPostScreenProps {
   threadUri: string;
+  /** Bluesky 同時投稿のテキストとリンク URL を組み立てるのに使う */
+  threadTitle: string;
   onSubmitted: () => void;
 }
 
 export function CheckpointPostScreen({
   threadUri,
+  threadTitle,
   onSubmitted,
 }: CheckpointPostScreenProps) {
+  const handle = useAuthStore((s) => s.handle);
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -176,19 +186,34 @@ export function CheckpointPostScreen({
       );
 
       // Bluesky にも投稿する場合は先に Bluesky 側を作成し、その URI を
-      // チェックポイントの sourceRef に記録する（後で「元投稿から再取得」が効く）
+      // チェックポイントの sourceRef に記録する（後で「元投稿から再取得」が効く）。
+      // 画像は PDS にアップ済みの BlobRef をそのまま再利用し、各 image エントリに
+      // aspectRatio を付与する。テキストは仕様どおりのテンプレ + facets に置換する。
       let sourceRef: string | undefined;
       if (crosspostToBsky) {
         const agent = getAgent();
-        const embed =
+        const dims =
           blobs.length > 0
-            ? {
-                $type: "app.bsky.embed.images",
-                images: blobs.map((blob) => ({ alt: "", image: blob })),
-              }
-            : undefined;
+            ? await Promise.all(files.map((f) => getImageDimensions(f)))
+            : [];
+        const embed = buildEmbedImages(
+          blobs.map((blob, i) => ({
+            blob,
+            width: dims[i]?.width ?? 1,
+            height: dims[i]?.height ?? 1,
+          })),
+        );
+        const effectiveHandle =
+          handle ?? agent.session?.handle ?? agent.session?.did ?? "";
+        const { text: bskyText, facets } = buildCrosspostText({
+          title: threadTitle,
+          handle: effectiveHandle,
+          threadUri,
+          body: text,
+        });
         const res = await agent.post({
-          text: text.trim(),
+          text: bskyText,
+          facets,
           embed,
           createdAt: new Date().toISOString(),
         });

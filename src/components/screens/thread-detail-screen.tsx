@@ -335,7 +335,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const [thread, setThread] = useState<ThreadWithMeta | null>(null);
   const [posts, setPosts] = useState<PostWithMeta[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState(false);
+  const [, setDeleting] = useState(false);
   const [refreshingUri, setRefreshingUri] = useState<string | null>(null);
 
   const [confirmTarget, setConfirmTarget] = useState<
@@ -1013,6 +1013,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           {modal === "checkpoint-post" && (
             <CheckpointPostScreen
               threadUri={thread.uri}
+              threadTitle={thread.title}
               onSubmitted={onModalSubmitted}
             />
           )}
