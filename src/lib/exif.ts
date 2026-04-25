@@ -1,12 +1,19 @@
 import exifr from "exifr";
 
 /**
- * 写真ファイルから撮影日時 (DateTimeOriginal など) を抽出する。
- * 取得できない場合は null。
+ * 写真から撮影日時 (DateTimeOriginal など) を抽出する。
+ *
+ * File / Blob / ArrayBuffer / Uint8Array いずれも受け付ける。
+ * バッファ経由で受け取れるようにしているのは、画像選択直後に一度
+ * ArrayBuffer に読み切ってから利用する経路で再利用するため
+ * (元 File を再度 IO 経由で読み直すと iOS Safari で NotReadableError
+ *  になるケースがあるため、できるだけ File への再アクセスを避ける)。
  */
-export async function extractPhotoTimestamp(file: File): Promise<Date | null> {
+export async function extractPhotoTimestamp(
+  input: File | Blob | ArrayBuffer | Uint8Array,
+): Promise<Date | null> {
   try {
-    const data = await exifr.parse(file, {
+    const data = await exifr.parse(input, {
       pick: ["DateTimeOriginal", "CreateDate", "ModifyDate"],
     });
     if (!data) return null;

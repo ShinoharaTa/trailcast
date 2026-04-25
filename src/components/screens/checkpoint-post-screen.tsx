@@ -1,15 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PlusIcon, PinIcon, CloseIcon } from "@/components/ui/icons";
 import { createPost, uploadImage } from "@/lib/pds/posts";
 import { getAgent } from "@/lib/atp-agent";
-import { extractPhotoTimestamp } from "@/lib/exif";
-import {
-  buildCrosspostText,
-  buildEmbedImages,
-  getImageDimensions,
-} from "@/lib/bsky-crosspost";
+import { processSelectedImage, type PreparedImage } from "@/lib/image-process";
+import { buildCrosspostText, buildEmbedImages } from "@/lib/bsky-crosspost";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import type { Location } from "@/lib/types";
 
@@ -69,8 +65,13 @@ export function CheckpointPostScreen({
 }: CheckpointPostScreenProps) {
   const handle = useAuthStore((s) => s.handle);
   const [text, setText] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  // 画像は選択直後に「縮小 + 圧縮 + EXIF 抽出」まで完了させた状態で保持する。
+  // 元 File への参照は保持しない (iOS Safari での NotReadableError 回避のため)。
+  // previewUrl は画像追加時に 1 回だけ作り、削除時 / アンマウント時に revoke する。
+  const [images, setImages] = useState<
+    Array<PreparedImage & { previewUrl: string }>
+  >([]);
+  const [processing, setProcessing] = useState(false);
   const [locationOn, setLocationOn] = useState(true);
   const [location, setLocation] = useState<Location | null>(null);
   const [locating, setLocating] = useState(false);
@@ -82,11 +83,21 @@ export function CheckpointPostScreen({
   // - "manual": ユーザー編集済み or 写真の EXIF を反映済み → 表示中の値を使う
   const [checkpointAt, setCheckpointAt] = useState<Date>(() => new Date());
   const [timeMode, setTimeMode] = useState<"auto" | "manual">("auto");
-  // files と同じインデックスで対応する写真の撮影日時 (EXIF が無い場合は null)
-  const [photoTimestamps, setPhotoTimestamps] = useState<(Date | null)[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // アンマウント時に残っているプレビュー URL を確実に revoke するため、
+  // 最新の images を ref に同期しておく。
+  const imagesRef = useRef(images);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+  useEffect(() => {
+    return () => {
+      for (const img of imagesRef.current) URL.revokeObjectURL(img.previewUrl);
+    };
+  }, []);
 
   const handleCrosspostChange = (value: boolean) => {
     setCrosspostToBsky(value);
@@ -95,37 +106,67 @@ export function CheckpointPostScreen({
 
   const handleAddImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newFiles = Array.from(e.target.files ?? []);
-    const remaining = MAX_IMAGES - files.length;
-    const accepted = newFiles.slice(0, Math.max(0, remaining));
-    const combined = [...files, ...accepted];
-    setFiles(combined);
-    setPreviews(combined.map((f) => URL.createObjectURL(f)));
     if (fileRef.current) fileRef.current.value = "";
+    const remaining = MAX_IMAGES - images.length;
+    const accepted = newFiles.slice(0, Math.max(0, remaining));
+    if (accepted.length === 0) return;
 
-    const newStamps = await Promise.all(
-      accepted.map((f) => extractPhotoTimestamp(f)),
-    );
-    setPhotoTimestamps((prev) => [...prev, ...newStamps]);
-
-    // ユーザーがまだ時刻を編集していない場合、追加された写真の中で
-    // 最も古い撮影日時を自動で適用する
-    const valid = newStamps.filter((d): d is Date => d !== null);
-    if (valid.length === 0) return;
-    const earliest = valid.reduce((a, b) => (a.getTime() < b.getTime() ? a : b));
-    setTimeMode((mode) => {
-      if (mode === "auto") {
-        setCheckpointAt(earliest);
-        return "manual";
+    setProcessing(true);
+    setError(null);
+    try {
+      // 1 枚ずつ順番に処理することで iOS のメモリ圧迫を避ける。
+      // 失敗した 1 枚があっても他の枚は採用する。
+      const prepared: Array<PreparedImage & { previewUrl: string }> = [];
+      let lastError: unknown = null;
+      for (const f of accepted) {
+        try {
+          const p = await processSelectedImage(f);
+          prepared.push({ ...p, previewUrl: URL.createObjectURL(p.blob) });
+        } catch (err) {
+          lastError = err;
+        }
       }
-      return mode;
-    });
+      if (prepared.length === 0) {
+        setError(
+          lastError instanceof Error
+            ? `画像を読み込めませんでした: ${lastError.message}`
+            : "画像を読み込めませんでした",
+        );
+        return;
+      }
+      if (lastError) {
+        setError("一部の画像を読み込めませんでした");
+      }
+
+      setImages((prev) => [...prev, ...prepared]);
+
+      // ユーザーがまだ時刻を編集していない場合、追加された写真の中で
+      // 最も古い撮影日時を自動で適用する。
+      const valid = prepared
+        .map((p) => p.timestamp)
+        .filter((d): d is Date => d !== null);
+      if (valid.length === 0) return;
+      const earliest = valid.reduce((a, b) =>
+        a.getTime() < b.getTime() ? a : b,
+      );
+      setTimeMode((mode) => {
+        if (mode === "auto") {
+          setCheckpointAt(earliest);
+          return "manual";
+        }
+        return mode;
+      });
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const handleRemoveImage = (idx: number) => {
-    const newFiles = files.filter((_, i) => i !== idx);
-    setFiles(newFiles);
-    setPreviews(newFiles.map((f) => URL.createObjectURL(f)));
-    setPhotoTimestamps((prev) => prev.filter((_, i) => i !== idx));
+    setImages((prev) => {
+      const removed = prev[idx];
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      return prev.filter((_, i) => i !== idx);
+    });
   };
 
   const handleChangeTime = (value: string) => {
@@ -178,29 +219,26 @@ export function CheckpointPostScreen({
     setSubmitting(true);
     setError(null);
     try {
+      // 画像はすでに縮小 + 圧縮済みの Blob を保持しているのでそのままアップロード。
       const blobs = await Promise.all(
-        files.map(async (f) => {
-          const buf = new Uint8Array(await f.arrayBuffer());
-          return uploadImage(buf, f.type);
+        images.map(async (img) => {
+          const buf = new Uint8Array(await img.blob.arrayBuffer());
+          return uploadImage(buf, img.type);
         }),
       );
 
       // Bluesky にも投稿する場合は先に Bluesky 側を作成し、その URI を
       // チェックポイントの sourceRef に記録する（後で「元投稿から再取得」が効く）。
-      // 画像は PDS にアップ済みの BlobRef をそのまま再利用し、各 image エントリに
-      // aspectRatio を付与する。テキストは仕様どおりのテンプレ + facets に置換する。
+      // 画像は PDS にアップ済みの BlobRef をそのまま再利用し、aspectRatio には
+      // 縮小後の幅・高さをそのまま入れる。テキストは仕様どおりのテンプレ + facets。
       let sourceRef: string | undefined;
       if (crosspostToBsky) {
         const agent = getAgent();
-        const dims =
-          blobs.length > 0
-            ? await Promise.all(files.map((f) => getImageDimensions(f)))
-            : [];
         const embed = buildEmbedImages(
           blobs.map((blob, i) => ({
             blob,
-            width: dims[i]?.width ?? 1,
-            height: dims[i]?.height ?? 1,
+            width: images[i]?.width ?? 1,
+            height: images[i]?.height ?? 1,
           })),
         );
         const effectiveHandle =
@@ -239,7 +277,7 @@ export function CheckpointPostScreen({
     }
   };
 
-  const hasContent = text.trim().length > 0 || files.length > 0;
+  const hasContent = text.trim().length > 0 || images.length > 0;
 
   return (
     <>
@@ -265,10 +303,17 @@ export function CheckpointPostScreen({
             写真（最大{MAX_IMAGES}枚）
           </label>
           <div className="grid grid-cols-4 gap-2">
-            {previews.map((url, i) => (
-              <div key={i} className="group relative aspect-square overflow-hidden rounded-xl">
+            {images.map((img, i) => (
+              <div
+                key={img.previewUrl}
+                className="group relative aspect-square overflow-hidden rounded-xl"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="h-full w-full object-cover" />
+                <img
+                  src={img.previewUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
                 <button
                   type="button"
                   onClick={() => handleRemoveImage(i)}
@@ -280,15 +325,27 @@ export function CheckpointPostScreen({
                 </button>
               </div>
             ))}
-            {files.length < MAX_IMAGES && (
-              <div
+            {images.length < MAX_IMAGES && (
+              <button
+                type="button"
                 onClick={() => fileRef.current?.click()}
-                className="flex aspect-square cursor-pointer items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] transition hover:border-indigo-400/40"
+                disabled={processing}
+                className="flex aspect-square cursor-pointer items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] transition hover:border-indigo-400/40 disabled:cursor-wait disabled:opacity-50"
               >
-                <PlusIcon className="size-6 text-white/15" strokeWidth={1.5} />
-              </div>
+                {processing ? (
+                  <span className="size-5 animate-spin rounded-full border-2 border-white/40 border-t-transparent" />
+                ) : (
+                  <PlusIcon
+                    className="size-6 text-white/15"
+                    strokeWidth={1.5}
+                  />
+                )}
+              </button>
             )}
           </div>
+          {processing && (
+            <p className="mt-1 text-[11px] text-white/30">画像を処理中…</p>
+          )}
           <input
             ref={fileRef}
             type="file"
@@ -320,21 +377,21 @@ export function CheckpointPostScreen({
             onChange={(e) => handleChangeTime(e.target.value)}
             className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
           />
-          {photoTimestamps.some((d) => d !== null) && (
+          {images.some((img) => img.timestamp !== null) && (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {photoTimestamps.map((d, i) =>
-                d ? (
+              {images.map((img, i) =>
+                img.timestamp ? (
                   <button
-                    key={i}
+                    key={img.previewUrl}
                     type="button"
-                    onClick={() => handleApplyPhotoTime(d)}
+                    onClick={() => handleApplyPhotoTime(img.timestamp!)}
                     className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
-                      d.getTime() === checkpointAt.getTime()
+                      img.timestamp.getTime() === checkpointAt.getTime()
                         ? "bg-indigo-500/20 text-indigo-200"
                         : "bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20"
                     }`}
                   >
-                    写真{i + 1}の時刻: {formatShort(d)}
+                    写真{i + 1}の時刻: {formatShort(img.timestamp)}
                   </button>
                 ) : null,
               )}
@@ -410,7 +467,7 @@ export function CheckpointPostScreen({
 
         <button
           onClick={handleSubmit}
-          disabled={submitting || !hasContent}
+          disabled={submitting || processing || !hasContent}
           className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:opacity-50 disabled:pointer-events-none"
         >
           {submitting ? (
