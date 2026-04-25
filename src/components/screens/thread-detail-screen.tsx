@@ -50,8 +50,6 @@ type ModalKind =
 
 function modalMaxWidth(kind: ModalKind): "lg" | "2xl" | "3xl" {
   switch (kind) {
-    case "bsky-import":
-      return "3xl";
     case "thread-edit":
     case "checkpoint-post":
     case "checkpoint-edit":
@@ -1009,7 +1007,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       )}
 
       {/* Modals */}
-      {modal && (
+      {modal && modal !== "bsky-import" && (
         <Modal open onClose={closeModal} maxWidth={modalMaxWidth(modal)}>
           {modal === "share" && <ShareScreen threadUri={thread.uri} />}
           {modal === "checkpoint-post" && (
@@ -1025,12 +1023,6 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               onCancel={closeModal}
             />
           )}
-          {modal === "bsky-import" && (
-            <BlueskyImportScreen
-              threadUri={thread.uri}
-              onSubmitted={onModalSubmitted}
-            />
-          )}
           {modal === "thread-edit" && thread && (
             <ThreadEditScreen
               thread={thread}
@@ -1044,6 +1036,15 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           )}
         </Modal>
       )}
+
+      {/* Bluesky インポートは header / footer 固定の Scrollable Modal を
+          自前で持つため、共通 Modal ラッパーの外側で描画する。 */}
+      <BlueskyImportScreen
+        open={modal === "bsky-import"}
+        onClose={closeModal}
+        threadUri={thread.uri}
+        onSubmitted={onModalSubmitted}
+      />
 
       {/* ログインダイアログ (未認証時の共通導線) */}
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />

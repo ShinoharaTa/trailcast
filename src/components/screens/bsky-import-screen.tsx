@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckIcon, InfoIcon } from "@/components/ui/icons";
+import { Modal } from "@/components/ui/modal";
 import { getAgent } from "@/lib/atp-agent";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { createPost } from "@/lib/pds/posts";
@@ -50,11 +51,15 @@ function feedItemToPost(item: FeedItem): BskyPost {
 }
 
 export interface BlueskyImportScreenProps {
+  open: boolean;
+  onClose: () => void;
   threadUri: string;
   onSubmitted: () => void;
 }
 
 export function BlueskyImportScreen({
+  open,
+  onClose,
   threadUri,
   onSubmitted,
 }: BlueskyImportScreenProps) {
@@ -98,9 +103,10 @@ export function BlueskyImportScreen({
   );
 
   useEffect(() => {
+    if (!open) return;
     cursorRef.current = undefined;
     fetchPage(false);
-  }, [fetchPage]);
+  }, [open, fetchPage]);
 
   const loadMore = () => {
     if (loadingMore || !hasMore) return;
@@ -142,15 +148,55 @@ export function BlueskyImportScreen({
     }
   };
 
-  return (
-    <>
-      <h2 className="mb-1 pr-10 text-xl font-bold text-white">
+  const header = (
+    <div>
+      <h2 className="pr-10 text-xl font-bold text-white">
         Bluesky 投稿からインポート
       </h2>
-      <p className="mb-6 text-sm text-white/40">
+      <p className="mt-1 text-sm text-white/40">
         チェックポイントとして取り込む投稿を選択してください
       </p>
+      <div className="mt-3 rounded-xl border border-white/5 bg-white/[0.02] px-4 py-2.5">
+        <p className="flex items-start gap-2 text-xs text-white/40">
+          <InfoIcon className="size-4 shrink-0 text-amber-400/60" />
+          インポートした投稿には位置情報は付与されません。元投稿への参照リンクが保持されます。
+        </p>
+      </div>
+    </div>
+  );
 
+  const footer = (
+    <div>
+      {error && (
+        <div className="mb-3 rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
+          {error}
+        </div>
+      )}
+      <button
+        onClick={handleImport}
+        disabled={importing || selectedCount === 0}
+        className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:opacity-50 disabled:pointer-events-none"
+      >
+        {importing ? (
+          <span className="flex items-center justify-center gap-2">
+            <span className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            インポート中...
+          </span>
+        ) : (
+          `選択した投稿をインポート (${selectedCount}件)`
+        )}
+      </button>
+    </div>
+  );
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      maxWidth="3xl"
+      header={header}
+      footer={footer}
+    >
       {loading && (
         <div className="flex justify-center py-20">
           <div className="size-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
@@ -245,34 +291,6 @@ export function BlueskyImportScreen({
           これ以上の投稿はありません
         </p>
       )}
-
-      <div className="mt-6 rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
-        <p className="flex items-center gap-2 text-xs text-white/40">
-          <InfoIcon className="size-4 shrink-0 text-amber-400/60" />
-          インポートした投稿には位置情報は付与されません。元投稿への参照リンクが保持されます。
-        </p>
-      </div>
-
-      {error && (
-        <div className="mt-4 rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
-          {error}
-        </div>
-      )}
-
-      <button
-        onClick={handleImport}
-        disabled={importing || selectedCount === 0}
-        className="mt-4 w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:opacity-50 disabled:pointer-events-none"
-      >
-        {importing ? (
-          <span className="flex items-center justify-center gap-2">
-            <span className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            インポート中...
-          </span>
-        ) : (
-          `選択した投稿をインポート (${selectedCount}件)`
-        )}
-      </button>
-    </>
+    </Modal>
   );
 }

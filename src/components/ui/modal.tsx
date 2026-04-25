@@ -18,6 +18,14 @@ export interface ModalProps {
   open: boolean;
   onClose: () => void;
   children: React.ReactNode;
+  /**
+   * 上部に固定表示する領域。
+   * 渡すと "Scrollable Modal" レイアウト (header / scroll body / footer の
+   * 3 段 flex 構造) になり、本体のみがスクロールする。
+   */
+  header?: React.ReactNode;
+  /** 下部に固定表示する領域。例: 主要アクションボタン。 */
+  footer?: React.ReactNode;
   maxWidth?: MaxWidth;
   ariaLabel?: string;
 }
@@ -26,6 +34,8 @@ export function Modal({
   open,
   onClose,
   children,
+  header,
+  footer,
   maxWidth = "lg",
   ariaLabel,
 }: ModalProps) {
@@ -45,6 +55,8 @@ export function Modal({
 
   if (!open) return null;
 
+  const hasRegions = Boolean(header || footer);
+
   return (
     <div
       role="dialog"
@@ -56,19 +68,38 @@ export function Modal({
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-6"
     >
       <div
-        className={`relative my-4 w-full ${MAX_W[maxWidth]} rounded-2xl bg-surface-800 shadow-2xl sm:my-0`}
+        className={`relative my-4 flex w-full ${MAX_W[maxWidth]} max-h-[calc(100dvh-2rem)] flex-col rounded-2xl bg-surface-800 shadow-2xl sm:my-0 sm:max-h-[calc(100dvh-3rem)]`}
       >
         <button
           onClick={onClose}
           aria-label="閉じる"
-          className="absolute right-3 top-3 z-10 flex size-9 items-center justify-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white"
+          className="absolute right-3 top-3 z-20 flex size-9 items-center justify-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white"
           type="button"
         >
           <CloseIcon className="size-5" />
         </button>
-        <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-6 sm:max-h-[calc(100dvh-3rem)] sm:p-8">
-          {children}
-        </div>
+
+        {hasRegions ? (
+          <>
+            {header && (
+              <div className="shrink-0 rounded-t-2xl border-b border-white/5 px-6 pb-4 pt-6 sm:px-8 sm:pt-8">
+                {header}
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto overscroll-contain px-6 py-5 sm:px-8 sm:py-6">
+              {children}
+            </div>
+            {footer && (
+              <div className="shrink-0 rounded-b-2xl border-t border-white/5 bg-surface-800 px-6 pb-6 pt-4 sm:px-8 sm:pb-8">
+                {footer}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="overflow-y-auto overscroll-contain p-6 sm:p-8">
+            {children}
+          </div>
+        )}
       </div>
     </div>
   );
