@@ -80,40 +80,76 @@ function PostImages({
     }
   }
   if (urls.length === 0) return null;
+
+  const Tile = ({
+    url,
+    i,
+    className = "",
+  }: {
+    url: string;
+    i: number;
+    className?: string;
+  }) => (
+    <button
+      type="button"
+      onClick={() => onOpenLightbox(urls, i)}
+      className={`relative block overflow-hidden ${className}`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt=""
+        className="absolute inset-0 h-full w-full cursor-zoom-in object-cover transition hover:opacity-95"
+        loading="lazy"
+      />
+    </button>
+  );
+
+  // Bluesky / Twitter 風の枚数別レイアウト。
+  //   1 枚: 単独 (16:9)
+  //   2 枚: 横 2 分割 (16:9)
+  //   3 枚: 左に大 + 右に 2 段スタック (16:9)
+  //   4 枚: 2x2 (1:1)
   if (urls.length === 1) {
     return (
-      <button
-        type="button"
-        onClick={() => onOpenLightbox(urls, 0)}
-        className="block w-full overflow-hidden rounded-2xl"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={urls[0]}
-          alt=""
-          className="aspect-[16/9] w-full cursor-zoom-in object-cover transition hover:opacity-95"
-          loading="lazy"
-        />
-      </button>
-    );
-  }
-  return (
-    <div className={`grid gap-1.5 overflow-hidden rounded-2xl ${urls.length <= 2 ? "grid-cols-2" : "grid-cols-2"}`}>
-      {urls.map((url, i) => (
+      <div className="overflow-hidden rounded-2xl">
         <button
-          key={i}
           type="button"
-          onClick={() => onOpenLightbox(urls, i)}
-          className="block overflow-hidden"
+          onClick={() => onOpenLightbox(urls, 0)}
+          className="block w-full"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={url}
+            src={urls[0]}
             alt=""
-            className="aspect-[4/3] w-full cursor-zoom-in object-cover transition hover:opacity-95"
+            className="aspect-[16/9] w-full cursor-zoom-in object-cover transition hover:opacity-95"
             loading="lazy"
           />
         </button>
+      </div>
+    );
+  }
+  if (urls.length === 2) {
+    return (
+      <div className="grid aspect-[16/9] grid-cols-2 gap-1 overflow-hidden rounded-2xl">
+        <Tile url={urls[0]} i={0} />
+        <Tile url={urls[1]} i={1} />
+      </div>
+    );
+  }
+  if (urls.length === 3) {
+    return (
+      <div className="grid aspect-[16/9] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-2xl">
+        <Tile url={urls[0]} i={0} className="row-span-2" />
+        <Tile url={urls[1]} i={1} />
+        <Tile url={urls[2]} i={2} />
+      </div>
+    );
+  }
+  return (
+    <div className="grid aspect-square grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-2xl">
+      {urls.slice(0, 4).map((url, i) => (
+        <Tile key={i} url={url} i={i} />
       ))}
     </div>
   );
