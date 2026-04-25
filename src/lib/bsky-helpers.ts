@@ -1,4 +1,5 @@
 import { getAgent } from "@/lib/atp-agent";
+import { resolveIdentifier } from "@/lib/pds/identity";
 
 // ─── embed #view からの画像 URL 抽出 (プレビュー表示用) ────────────
 
@@ -64,4 +65,66 @@ export async function fetchBskyPost(atUri: string): Promise<BskyPostData> {
   const viewImageUrls = extractImagesFromEmbed(viewEmbed);
 
   return { text, createdAt, viewImageUrls, authorDid };
+}
+
+// ─── URL / at-uri パース ──────────────────────────────────────
+
+const BSKY_URL_PATTERN =
+  /^https?:\/\/(?:www\.)?bsky\.app\/profile\/([^/?#\s]+)\/post\/([^/?#\s]+)/i;
+const AT_URI_PATTERN =
+  /^at:\/\/([^/?#\s]+)\/app\.bsky\.feed\.post\/([^/?#\s]+)$/;
+
+/**
+ * bsky.app の投稿 URL もしくは at:// URI を at://{did}/app.bsky.feed.post/{rkey}
+ * 形式に正規化する。handle が含まれていれば DID に解決する。
+ */
+export async function normalizeBskyPostUrl(input: string): Promise<string> {
+  const trimmed = input.trim();
+  if (!trimmed) throw new Error("空の URL です");
+
+  const atMatch = trimmed.match(AT_URI_PATTERN);
+  if (atMatch) {
+    const repo = atMatch[1];
+    const rkey = atMatch[2];
+    const did = repo.startsWith("did:") ? repo : await resolveIdentifier(repo);
+    return `at://${did}/app.bsky.feed.post/${rkey}`;
+  }
+
+  const bskyMatch = trimmed.match(BSKY_URL_PATTERN);
+  if (bskyMatch) {
+    const repo = decodeURIComponent(bskyMatch[1]);
+    const rkey = bskyMatch[2];
+    const did = await resolveIdentifier(repo);
+    return `at://${did}/app.bsky.feed.post/${rkey}`;
+  }
+
+  throw new Error("Bluesky 投稿 URL として認識できません");
+}
+
+// ─── 複数投稿のバッチ取得 ────────────────────────────────────
+
+export interface BskyPostView {
+  uri: string;
+  author: { did: string };
+  record: unknown;
+  embed?: unknown;
+  indexedAt: string;
+}
+
+/**
+ * at-uri のリストを app.bsky.feed.getPosts でバッチ取得する。
+ * getPosts の上限は 25 件のため自動でチャンク分割する。
+ */
+export async function fetchBskyPosts(
+  atUris: string[],
+): Promise<BskyPostView[]> {
+  if (atUris.length === 0) return [];
+  const agent = getAgent();
+  const all: BskyPostView[] = [];
+  for (let i = 0; i < atUris.length; i += 25) {
+    const chunk = atUris.slice(i, i + 25);
+    const res = await agent.app.bsky.feed.getPosts({ uris: chunk });
+    all.push(...(res.data.posts as unknown as BskyPostView[]));
+  }
+  return all;
 }
