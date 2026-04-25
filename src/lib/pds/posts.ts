@@ -3,8 +3,8 @@ import {
   NSID_POST,
   type PostRecord,
   type PostWithMeta,
-  parseAtUri,
 } from "@/lib/types";
+import { getRecordViaPds } from "@/lib/pds/repo-read";
 
 function generateTid(): string {
   const now = BigInt(Date.now()) * 1000n;
@@ -39,14 +39,8 @@ export async function getPost(
   did: string,
   rkey: string,
 ): Promise<PostWithMeta> {
-  const agent = getAgent();
-  const res = await agent.com.atproto.repo.getRecord({
-    repo: did,
-    collection: NSID_POST,
-    rkey,
-  });
-  const val = res.data.value as unknown as PostRecord;
-  return { ...val, uri: res.data.uri, cid: res.data.cid!, rkey };
+  const res = await getRecordViaPds<PostRecord>(did, NSID_POST, rkey);
+  return { ...res.value, uri: res.uri, cid: res.cid, rkey };
 }
 
 export async function updatePost(

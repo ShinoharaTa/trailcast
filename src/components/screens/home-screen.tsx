@@ -4,11 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import type { NavigationProps } from "@/lib/use-navigation";
 import { getThreadDetailHref, getUserProfileHref } from "@/lib/app-routes";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import type { ThreadWithMeta, BookmarkWithMeta, ThreadRecord } from "@/lib/types";
+import type { ThreadWithMeta, BookmarkWithMeta } from "@/lib/types";
 import { parseAtUri } from "@/lib/types";
-import { listThreads } from "@/lib/pds/threads";
+import { listThreads, getThread } from "@/lib/pds/threads";
 import { listBookmarks } from "@/lib/pds/bookmarks";
-import { getAgent } from "@/lib/atp-agent";
 import { PlusIcon } from "@/components/ui/icons";
 import { BlobImage } from "@/components/ui/blob-image";
 import { LandingScreen } from "@/components/screens/landing-screen";
@@ -127,22 +126,8 @@ export function HomeScreen({ navigate }: NavigationProps) {
         bms.map(async (bm) => {
           try {
             const { repo, rkey } = parseAtUri(bm.subject);
-            const agent = getAgent();
-            const res = await agent.com.atproto.repo.getRecord({
-              repo,
-              collection: "net.shino3.trailcast.thread",
-              rkey,
-            });
-            const val = res.data.value as unknown as ThreadRecord;
-            return {
-              ...bm,
-              thread: {
-                ...val,
-                uri: res.data.uri,
-                cid: res.data.cid!,
-                rkey,
-              } as ThreadWithMeta,
-            };
+            const thread = await getThread(repo, rkey);
+            return { ...bm, thread };
           } catch {
             return bm;
           }

@@ -4,9 +4,11 @@ import {
   NSID_POST,
   type ThreadRecord,
   type ThreadWithMeta,
+  type PostRecord,
   type PostWithMeta,
   parseAtUri,
 } from "@/lib/types";
+import { getRecordViaPds, listRecordsViaPds } from "@/lib/pds/repo-read";
 
 function generateTid(): string {
   const now = BigInt(Date.now()) * 1000n;
@@ -37,18 +39,14 @@ export async function createThread(
 export async function listThreads(
   did?: string,
 ): Promise<ThreadWithMeta[]> {
-  const agent = getAgent();
-  const repo = did ?? agent.session!.did;
-  const res = await agent.com.atproto.repo.listRecords({
-    repo,
-    collection: NSID_THREAD,
+  const repo = did ?? getAgent().session!.did;
+  const res = await listRecordsViaPds<ThreadRecord>(repo, NSID_THREAD, {
     limit: 100,
     reverse: true,
   });
-  return res.data.records.map((r) => {
-    const val = r.value as unknown as ThreadRecord;
+  return res.records.map((r) => {
     const { rkey } = parseAtUri(r.uri);
-    return { ...val, uri: r.uri, cid: r.cid, rkey };
+    return { ...r.value, uri: r.uri, cid: r.cid, rkey };
   });
 }
 
@@ -56,14 +54,8 @@ export async function getThread(
   did: string,
   rkey: string,
 ): Promise<ThreadWithMeta> {
-  const agent = getAgent();
-  const res = await agent.com.atproto.repo.getRecord({
-    repo: did,
-    collection: NSID_THREAD,
-    rkey,
-  });
-  const val = res.data.value as unknown as ThreadRecord;
-  return { ...val, uri: res.data.uri, cid: res.data.cid!, rkey };
+  const res = await getRecordViaPds<ThreadRecord>(did, NSID_THREAD, rkey);
+  return { ...res.value, uri: res.uri, cid: res.cid, rkey };
 }
 
 export async function updateThread(
@@ -113,18 +105,14 @@ export async function listPostsForThread(
   threadUri: string,
 ): Promise<PostWithMeta[]> {
   const { repo } = parseAtUri(threadUri);
-  const agent = getAgent();
-  const res = await agent.com.atproto.repo.listRecords({
-    repo,
-    collection: NSID_POST,
+  const res = await listRecordsViaPds<PostRecord>(repo, NSID_POST, {
     limit: 100,
   });
-  return res.data.records
-    .filter((r) => (r.value as { thread: string }).thread === threadUri)
+  return res.records
+    .filter((r) => r.value.thread === threadUri)
     .map((r) => {
-      const val = r.value as unknown as PostWithMeta;
       const { rkey } = parseAtUri(r.uri);
-      return { ...val, uri: r.uri, cid: r.cid, rkey };
+      return { ...r.value, uri: r.uri, cid: r.cid, rkey };
     })
     .sort(
       (a, b) =>
