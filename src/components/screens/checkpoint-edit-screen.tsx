@@ -9,6 +9,18 @@ import { BlobImage } from "@/components/ui/blob-image";
 
 const MAX_TEXT = 200;
 
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(
+    d.getDate(),
+  )}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 export interface CheckpointEditScreenProps {
   post: PostWithMeta;
   onSubmitted: () => void;
@@ -50,15 +62,6 @@ export function CheckpointEditScreen({
   const postDid = parseAtUri(post.uri).repo;
   const images = post.images ?? [];
 
-  const formatForInput = (dt: string): string => {
-    try {
-      const d = new Date(dt);
-      return d.toISOString().slice(0, 16);
-    } catch {
-      return "";
-    }
-  };
-
   return (
     <>
       <h2 className="mb-6 pr-10 text-lg font-bold text-white">チェックポイントを編集</h2>
@@ -69,7 +72,7 @@ export function CheckpointEditScreen({
           </label>
           <input
             type="datetime-local"
-            value={formatForInput(checkpointAt)}
+            value={toLocalInput(checkpointAt)}
             onChange={(e) => {
               const d = new Date(e.target.value);
               if (!isNaN(d.getTime())) setCheckpointAt(d.toISOString());

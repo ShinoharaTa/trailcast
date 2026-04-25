@@ -4,10 +4,29 @@ import { useRef, useState } from "react";
 import { PlusIcon, PinIcon, CloseIcon } from "@/components/ui/icons";
 import { createPost, uploadImage } from "@/lib/pds/posts";
 import { getAgent } from "@/lib/atp-agent";
+import { extractPhotoTimestamp } from "@/lib/exif";
 import type { Location } from "@/lib/types";
 
 const MAX_IMAGES = 4;
 const MAX_TEXT = 200;
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+// datetime-local の input が要求する "YYYY-MM-DDTHH:MM" 形式 (ローカル時刻)
+function toLocalInput(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
+    date.getDate(),
+  )}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+// "MM/DD HH:MM" のコンパクト表示（ボタンラベル用）
+function formatShort(date: Date): string {
+  return `${pad2(date.getMonth() + 1)}/${pad2(date.getDate())} ${pad2(
+    date.getHours(),
+  )}:${pad2(date.getMinutes())}`;
+}
 
 // Bluesky 同時投稿の設定は端末ごとに localStorage で記憶する
 const CROSSPOST_PREF_KEY = "trailcast_crosspost_to_bsky";
@@ -48,6 +67,13 @@ export function CheckpointPostScreen({
   const [crosspostToBsky, setCrosspostToBsky] = useState<boolean>(
     () => loadCrosspostPref(),
   );
+  // チェックポイント時刻。
+  // - "auto": ユーザー未編集 → 投稿時に new Date() を使う
+  // - "manual": ユーザー編集済み or 写真の EXIF を反映済み → 表示中の値を使う
+  const [checkpointAt, setCheckpointAt] = useState<Date>(() => new Date());
+  const [timeMode, setTimeMode] = useState<"auto" | "manual">("auto");
+  // files と同じインデックスで対応する写真の撮影日時 (EXIF が無い場合は null)
+  const [photoTimestamps, setPhotoTimestamps] = useState<(Date | null)[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -57,18 +83,57 @@ export function CheckpointPostScreen({
     saveCrosspostPref(value);
   };
 
-  const handleAddImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAddImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newFiles = Array.from(e.target.files ?? []);
-    const combined = [...files, ...newFiles].slice(0, MAX_IMAGES);
+    const remaining = MAX_IMAGES - files.length;
+    const accepted = newFiles.slice(0, Math.max(0, remaining));
+    const combined = [...files, ...accepted];
     setFiles(combined);
     setPreviews(combined.map((f) => URL.createObjectURL(f)));
     if (fileRef.current) fileRef.current.value = "";
+
+    const newStamps = await Promise.all(
+      accepted.map((f) => extractPhotoTimestamp(f)),
+    );
+    setPhotoTimestamps((prev) => [...prev, ...newStamps]);
+
+    // ユーザーがまだ時刻を編集していない場合、追加された写真の中で
+    // 最も古い撮影日時を自動で適用する
+    const valid = newStamps.filter((d): d is Date => d !== null);
+    if (valid.length === 0) return;
+    const earliest = valid.reduce((a, b) => (a.getTime() < b.getTime() ? a : b));
+    setTimeMode((mode) => {
+      if (mode === "auto") {
+        setCheckpointAt(earliest);
+        return "manual";
+      }
+      return mode;
+    });
   };
 
   const handleRemoveImage = (idx: number) => {
     const newFiles = files.filter((_, i) => i !== idx);
     setFiles(newFiles);
     setPreviews(newFiles.map((f) => URL.createObjectURL(f)));
+    setPhotoTimestamps((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleChangeTime = (value: string) => {
+    if (!value) return;
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return;
+    setCheckpointAt(d);
+    setTimeMode("manual");
+  };
+
+  const handleResetTimeToNow = () => {
+    setCheckpointAt(new Date());
+    setTimeMode("auto");
+  };
+
+  const handleApplyPhotoTime = (date: Date) => {
+    setCheckpointAt(date);
+    setTimeMode("manual");
   };
 
   const handleToggleLocation = async () => {
@@ -130,15 +195,17 @@ export function CheckpointPostScreen({
         sourceRef = res.uri;
       }
 
-      const now = new Date().toISOString();
+      const createdAt = new Date().toISOString();
+      const checkpointIso =
+        timeMode === "auto" ? createdAt : checkpointAt.toISOString();
       await createPost({
         thread: threadUri,
         text: text.trim() || undefined,
         images: blobs.length > 0 ? blobs : undefined,
         location: locationOn && location ? location : undefined,
-        checkpointAt: now,
+        checkpointAt: checkpointIso,
         sourceRef,
-        createdAt: now,
+        createdAt,
       });
       onSubmitted();
     } catch (e) {
@@ -202,6 +269,54 @@ export function CheckpointPostScreen({
             className="hidden"
             onChange={handleAddImages}
           />
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className="block text-xs font-medium text-white/50">
+              チェックポイント時刻
+            </label>
+            {timeMode === "manual" && (
+              <button
+                type="button"
+                onClick={handleResetTimeToNow}
+                className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-white/50 transition hover:bg-white/10"
+              >
+                現在時刻
+              </button>
+            )}
+          </div>
+          <input
+            type="datetime-local"
+            value={toLocalInput(checkpointAt)}
+            onChange={(e) => handleChangeTime(e.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+          />
+          {photoTimestamps.some((d) => d !== null) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {photoTimestamps.map((d, i) =>
+                d ? (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleApplyPhotoTime(d)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                      d.getTime() === checkpointAt.getTime()
+                        ? "bg-indigo-500/20 text-indigo-200"
+                        : "bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20"
+                    }`}
+                  >
+                    写真{i + 1}の時刻: {formatShort(d)}
+                  </button>
+                ) : null,
+              )}
+            </div>
+          )}
+          <p className="mt-1 text-[11px] text-white/30">
+            {timeMode === "auto"
+              ? "未設定の場合は投稿時の現在時刻が使われます"
+              : "手動で設定された時刻を使用中"}
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
