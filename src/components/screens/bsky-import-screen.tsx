@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckIcon, InfoIcon } from "@/components/ui/icons";
+import { CheckIcon, InfoIcon, ReplyIcon } from "@/components/ui/icons";
 import { Modal } from "@/components/ui/modal";
 import { getAgent } from "@/lib/atp-agent";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -18,6 +18,8 @@ interface BskyPost {
   text: string;
   imageUrls: string[];
   hasQuote: boolean;
+  /** 自分自身への返信 (= リプツリー継続) かどうか */
+  isReply: boolean;
   createdAt: string;
   selected: boolean;
 }
@@ -29,6 +31,7 @@ function postViewToBskyPost(post: BskyPostView): BskyPost {
   const record = post.record as {
     text?: string;
     createdAt?: string;
+    reply?: unknown;
   };
   const viewEmbed = post.embed as Record<string, unknown> | undefined;
   const imageUrls = extractImagesFromEmbed(viewEmbed);
@@ -40,6 +43,7 @@ function postViewToBskyPost(post: BskyPostView): BskyPost {
     text: record.text ?? "",
     imageUrls,
     hasQuote,
+    isReply: record.reply != null,
     createdAt: record.createdAt ?? post.indexedAt,
     selected: false,
   };
@@ -101,10 +105,13 @@ export function BlueskyImportScreen({
       else setLoading(true);
       try {
         const agent = getAgent();
+        // posts_and_author_threads: 自分の投稿 + 自分が自分自身に返信したリプライ
+        // (= スレッドにぶら下げているリプツリー継続) を含む。リポストや
+        // 他人の投稿は含まれない (実装側でも author.did === did で再フィルタ)。
         const res = await agent.getAuthorFeed({
           actor: did,
           limit: PAGE_SIZE,
-          filter: "posts_no_replies",
+          filter: "posts_and_author_threads",
           cursor: append ? cursorRef.current : undefined,
         });
         const items = (res.data.feed as unknown as FeedItem[])
@@ -598,8 +605,14 @@ function PostSelectCard({
               {sourceLabel}
             </div>
           )}
-          {post.text && (
+          {(post.text || post.isReply) && (
             <p className="text-sm leading-relaxed text-white/80">
+              {post.isReply && (
+                <span className="mr-1.5 inline-flex translate-y-[-1px] items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 align-middle text-[10px] font-bold text-sky-300 ring-1 ring-sky-400/20">
+                  <ReplyIcon className="size-2.5" strokeWidth={2.5} />
+                  Reply
+                </span>
+              )}
               {post.text}
             </p>
           )}
