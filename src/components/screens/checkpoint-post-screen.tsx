@@ -245,8 +245,11 @@ export function CheckpointPostScreen({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={url} alt="" className="h-full w-full object-cover" />
                 <button
+                  type="button"
                   onClick={() => handleRemoveImage(i)}
-                  className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100"
+                  aria-label={`写真${i + 1}を削除`}
+                  // モバイル / タブレット (md 未満) では常時表示。md 以上ではホバー時に表示。
+                  className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-black/70 text-white shadow-sm ring-1 ring-white/15 transition md:size-5 md:opacity-0 md:group-hover:opacity-100"
                 >
                   <CloseIcon className="size-3" />
                 </button>

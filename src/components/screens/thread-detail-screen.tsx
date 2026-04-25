@@ -877,16 +877,22 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                   </span>
                 )}
                 {isOwner && (
-                  <div className="ml-auto flex gap-1 opacity-0 transition group-hover:opacity-100">
+                  // モバイル / タブレット (md 未満) では常時表示。
+                  // md 以上はホバーでのみ表示する従来挙動。
+                  <div className="ml-auto flex gap-1 transition md:opacity-0 md:group-hover:opacity-100">
                     <button
+                      type="button"
                       onClick={() => openCheckpointEdit(cp)}
-                      className="rounded-md px-2 py-1 text-white/20 hover:bg-white/5 hover:text-white/60"
+                      aria-label="編集"
+                      className="rounded-md px-2 py-1 text-white/40 transition hover:bg-white/5 hover:text-white/80 md:text-white/20 md:hover:text-white/60"
                     >
                       <EditIcon className="size-3.5" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => setConfirmTarget({ type: "post", post: cp })}
-                      className="rounded-md px-2 py-1 text-white/20 hover:bg-red-500/10 hover:text-red-400"
+                      aria-label="削除"
+                      className="rounded-md px-2 py-1 text-white/40 transition hover:bg-red-500/10 hover:text-red-400 md:text-white/20"
                     >
                       <TrashIcon className="size-3.5" />
                     </button>
