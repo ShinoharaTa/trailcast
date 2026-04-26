@@ -281,6 +281,14 @@ function formatTimeOnly(dt: string): string {
 }
 
 /**
+ * ISO 文字列から年だけを取り出す。パース失敗時は null。
+ */
+function getYearOf(iso: string): number | null {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.getFullYear();
+}
+
+/**
  * 連続する同日 post をグループ化する。同じ日の先頭 post だけ DateBadge を出す
  * ための前処理。posts の並び順はそのまま維持する (並び替えはしない)。
  */
@@ -362,6 +370,27 @@ function DateBadge({ date }: { date: string }) {
           className="stroke-white/75"
         />
       </svg>
+    </div>
+  );
+}
+
+/**
+ * 年が変わる boundary に挟む divider。
+ * 横の細線を 2 本、その中央に丸ピル形 (border-radius 50%) で年を表示する。
+ * day group と day group の間に挟む想定。
+ */
+function YearDivider({ year }: { year: number }) {
+  return (
+    <div
+      role="separator"
+      aria-label={`${year}年`}
+      className="my-6 flex items-center gap-3"
+    >
+      <div className="h-px flex-1 bg-white/15" />
+      <span className="rounded-full border border-white/15 bg-surface-900 px-3 py-1 font-mono text-xs font-bold tabular-nums text-white/70 shadow-sm">
+        {year}
+      </span>
+      <div className="h-px flex-1 bg-white/15" />
     </div>
   );
 }
@@ -599,7 +628,16 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     setRefreshingUri(post.uri);
     try {
       const updated = await refreshFromSource(post);
-      setPosts((prev) => prev.map((p) => (p.uri === post.uri ? updated : p)));
+      // checkpointAt が変わった場合に時系列順が崩れないよう再ソート。
+      setPosts((prev) =>
+        prev
+          .map((p) => (p.uri === post.uri ? updated : p))
+          .sort(
+            (a, b) =>
+              new Date(a.checkpointAt).getTime() -
+              new Date(b.checkpointAt).getTime(),
+          ),
+      );
     } catch (e) {
       console.error("Failed to refresh from source:", e);
       const msg = e instanceof Error ? e.message : String(e);
@@ -857,7 +895,21 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           </div>
         )}
 
-        {groupPostsByDay(posts).map((group) => (
+        {groupPostsByDay(posts).flatMap((group, idx, all) => {
+          // 年が切り替わる箇所に divider を挟む。
+          // 最初の group の前にも挟むことで「初年度」が必ず表示される。
+          const prevYear =
+            idx > 0 ? getYearOf(all[idx - 1].posts[0].checkpointAt) : null;
+          const groupYear = getYearOf(group.posts[0].checkpointAt);
+          const showDivider =
+            groupYear !== null && groupYear !== prevYear;
+          const nodes: React.ReactNode[] = [];
+          if (showDivider && groupYear !== null) {
+            nodes.push(
+              <YearDivider key={`yd-${idx}-${groupYear}`} year={groupYear} />,
+            );
+          }
+          nodes.push(
           <div key={group.key} className="relative">
             {/* 縦線: その日のブロック全体を貫く。pill の中央 (x=28) を通る。 */}
             <div className="absolute bottom-0 left-6 top-0 w-px -translate-x-1/2 bg-gradient-to-b from-indigo-500/40 to-violet-500/40 sm:left-7" />
@@ -950,8 +1002,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 </div>
               </div>
             ))}
-          </div>
-        ))}
+          </div>,
+          );
+          return nodes;
+        })}
 
         {posts.length > 0 && (
           <div className="flex items-center gap-3 pl-14 sm:pl-16">
