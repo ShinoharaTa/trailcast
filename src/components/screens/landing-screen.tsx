@@ -23,20 +23,20 @@ export function LandingScreen() {
             <MapIcon className="size-7 text-white" />
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-[56px] lg:leading-[1.05]">
-            旅の記録を、
+            点を打って、
             <br className="hidden sm:inline" />
-            ダイナミックに残す。
+            跡を残す。
           </h1>
           <p className="mt-5 max-w-xl text-base leading-relaxed text-white/60 sm:text-lg">
-            Trailcast は AT Protocol 上に刻む、新しい形の旅ログ。
-            写真・位置情報・時刻をチェックポイントとしてスレッドに繋ぎ、
-            共有 URL だけで誰とでもシェアできます。
+            Trailcast は写真・場所・時間のチェックポイントをひとつのスレッドに束ねて、
+            あなたが追いかけたものを軌跡として残せる Bluesky 連携のジャーナル。
+            旅でも、食でも、日々の制作実況でも。
           </p>
 
           <ul className="mt-8 grid gap-3 text-sm text-white/70 sm:grid-cols-2">
             <Feature
               icon={<PinIcon className="size-3.5" />}
-              label="旅の瞬間を時系列のチェックポイントに"
+              label="出来事を時系列のチェックポイントに"
             />
             <Feature
               icon={<MapIcon className="size-3.5" />}

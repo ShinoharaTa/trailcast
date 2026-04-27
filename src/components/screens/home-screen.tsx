@@ -173,7 +173,7 @@ export function HomeScreen({ navigate }: NavigationProps) {
               @{handle}
             </a>
           ) : (
-            <p className="mt-1 text-sm text-white/40">あなたの旅の記録</p>
+            <p className="mt-1 text-sm text-white/40">あなたのチェックポイント</p>
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -226,7 +226,7 @@ export function HomeScreen({ navigate }: NavigationProps) {
         <div className="flex flex-col items-center py-20 text-center">
           <p className="text-lg font-medium text-white/30">まだスレッドがありません</p>
           <p className="mt-2 text-sm text-white/20">
-            「新しいスレッド」から旅の記録を始めましょう
+            「新しいスレッド」から記録を始めましょう
           </p>
         </div>
       )}
