@@ -12,6 +12,7 @@
     "preview": "npx wrangler pages dev out",
     "deploy": "npm run build && npx wrangler pages deploy out",
     "og:test": "tsx scripts/og-test.ts",
+    "og:build": "tsx scripts/og-default-build.ts",
     "lint": "next lint",
     "tauri": "tauri"
   },
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "^16.2.2",
+    "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/postcss": "^4.2.2",
     "@tauri-apps/cli": "^2.10.1",
     "@types/node": "22.19.17",

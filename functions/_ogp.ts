@@ -17,7 +17,10 @@ import {
 } from "./_atproto";
 
 const SITE_NAME = "Trailcast";
-const DEFAULT_OG_IMAGE_PATH = "/og-image.svg";
+// 各 SNS は og:image の SVG を受け付けないため、PNG にラスタライズしたものを
+// デフォルト OG として配信する (生成は `npm run og:build`)。
+const DEFAULT_OG_IMAGE_PATH = "/og-image.png";
+const DEFAULT_OG_IMAGE_TYPE = "image/png";
 
 export interface OgpMeta {
   title: string;
@@ -94,7 +97,7 @@ async function buildProfileOgp(
     title,
     description,
     image: defaultImage,
-    imageType: "image/svg+xml",
+    imageType: DEFAULT_OG_IMAGE_TYPE,
     url: `${origin}/${encodeURIComponent(identifier)}`,
     type: "profile",
   };
@@ -139,7 +142,7 @@ async function buildThreadOgp(
     : `${origin}${DEFAULT_OG_IMAGE_PATH}`;
   const imageType = ogCid
     ? thread.ogImage?.mimeType || "image/jpeg"
-    : "image/svg+xml";
+    : DEFAULT_OG_IMAGE_TYPE;
 
   return {
     title,
