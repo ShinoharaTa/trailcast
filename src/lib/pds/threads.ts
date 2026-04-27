@@ -1,4 +1,4 @@
-import { getAgent } from "@/lib/atp-agent";
+import { getAgent, getMyDid } from "@/lib/atp-agent";
 import {
   NSID_THREAD,
   NSID_POST,
@@ -23,7 +23,7 @@ export async function createThread(
   const agent = getAgent();
   const rkey = generateTid();
   const res = await agent.com.atproto.repo.putRecord({
-    repo: agent.session!.did,
+    repo: getMyDid(),
     collection: NSID_THREAD,
     rkey,
     record: record as unknown as Record<string, unknown>,
@@ -39,7 +39,7 @@ export async function createThread(
 export async function listThreads(
   did?: string,
 ): Promise<ThreadWithMeta[]> {
-  const repo = did ?? getAgent().session!.did;
+  const repo = did ?? getMyDid();
   const res = await listRecordsViaPds<ThreadRecord>(repo, NSID_THREAD, {
     limit: 100,
     reverse: true,
@@ -64,7 +64,7 @@ export async function updateThread(
 ): Promise<ThreadWithMeta> {
   const agent = getAgent();
   const res = await agent.com.atproto.repo.putRecord({
-    repo: agent.session!.did,
+    repo: getMyDid(),
     collection: NSID_THREAD,
     rkey,
     record: record as unknown as Record<string, unknown>,
@@ -74,7 +74,7 @@ export async function updateThread(
 
 export async function deleteThread(rkey: string): Promise<void> {
   const agent = getAgent();
-  const did = agent.session!.did;
+  const did = getMyDid();
 
   const postsRes = await agent.com.atproto.repo.listRecords({
     repo: did,

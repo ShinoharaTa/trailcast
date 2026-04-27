@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { LoginScreen } from "@/components/screens/login-screen";
+import { AuthCallbackScreen } from "@/components/screens/auth-callback-screen";
 import { HomeScreen } from "@/components/screens/home-screen";
 import { ThreadCreateScreen } from "@/components/screens/thread-create-screen";
 import { ThreadDetailScreen } from "@/components/screens/thread-detail-screen";
@@ -23,6 +24,18 @@ export default function Page() {
     restore();
   }, [restore]);
 
+  const nav = { navigate, params };
+
+  // OAuth コールバック (`/auth/callback?code=...`) は initAuth() が処理中の
+  // ローディング表示を出しつつ、終わったら home に戻る。
+  if (currentScreen === "auth-callback") {
+    return (
+      <main>
+        <AuthCallbackScreen {...nav} />
+      </main>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -33,8 +46,6 @@ export default function Page() {
       </div>
     );
   }
-
-  const nav = { navigate, params };
 
   // /login を直接叩いたときは常にログインフォーム
   if (currentScreen === "login") {

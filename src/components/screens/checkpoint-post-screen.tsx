@@ -252,8 +252,7 @@ export function CheckpointPostScreen({
             height: images[i]?.height ?? 1,
           })),
         );
-        const effectiveHandle =
-          handle ?? agent.session?.handle ?? agent.session?.did ?? "";
+        const effectiveHandle = handle ?? agent.assertDid ?? "";
         const { text: bskyText, facets } = buildCrosspostText({
           title: threadTitle,
           handle: effectiveHandle,
