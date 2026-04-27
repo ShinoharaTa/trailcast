@@ -11,6 +11,7 @@
     "build": "next build",
     "preview": "npx wrangler pages dev out",
     "deploy": "npm run build && npx wrangler pages deploy out",
+    "og:test": "tsx scripts/og-test.ts",
     "lint": "next lint",
     "tauri": "tauri"
   },
@@ -35,6 +36,7 @@
     "eslint-config-next": "^16.2.2",
     "postcss": "^8.5.9",
     "tailwindcss": "^4.2.2",
+    "tsx": "^4.21.0",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.58.1"
   }

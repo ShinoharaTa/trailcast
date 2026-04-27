@@ -35,17 +35,22 @@ export function ThreadCreateScreen({ navigate }: NavigationProps) {
     setError(null);
     try {
       let coverImage = undefined;
+      let coverBlob: Blob | null = null;
       if (coverFile) {
         const processed = await processCoverImage(coverFile);
         coverImage = await uploadImage(processed.bytes, processed.mimeType);
+        coverBlob = processed.blob;
       }
-      const thread = await createThread({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        visibility,
-        coverImage,
-        createdAt: new Date().toISOString(),
-      });
+      const thread = await createThread(
+        {
+          title: title.trim(),
+          description: description.trim() || undefined,
+          visibility,
+          coverImage,
+          createdAt: new Date().toISOString(),
+        },
+        { coverBlob },
+      );
       // 作成後に戻る操作で "/new" に戻らないよう replace
       navigate("thread-detail", { threadUri: thread.uri }, { replace: true });
     } catch (e) {

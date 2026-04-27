@@ -11,6 +11,7 @@ export interface ThreadRecord {
   description?: string;
   visibility: "private" | "public";
   coverImage?: BlobRef;
+  ogImage?: BlobRef;
   createdAt: string;
   /**
    * Checkpoint の表示順。`asc` (省略時のデフォルト) は古い順、`desc` は新しい順。

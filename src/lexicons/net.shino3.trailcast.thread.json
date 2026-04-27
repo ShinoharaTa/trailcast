@@ -31,6 +31,12 @@
             "maxSize": 1000000,
             "description": "Cover image"
           },
+          "ogImage": {
+            "type": "blob",
+            "accept": ["image/jpeg", "image/png", "image/webp"],
+            "maxSize": 500000,
+            "description": "Auto-generated Open Graph image (1200x630). Stored separately from coverImage so the cover can be human-curated while ogImage is regenerated from the latest thread state."
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime",
