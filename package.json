@@ -4,7 +4,10 @@
   "description": "旅の記録やオフ会の記録を、スレッド形式でリアルタイムに残して共有するアプリ。",
   "private": true,
   "scripts": {
+    "prepare:client-metadata": "node scripts/prepare-client-metadata.mjs",
+    "predev": "npm run prepare:client-metadata",
     "dev": "next dev --turbopack",
+    "prebuild": "npm run prepare:client-metadata",
     "build": "next build",
     "preview": "npx wrangler pages dev out",
     "deploy": "npm run build && npx wrangler pages deploy out",

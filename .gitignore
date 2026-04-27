@@ -32,3 +32,6 @@ src-tauri/gen/
 
 # cloudflare
 .wrangler/
+
+# generated at build time from config/oauth/client-metadata.{prod,dev}.json
+public/client-metadata.json
