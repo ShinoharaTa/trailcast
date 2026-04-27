@@ -33,5 +33,8 @@ src-tauri/gen/
 # cloudflare
 .wrangler/
 
+# scripts/og-test.ts などのローカル実行成果物
+tmp/
+
 # generated at build time from config/oauth/client-metadata.{prod,dev}.json
 public/client-metadata.json

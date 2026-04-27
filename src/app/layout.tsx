@@ -3,8 +3,10 @@ import "./globals.css";
 
 const SITE_URL = "https://trailcast.shino3.net";
 const SITE_NAME = "Trailcast";
-const SITE_DESCRIPTION = "旅の記録を、ダイナミックに残す。";
-const OG_IMAGE = "/og-image.svg";
+const SITE_TAGLINE = "点を打って、跡を残す。";
+const SITE_DESCRIPTION =
+  "写真・場所・時間のチェックポイントを束ねて、追いかけたものを軌跡として残せる Bluesky 連携のジャーナル。旅でも、食でも、日々の制作実況でも。";
+const OG_IMAGE = "/og-image.png";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -16,13 +18,13 @@ export const metadata: Metadata = {
   applicationName: SITE_NAME,
   keywords: [
     "Trailcast",
-    "旅の記録",
-    "旅行日記",
+    "ライフログ",
+    "ジャーナル",
+    "チェックポイント",
     "AT Protocol",
     "Bluesky",
-    "チェックポイント",
     "trail",
-    "travel log",
+    "lifelog",
   ],
   authors: [{ name: "shino3" }],
   creator: "shino3",
@@ -45,8 +47,8 @@ export const metadata: Metadata = {
         url: OG_IMAGE,
         width: 1200,
         height: 630,
-        alt: `${SITE_NAME} — ${SITE_DESCRIPTION}`,
-        type: "image/svg+xml",
+        alt: `${SITE_NAME} — ${SITE_TAGLINE}`,
+        type: "image/png",
       },
     ],
   },

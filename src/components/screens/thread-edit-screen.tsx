@@ -78,23 +78,29 @@ export function ThreadEditScreen({
     setError(null);
     try {
       let coverImage: BlobRef | undefined;
+      let coverBlob: Blob | null = null;
       if (coverFile) {
         const processed = await processCoverImage(coverFile);
         coverImage = await uploadImage(processed.bytes, processed.mimeType);
+        coverBlob = processed.blob;
       } else if (coverRemoved) {
         coverImage = undefined;
       } else {
         coverImage = thread.coverImage;
       }
-      await updateThread(thread.rkey, {
-        title: title.trim(),
-        description: description.trim() || undefined,
-        visibility,
-        coverImage,
-        createdAt: thread.createdAt,
-        // デフォルト (asc) のときはあえて値を残し、明示しなくても正しく動作させる。
-        sortOrder: sortOrder === "desc" ? "desc" : undefined,
-      });
+      await updateThread(
+        thread.rkey,
+        {
+          title: title.trim(),
+          description: description.trim() || undefined,
+          visibility,
+          coverImage,
+          createdAt: thread.createdAt,
+          // デフォルト (asc) のときはあえて値を残し、明示しなくても正しく動作させる。
+          sortOrder: sortOrder === "desc" ? "desc" : undefined,
+        },
+        { coverBlob },
+      );
       onSubmitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : "更新に失敗しました");
