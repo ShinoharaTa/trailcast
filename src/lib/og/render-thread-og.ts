@@ -57,16 +57,6 @@ async function ensureFonts(): Promise<void> {
   }
 }
 
-function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`画像の読み込みに失敗: ${url}`));
-    img.src = url;
-  });
-}
-
 function loadImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -81,6 +71,26 @@ function loadImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
     };
     img.src = url;
   });
+}
+
+/**
+ * URL から画像を取り込む。
+ *
+ * `<img crossOrigin="anonymous">` 経由ではなく `fetch` → `Blob` →
+ * `blob:` URL の流れで取り込む理由:
+ *   - fetch なら CORS エラー時にハンドリングと警告ログが取りやすい
+ *   - 取り出した Blob は同一オリジンの `blob:` URL になるので、
+ *     後続の Canvas 描画で taint されず、`toBlob()` も確実に動く
+ *   - 一部 CDN (cdn.bsky.app の avatar 等) はリダイレクトを挟む際に
+ *     CORS が落ちることがあるが、fetch なら同等の挙動を取れる
+ */
+async function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
+  const res = await fetch(url, { mode: "cors", credentials: "omit" });
+  if (!res.ok) {
+    throw new Error(`画像の取得に失敗 (${res.status}): ${url}`);
+  }
+  const blob = await res.blob();
+  return loadImageFromBlob(blob);
 }
 
 async function loadImage(
@@ -286,55 +296,32 @@ function drawCircularImage(
   ctx.restore();
 }
 
-function drawAvatarPlaceholder(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-  initial: string,
-): void {
-  const grad = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
-  grad.addColorStop(0, "#6366f1");
-  grad.addColorStop(1, "#8b5cf6");
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `700 ${Math.round(r * 1.0)}px ${FONT_FAMILY}`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(initial.toUpperCase(), cx, cy + 2);
-  ctx.textAlign = "start";
-  ctx.textBaseline = "alphabetic";
-}
-
 function drawUserInfo(
   ctx: CanvasRenderingContext2D,
   avatar: HTMLImageElement | null,
   displayName: string,
   handle: string,
 ): void {
+  // アバター有り: 円形に描画してテキストを横に並べる
+  // アバター無し (未設定 or 取得失敗): プレースホルダーは描画せず、
+  // テキストブロックだけを PADDING 起点で表示する。
   const avatarR = 36;
-  const cx = PADDING + avatarR;
-  const cy = HEIGHT - PADDING - avatarR;
+  const baseY = HEIGHT - PADDING - avatarR;
+  let textX = PADDING;
 
   if (avatar) {
-    drawCircularImage(ctx, avatar, cx, cy, avatarR);
+    const cx = PADDING + avatarR;
+    drawCircularImage(ctx, avatar, cx, baseY, avatarR);
     ctx.lineWidth = 2;
     ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
     ctx.beginPath();
-    ctx.arc(cx, cy, avatarR, 0, Math.PI * 2);
+    ctx.arc(cx, baseY, avatarR, 0, Math.PI * 2);
     ctx.stroke();
-  } else {
-    const initial = (displayName || handle || "T").charAt(0);
-    drawAvatarPlaceholder(ctx, cx, cy, avatarR, initial);
+    textX = cx + avatarR + 18;
   }
 
-  const textX = cx + avatarR + 18;
-  const nameY = cy - 18;
-  const handleY = cy + 14;
+  const nameY = baseY - 18;
+  const handleY = baseY + 14;
 
   ctx.fillStyle = "#ffffff";
   ctx.textBaseline = "middle";
