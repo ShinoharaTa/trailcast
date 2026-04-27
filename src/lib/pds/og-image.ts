@@ -12,10 +12,18 @@ import {
 } from "@/lib/pds/blob-url";
 import { getProfile } from "@/lib/pds/identity";
 import { uploadImage } from "@/lib/pds/posts";
+import { getRecordViaPds } from "@/lib/pds/repo-read";
 import {
   renderThreadOgImage,
   type ThreadOgRenderInput,
 } from "@/lib/og/render-thread-og";
+
+interface BskyProfileRecord {
+  displayName?: string;
+  description?: string;
+  avatar?: BlobRef;
+  banner?: BlobRef;
+}
 
 export interface BuildOgImageInput {
   /** 描画するタイトル。 */
@@ -78,17 +86,38 @@ async function buildRenderInput(
     }
   }
 
-  // プロフィール (アバター / 表示名 / handle) を AppView から取得。
+  // プロフィール (表示名 / handle) を AppView から取得。
   // 取得失敗時はアバター無しでも生成できるよう、catch して進める。
   const profile = await getProfile(input.did).catch((e) => {
     console.warn("[og] getProfile failed", e);
     return null;
   });
 
+  // アバターは AppView が返す cdn.bsky.app URL ではなく、ユーザー本人の PDS
+  // (`com.atproto.sync.getBlob`) から取得する URL を使う。
+  // 理由: cdn.bsky.app は CORS ヘッダー (Access-Control-Allow-Origin) を返さない
+  // ため、ブラウザの fetch (mode: "cors") が拒否される。一方、PDS の getBlob は
+  // CORS 許可済みなのでブラウザから取得できる。
+  let avatarUrl: string | null = null;
+  try {
+    const profileRec = await getRecordViaPds<BskyProfileRecord>(
+      input.did,
+      "app.bsky.actor.profile",
+      "self",
+    );
+    const avatarCid = extractBlobCid(profileRec.value?.avatar);
+    if (avatarCid) {
+      const pds = await resolveDidPds(input.did);
+      avatarUrl = buildBlobUrl(pds, input.did, avatarCid);
+    }
+  } catch (e) {
+    console.warn("[og] failed to resolve avatar from PDS", e);
+  }
+
   return {
     title: input.title,
     cover,
-    avatar: profile?.avatar ?? null,
+    avatar: avatarUrl,
     displayName: profile?.displayName ?? null,
     handle: profile?.handle ?? null,
   };
