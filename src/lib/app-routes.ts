@@ -2,6 +2,7 @@ import { NSID_THREAD, buildAtUri, parseAtUri } from "@/lib/types";
 
 export type ScreenId =
   | "login"
+  | "auth-callback"
   | "home"
   | "thread-create"
   | "thread-detail"
@@ -38,6 +39,7 @@ function dec(s: string): string {
 const RESERVED_TOP_SEGMENTS: ReadonlySet<string> = new Set([
   "login",
   "new",
+  "auth",
 ]);
 
 /**
@@ -75,6 +77,8 @@ export function screenToPathname(
       return "/";
     case "login":
       return "/login";
+    case "auth-callback":
+      return "/auth/callback";
     case "thread-create":
       return "/new";
     case "thread-detail": {
@@ -112,6 +116,11 @@ export function parsePathname(pathname: string): Route {
       };
     }
     return { screen: "home", params: {} };
+  }
+
+  // /auth/callback : OAuth 認可後のリダイレクト先
+  if (parts.length >= 2 && parts[0] === "auth" && parts[1] === "callback") {
+    return { screen: "auth-callback", params: {} };
   }
 
   // /{did|handle}/{rkey} (それ以上のサブパスが付いていても thread-detail として扱う)

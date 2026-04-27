@@ -1,115 +1,202 @@
-import { AtpAgent, type AtpSessionData, type AtpSessionEvent } from "@atproto/api";
+import { Agent } from "@atproto/api";
+import {
+  BrowserOAuthClient,
+  type OAuthSession,
+} from "@atproto/oauth-client-browser";
 
-const SESSION_KEY = "trailcast_session";
+// 旧 App Password セッションのキー。OAuth 移行時に強制ログアウトする目印。
+const LEGACY_SESSION_KEY = "trailcast_session";
 
-function loadPersistedSession(): AtpSessionData | null {
-  if (typeof window === "undefined") return null;
+// OAuth 用 scope。`atproto` は必須、`transition:generic` は app.bsky.* /
+// com.atproto.repo.* を含む既存 lexicon 操作を一括許可するための互換 scope。
+const OAUTH_SCOPE = "atproto transition:generic";
+
+const HANDLE_RESOLVER = "https://bsky.social";
+
+let _client: BrowserOAuthClient | null = null;
+let _session: OAuthSession | null = null;
+let _agent: Agent | null = null;
+type InitResult = { session: OAuthSession | null; state?: string | null };
+
+let _initPromise: Promise<InitResult> | null = null;
+
+/**
+ * 旧来の App Password セッションが localStorage に残っていれば消す。
+ * OAuth 移行時の取り残し対策。1 度だけ走れば十分なので副作用無しで呼んで OK。
+ */
+function clearLegacySession() {
+  if (typeof window === "undefined") return;
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as AtpSessionData;
+    window.localStorage.removeItem(LEGACY_SESSION_KEY);
   } catch {
-    return null;
+    // quota / denied: silent
   }
 }
 
 /**
- * AtpSessionEvent → localStorage の同期。
+ * `localhost` で開いている場合は `127.0.0.1` に置き換えた URL へリダイレクトし、
+ * true を返す (= 後続処理は中断)。それ以外は false。
  *
- * `@atproto/api` 側の挙動:
- *   - "create" / "update": session を保存
- *   - "expired" / "create-failed": session は破棄 (sess は undefined)
- *   - "network-error": refresh が一時的なネットワーク不調等で失敗。
- *     agent 側は session を保持 (sess は元の session を渡してくる) ため、
- *     こちらでも localStorage を消してはいけない。
- *
- * 以前は create/update 以外を全て logout 扱いして localStorage を消していたため、
- * 一瞬の通信不調で勝手にログアウトされる現象が出ていた。
+ * atproto OAuth の loopback client は redirect_uri に `127.0.0.1` または `[::1]`
+ * しか許可しない (RFC 8252) ため、`localhost` で開かれている場合は早めに
+ * IP origin へ揃えてしまう。WebCrypto も `localhost` を secure context として
+ * 扱わないので、結果的にこの方が都合が良い。
  */
-function persistSession(evt: AtpSessionEvent, sess?: AtpSessionData) {
-  if (typeof window === "undefined") return;
-  switch (evt) {
-    case "create":
-    case "update":
-      if (sess) localStorage.setItem(SESSION_KEY, JSON.stringify(sess));
-      return;
-    case "network-error":
-      // 一時的失敗。session が渡されている場合のみ書き戻し、無ければ何もしない
-      // (既存の保存値をそのまま温存する)。
-      if (sess) localStorage.setItem(SESSION_KEY, JSON.stringify(sess));
-      return;
-    case "expired":
-    case "create-failed":
-    default:
-      localStorage.removeItem(SESSION_KEY);
-      return;
+function maybeRedirectLocalhostToIp(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.location.hostname !== "localhost") return false;
+  const url = new URL(window.location.href);
+  url.hostname = "127.0.0.1";
+  window.location.replace(url.toString());
+  return true;
+}
+
+/**
+ * 現在の origin から OAuth `client_id` を組み立てる。
+ *
+ * - 公開ドメイン (https://...) では `${origin}/client-metadata.json` を返す。
+ *   実際の JSON は `scripts/prepare-client-metadata.mjs` がブランチに応じて
+ *   `public/client-metadata.json` に書き出している。
+ * - 127.0.0.1 / [::1] のローカル開発では loopback client モードを使い、特殊な
+ *   `http://localhost?redirect_uri=...&scope=...` 形式の client_id を組み立てる
+ *   (atproto OAuth 仕様。client metadata はサーバ側にハードコードされている)。
+ */
+function buildClientId(): string {
+  if (typeof window === "undefined") {
+    throw new Error("OAuth client requires browser context");
   }
+  const origin = window.location.origin;
+  const isLoopback =
+    origin.startsWith("http://127.0.0.1") ||
+    origin.startsWith("http://[::1]");
+  if (isLoopback) {
+    const redirect = `${origin}/auth/callback`;
+    return `http://localhost?redirect_uri=${encodeURIComponent(
+      redirect,
+    )}&scope=${encodeURIComponent(OAUTH_SCOPE)}`;
+  }
+  return `${origin}/client-metadata.json`;
 }
 
-function clearPersistedSession() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(SESSION_KEY);
+async function getOAuthClient(): Promise<BrowserOAuthClient | null> {
+  if (_client) return _client;
+  // localhost なら 127.0.0.1 に飛ばし、リダイレクト中なので OAuth 初期化はスキップ。
+  if (maybeRedirectLocalhostToIp()) return null;
+  clearLegacySession();
+  _client = await BrowserOAuthClient.load({
+    clientId: buildClientId(),
+    handleResolver: HANDLE_RESOLVER,
+  });
+  return _client;
 }
 
-let _agent: AtpAgent | null = null;
+function attachSession(session: OAuthSession): void {
+  _session = session;
+  _agent = new Agent(session);
+}
 
-export function getAgent(): AtpAgent {
+function detachSession(): void {
+  _session = null;
+  _agent = null;
+}
+
+/**
+ * アプリ起動時に 1 度だけ呼ぶ初期化。
+ *
+ * - URL に OAuth コールバックパラメータが乗っていれば自動で取り込む
+ *   (`/auth/callback?code=...&state=...` を踏んで戻ってきたケース)。
+ * - それ以外は IndexedDB に保存済みのセッションを復元する。
+ *
+ * 多重呼び出しは 1 つの promise にまとめる (StrictMode で再マウントしても安全)。
+ */
+export async function initAuth(): Promise<{
+  did: string;
+  isCallback: boolean;
+} | null> {
+  if (!_initPromise) {
+    _initPromise = (async (): Promise<InitResult> => {
+      const client = await getOAuthClient();
+      // localhost → 127.0.0.1 へのリダイレクト中はここに来る。永久 pending で OK
+      // (ページ自体が遷移するため上位の loading 表示はそのまま)。
+      if (!client) return new Promise<InitResult>(() => {});
+      const result = await client.init();
+      if (result?.session) {
+        attachSession(result.session);
+        return { session: result.session, state: result.state };
+      }
+      return { session: null };
+    })();
+  }
+  const result = await _initPromise;
+  if (!result.session) return null;
+  return {
+    did: result.session.sub,
+    // `state` が付いていれば「いま OAuth コールバックから戻ってきた」ことを示す。
+    isCallback: result.state != null,
+  };
+}
+
+/**
+ * ハンドル / DID / PDS URL のいずれかを受け取り、認可サーバへリダイレクトする。
+ * 戻り値の Promise は基本的に解決しない (リダイレクト発生のため)。
+ * AbortSignal でキャンセルされた場合や、ユーザーがブラウザ戻るで離脱した場合に
+ * reject する。
+ */
+export async function startSignIn(identifier: string): Promise<never> {
+  const client = await getOAuthClient();
+  if (!client) {
+    // localhost → 127.0.0.1 へリダイレクト中。もうすぐページが遷移する。
+    return new Promise<never>(() => {});
+  }
+  await client.signIn(identifier, {
+    // CSRF + コールバック識別用に簡易 state。中身は今は使っていない。
+    state: crypto.randomUUID(),
+  });
+  // signIn は通常リダイレクトで離脱するためここまで来ない。
+  throw new Error("OAuth redirect did not occur");
+}
+
+/**
+ * 現在のセッションをサーバ側で revoke し、ローカル状態もクリアする。
+ */
+export async function signOutCurrent(): Promise<void> {
+  if (_session) {
+    try {
+      await _session.signOut();
+    } catch (e) {
+      console.warn("[auth] signOut failed", e);
+    }
+  }
+  detachSession();
+  clearLegacySession();
+}
+
+/**
+ * 認証済みでない場合に投げる用の Agent ゲッター。
+ * 既存コールサイトとの互換のため同期で返すが、initAuth() が完了している前提。
+ */
+export function getAgent(): Agent {
   if (!_agent) {
-    _agent = new AtpAgent({
-      service: "https://bsky.social",
-      persistSession: persistSession,
-    });
+    throw new Error(
+      "AT Protocol agent is not initialized. Did you call initAuth() first?",
+    );
   }
   return _agent;
 }
 
-export async function loginWithPassword(
-  identifier: string,
-  password: string,
-): Promise<void> {
-  const agent = getAgent();
-  await agent.login({ identifier, password });
-}
-
-/**
- * 永続化済みの session を agent に流し込んでセッションを復元する。
- *
- * `@atproto/api` の `agent.resumeSession()` は内部で必ず refreshSession を
- * 走らせるため、一時的なネットワーク不調でも reject する。reject = ログアウト
- * とは限らず、session 自体は agent に残っているケースがある (drs:
- *   "a rejected promise from this method indicates a failure to refresh the
- *    session after resuming it but does not indicate a failure to set the
- *    session itself")
- *
- * そのため:
- *   - resumeSession が成功 → そのまま hasSession を返す
- *   - reject されても agent.hasSession === true → 一時的失敗とみなし、
- *     localStorage は消さず、保存値もそのまま (ログイン状態は維持)
- *   - reject かつ agent.hasSession === false → 認証エラー等で本当に死亡。
- *     localStorage を破棄して未ログイン扱い
- */
-export async function resumeSession(): Promise<boolean> {
-  const saved = loadPersistedSession();
-  if (!saved) return false;
-  const agent = getAgent();
-  try {
-    await agent.resumeSession(saved);
-    return agent.hasSession;
-  } catch (e) {
-    if (agent.hasSession) {
-      console.warn("resumeSession refresh failed, keeping session", e);
-      return true;
-    }
-    clearPersistedSession();
-    return false;
-  }
-}
-
-export function logout(): void {
-  clearPersistedSession();
-  _agent = null;
+export function getOptionalAgent(): Agent | null {
+  return _agent;
 }
 
 export function hasActiveSession(): boolean {
-  return _agent?.hasSession ?? false;
+  return _agent !== null;
+}
+
+/**
+ * ログイン中ユーザーの DID を返す。
+ * Agent が未初期化なら例外。
+ */
+export function getMyDid(): string {
+  const agent = getAgent();
+  return agent.assertDid;
 }

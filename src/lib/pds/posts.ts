@@ -1,4 +1,4 @@
-import { getAgent } from "@/lib/atp-agent";
+import { getAgent, getMyDid } from "@/lib/atp-agent";
 import {
   NSID_POST,
   type PostRecord,
@@ -27,7 +27,7 @@ export async function createPost(
   const agent = getAgent();
   const rkey = generateTid();
   const res = await agent.com.atproto.repo.putRecord({
-    repo: agent.session!.did,
+    repo: getMyDid(),
     collection: NSID_POST,
     rkey,
     record: record as unknown as Record<string, unknown>,
@@ -49,7 +49,7 @@ export async function updatePost(
 ): Promise<PostWithMeta> {
   const agent = getAgent();
   const res = await agent.com.atproto.repo.putRecord({
-    repo: agent.session!.did,
+    repo: getMyDid(),
     collection: NSID_POST,
     rkey,
     record: record as unknown as Record<string, unknown>,
@@ -60,7 +60,7 @@ export async function updatePost(
 export async function deletePost(rkey: string): Promise<void> {
   const agent = getAgent();
   await agent.com.atproto.repo.deleteRecord({
-    repo: agent.session!.did,
+    repo: getMyDid(),
     collection: NSID_POST,
     rkey,
   });
