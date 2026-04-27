@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NavigationProps } from "@/lib/use-navigation";
 import type {
   ThreadWithMeta,
@@ -398,7 +398,11 @@ function YearDivider({ year }: { year: number }) {
 export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const { did: myDid, isAuthenticated } = useAuthStore();
   const [thread, setThread] = useState<ThreadWithMeta | null>(null);
+  // 内部状態は常に「昇順 (古い順)」で保持し、表示時に thread.sortOrder で反転する。
   const [posts, setPosts] = useState<PostWithMeta[]>([]);
+  const orderedPosts = useMemo(() => {
+    return thread?.sortOrder === "desc" ? [...posts].reverse() : posts;
+  }, [posts, thread?.sortOrder]);
   const [loading, setLoading] = useState(true);
   const [, setDeleting] = useState(false);
   const [refreshingUri, setRefreshingUri] = useState<string | null>(null);
@@ -895,7 +899,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           </div>
         )}
 
-        {groupPostsByDay(posts).flatMap((group, idx, all) => {
+        {groupPostsByDay(orderedPosts).flatMap((group, idx, all) => {
           // 年が切り替わる箇所に divider を挟む。
           // 最初の group の前にも挟むことで「初年度」が必ず表示される。
           const prevYear =

@@ -6,7 +6,11 @@ import { PhotoIcon, TrashIcon } from "@/components/ui/icons";
 import { updateThread } from "@/lib/pds/threads";
 import { uploadImage } from "@/lib/pds/posts";
 import { processCoverImage } from "@/lib/image-processing";
-import { parseAtUri, type ThreadWithMeta } from "@/lib/types";
+import {
+  parseAtUri,
+  type ThreadSortOrder,
+  type ThreadWithMeta,
+} from "@/lib/types";
 import { useBlobUrl } from "@/components/ui/blob-image";
 
 export interface ThreadEditScreenProps {
@@ -26,6 +30,10 @@ export function ThreadEditScreen({
   const [description, setDescription] = useState(thread.description ?? "");
   const [visibility, setVisibility] = useState<"private" | "public">(
     thread.visibility,
+  );
+  // 既存レコードに sortOrder が無い場合は "asc" として扱う。
+  const [sortOrder, setSortOrder] = useState<ThreadSortOrder>(
+    thread.sortOrder === "desc" ? "desc" : "asc",
   );
 
   // カバー画像の状態: 既存維持 / 新規選択 / 削除
@@ -84,6 +92,8 @@ export function ThreadEditScreen({
         visibility,
         coverImage,
         createdAt: thread.createdAt,
+        // デフォルト (asc) のときはあえて値を残し、明示しなくても正しく動作させる。
+        sortOrder: sortOrder === "desc" ? "desc" : undefined,
       });
       onSubmitted();
     } catch (e) {
@@ -92,10 +102,13 @@ export function ThreadEditScreen({
     }
   };
 
+  const initialSortOrder: ThreadSortOrder =
+    thread.sortOrder === "desc" ? "desc" : "asc";
   const dirty =
     title.trim() !== thread.title ||
     (description.trim() || undefined) !== thread.description ||
     visibility !== thread.visibility ||
+    sortOrder !== initialSortOrder ||
     coverFile !== null ||
     coverRemoved;
 
@@ -162,6 +175,49 @@ export function ThreadEditScreen({
               />
             </div>
           </button>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-sm text-white/70">
+                チェックポイントの並び順
+              </div>
+              <div className="text-[11px] text-white/40">
+                {sortOrder === "desc"
+                  ? "新しいものが上に表示されます"
+                  : "古いものが上に表示されます (デフォルト)"}
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2" role="radiogroup" aria-label="並び順">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={sortOrder === "asc"}
+              onClick={() => setSortOrder("asc")}
+              className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                sortOrder === "asc"
+                  ? "border-indigo-400/60 bg-indigo-500/15 text-white"
+                  : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/5"
+              }`}
+            >
+              古い順 (昇順)
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={sortOrder === "desc"}
+              onClick={() => setSortOrder("desc")}
+              className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                sortOrder === "desc"
+                  ? "border-indigo-400/60 bg-indigo-500/15 text-white"
+                  : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/5"
+              }`}
+            >
+              新しい順 (降順)
+            </button>
+          </div>
         </div>
 
         <div>

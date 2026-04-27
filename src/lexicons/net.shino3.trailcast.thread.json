@@ -35,6 +35,11 @@
             "type": "string",
             "format": "datetime",
             "description": "Creation timestamp"
+          },
+          "sortOrder": {
+            "type": "string",
+            "knownValues": ["asc", "desc"],
+            "description": "Display order of checkpoints by checkpointAt. 'asc' (default) shows oldest first, 'desc' shows newest first."
           }
         }
       }

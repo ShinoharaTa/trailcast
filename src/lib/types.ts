@@ -4,12 +4,19 @@ export const NSID_THREAD = "net.shino3.trailcast.thread";
 export const NSID_POST = "net.shino3.trailcast.post";
 export const NSID_BOOKMARK = "net.shino3.trailcast.bookmark";
 
+export type ThreadSortOrder = "asc" | "desc";
+
 export interface ThreadRecord {
   title: string;
   description?: string;
   visibility: "private" | "public";
   coverImage?: BlobRef;
   createdAt: string;
+  /**
+   * Checkpoint の表示順。`asc` (省略時のデフォルト) は古い順、`desc` は新しい順。
+   * 既存レコードとの後方互換のため optional で扱う。
+   */
+  sortOrder?: ThreadSortOrder;
 }
 
 export interface Location {
