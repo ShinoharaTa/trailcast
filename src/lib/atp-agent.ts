@@ -34,17 +34,32 @@ function clearLegacySession() {
 }
 
 /**
+ * `localhost` で開いている場合は `127.0.0.1` に置き換えた URL へリダイレクトし、
+ * true を返す (= 後続処理は中断)。それ以外は false。
+ *
+ * atproto OAuth の loopback client は redirect_uri に `127.0.0.1` または `[::1]`
+ * しか許可しない (RFC 8252) ため、`localhost` で開かれている場合は早めに
+ * IP origin へ揃えてしまう。WebCrypto も `localhost` を secure context として
+ * 扱わないので、結果的にこの方が都合が良い。
+ */
+function maybeRedirectLocalhostToIp(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.location.hostname !== "localhost") return false;
+  const url = new URL(window.location.href);
+  url.hostname = "127.0.0.1";
+  window.location.replace(url.toString());
+  return true;
+}
+
+/**
  * 現在の origin から OAuth `client_id` を組み立てる。
  *
  * - 公開ドメイン (https://...) では `${origin}/client-metadata.json` を返す。
  *   実際の JSON は `scripts/prepare-client-metadata.mjs` がブランチに応じて
  *   `public/client-metadata.json` に書き出している。
- * - localhost / 127.0.0.1 / [::1] のローカル開発では loopback client モードを
- *   使い、特殊な `http://localhost?redirect_uri=...&scope=...` 形式の client_id
- *   を組み立てる (atproto OAuth 仕様。client metadata はサーバ側にハードコード)。
- *
- * NOTE: WebCrypto は HTTPS もしくは 127.0.0.1 でしか動かないため、`localhost`
- *   で開発する場合は library が自動で 127.0.0.1 にリダイレクトしてくれる。
+ * - 127.0.0.1 / [::1] のローカル開発では loopback client モードを使い、特殊な
+ *   `http://localhost?redirect_uri=...&scope=...` 形式の client_id を組み立てる
+ *   (atproto OAuth 仕様。client metadata はサーバ側にハードコードされている)。
  */
 function buildClientId(): string {
   if (typeof window === "undefined") {
@@ -52,7 +67,6 @@ function buildClientId(): string {
   }
   const origin = window.location.origin;
   const isLoopback =
-    origin.startsWith("http://localhost") ||
     origin.startsWith("http://127.0.0.1") ||
     origin.startsWith("http://[::1]");
   if (isLoopback) {
@@ -64,8 +78,10 @@ function buildClientId(): string {
   return `${origin}/client-metadata.json`;
 }
 
-async function getOAuthClient(): Promise<BrowserOAuthClient> {
+async function getOAuthClient(): Promise<BrowserOAuthClient | null> {
   if (_client) return _client;
+  // localhost なら 127.0.0.1 に飛ばし、リダイレクト中なので OAuth 初期化はスキップ。
+  if (maybeRedirectLocalhostToIp()) return null;
   clearLegacySession();
   _client = await BrowserOAuthClient.load({
     clientId: buildClientId(),
@@ -100,6 +116,9 @@ export async function initAuth(): Promise<{
   if (!_initPromise) {
     _initPromise = (async (): Promise<InitResult> => {
       const client = await getOAuthClient();
+      // localhost → 127.0.0.1 へのリダイレクト中はここに来る。永久 pending で OK
+      // (ページ自体が遷移するため上位の loading 表示はそのまま)。
+      if (!client) return new Promise<InitResult>(() => {});
       const result = await client.init();
       if (result?.session) {
         attachSession(result.session);
@@ -125,6 +144,10 @@ export async function initAuth(): Promise<{
  */
 export async function startSignIn(identifier: string): Promise<never> {
   const client = await getOAuthClient();
+  if (!client) {
+    // localhost → 127.0.0.1 へリダイレクト中。もうすぐページが遷移する。
+    return new Promise<never>(() => {});
+  }
   await client.signIn(identifier, {
     // CSRF + コールバック識別用に簡易 state。中身は今は使っていない。
     state: crypto.randomUUID(),
