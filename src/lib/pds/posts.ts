@@ -86,6 +86,8 @@ export async function refreshFromSource(
       ? bskyData.viewImageUrls.slice(0, 4)
       : post.imageUrls,
     location: post.location,
+    // タグは取り込み後にユーザーが編集しうるので、元投稿では上書きしない
+    tags: post.tags,
     checkpointAt: post.checkpointAt,
     exif: post.exif,
     sourceRef: post.sourceRef,

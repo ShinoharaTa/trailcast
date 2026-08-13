@@ -40,6 +40,15 @@
             "required": ["latitude", "longitude"],
             "description": "Device GPS location"
           },
+          "tags": {
+            "type": "array",
+            "maxLength": 8,
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "Tags for filtering and aggregation within a thread. Stored without the leading '#'; compared case-insensitively."
+          },
           "checkpointAt": {
             "type": "string",
             "format": "datetime",

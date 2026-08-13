@@ -45,6 +45,15 @@ export function TrailcastMarkIcon(props: IconProps) {
   );
 }
 
+/** ハッシュ記号。タグ関連の UI に使う */
+export function HashIcon(props: IconProps) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 8.25h13.5M5.25 15.75h13.5M10.5 3.75 8.25 20.25M15.75 3.75 13.5 20.25" />
+    </svg>
+  );
+}
+
 export function PinIcon(props: IconProps) {
   return (
     <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>

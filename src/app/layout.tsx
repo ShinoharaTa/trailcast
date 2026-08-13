@@ -97,6 +97,12 @@ export default function RootLayout({
           href="https://fonts.gstatic.com"
           crossOrigin="anonymous"
         />
+        {/* このルールは Pages Router の `pages/_document.js` を前提にした警告で、
+            App Router の root layout で <head> に置く分には問題ない。
+            加えて next/font への移行も採らない: Noto Sans JP を self-host すると
+            日本語サブセット全体 (数 MB) を静的エクスポートに同梱することになり、
+            unicode-range で分割配信される Google Fonts より重くなるため。 */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;600;700&display=swap"
           rel="stylesheet"
