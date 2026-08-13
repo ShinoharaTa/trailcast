@@ -25,7 +25,14 @@ import {
   ShareIcon,
   PlusIcon,
   StarIcon,
+  HashIcon,
 } from "@/components/ui/icons";
+import {
+  countTags,
+  countWithTagAdded,
+  filterPostsByTags,
+  tagKey,
+} from "@/lib/tags";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -395,6 +402,133 @@ function YearDivider({ year }: { year: number }) {
   );
 }
 
+/**
+ * タイムライン上部に置くタグの絞り込み / 集計バー。
+ *
+ * - チップは「タグ + そのタグが付いた投稿数」。件数がそのまま集計になる
+ * - 複数選択は AND (選んだタグをすべて含む投稿だけ残す)
+ * - 選択済みチップをもう一度押すと解除
+ * - そのタグを足すと 0 件になる組み合わせは、押せないようにして空振りを防ぐ
+ */
+function TagFilterBar({
+  posts,
+  selectedKeys,
+  onToggle,
+  onClear,
+  matchedCount,
+}: {
+  /** 絞り込み前の全投稿。件数集計はこちらを基準にする */
+  posts: PostWithMeta[];
+  selectedKeys: string[];
+  onToggle: (key: string) => void;
+  onClear: () => void;
+  matchedCount: number;
+}) {
+  const counts = useMemo(() => countTags(posts), [posts]);
+  if (counts.length === 0) return null;
+
+  const filtering = selectedKeys.length > 0;
+
+  return (
+    <div className="mb-8 rounded-2xl border border-white/5 bg-white/[0.02] p-3.5">
+      <div className="mb-2.5 flex items-center gap-2">
+        <HashIcon className="size-3.5 text-white/30" />
+        <span className="text-xs font-medium text-white/50">タグで絞り込む</span>
+        {filtering && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="ml-auto rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-white/50 transition hover:bg-white/10 hover:text-white/80"
+          >
+            クリア
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {counts.map((t) => {
+          const active = selectedKeys.includes(t.key);
+          // 選択に加えたときの該当件数。0 なら選んでも空になるので無効化する
+          const resulting = countWithTagAdded(posts, selectedKeys, t.key);
+          const disabled = !active && resulting === 0;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => onToggle(t.key)}
+              disabled={disabled}
+              aria-pressed={active}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${
+                active
+                  ? "bg-indigo-500 text-white shadow-sm shadow-indigo-900/40"
+                  : disabled
+                    ? "cursor-not-allowed bg-white/[0.03] text-white/20"
+                    : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90"
+              }`}
+            >
+              #{t.tag}
+              <span
+                className={`tabular-nums ${
+                  active ? "text-white/70" : "text-white/30"
+                }`}
+              >
+                {t.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {filtering && (
+        <p className="mt-2.5 text-[11px] text-white/40">
+          {selectedKeys.length > 1 && "すべてのタグを含む "}
+          <span className="font-bold tabular-nums text-indigo-300">
+            {matchedCount}
+          </span>
+          {" / "}
+          <span className="tabular-nums">{posts.length}</span> 件を表示中
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** チェックポイント本文の下に出すタグ。クリックでその絞り込みをトグルする */
+function PostTags({
+  tags,
+  selectedKeys,
+  onToggle,
+}: {
+  tags: string[];
+  selectedKeys: string[];
+  onToggle: (key: string) => void;
+}) {
+  if (tags.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {tags.map((tag) => {
+        const key = tagKey(tag);
+        const active = selectedKeys.includes(key);
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onToggle(key)}
+            aria-pressed={active}
+            className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${
+              active
+                ? "bg-indigo-500/30 text-indigo-100"
+                : "bg-indigo-500/10 text-indigo-300/80 hover:bg-indigo-500/20 hover:text-indigo-200"
+            }`}
+          >
+            #{tag}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const { did: myDid, isAuthenticated } = useAuthStore();
   const [thread, setThread] = useState<ThreadWithMeta | null>(null);
@@ -403,6 +537,31 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const orderedPosts = useMemo(() => {
     return thread?.sortOrder === "desc" ? [...posts].reverse() : posts;
   }, [posts, thread?.sortOrder]);
+
+  // タグ絞り込み (AND)。比較用の tagKey で保持する
+  const [selectedTagKeys, setSelectedTagKeys] = useState<string[]>([]);
+  const threadTagCounts = useMemo(() => countTags(posts), [posts]);
+  const visiblePosts = useMemo(
+    () => filterPostsByTags(orderedPosts, selectedTagKeys),
+    [orderedPosts, selectedTagKeys],
+  );
+  const toggleTagKey = useCallback((key: string) => {
+    setSelectedTagKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  }, []);
+  const clearTagFilter = useCallback(() => setSelectedTagKeys([]), []);
+
+  // スレッドの切り替えや投稿の削除・編集で消えたタグが選択に残り続けると
+  // 「絞り込んでいるのに 0 件」の状態から抜けられなくなるため、都度落とす。
+  useEffect(() => {
+    const available = new Set(threadTagCounts.map((t) => t.key));
+    setSelectedTagKeys((prev) => {
+      const next = prev.filter((k) => available.has(k));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [threadTagCounts]);
+
   const [loading, setLoading] = useState(true);
   const [, setDeleting] = useState(false);
   const [refreshingUri, setRefreshingUri] = useState<string | null>(null);
@@ -899,7 +1058,29 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           </div>
         )}
 
-        {groupPostsByDay(orderedPosts).flatMap((group, idx, all) => {
+        <TagFilterBar
+          posts={posts}
+          selectedKeys={selectedTagKeys}
+          onToggle={toggleTagKey}
+          onClear={clearTagFilter}
+          matchedCount={visiblePosts.length}
+        />
+
+        {posts.length > 0 && visiblePosts.length === 0 && (
+          <div className="py-16 text-center">
+            <p className="text-white/30">
+              選択したタグをすべて含むチェックポイントはありません
+            </p>
+            <button
+              onClick={clearTagFilter}
+              className="mt-3 text-sm text-indigo-400 hover:underline"
+            >
+              絞り込みを解除
+            </button>
+          </div>
+        )}
+
+        {groupPostsByDay(visiblePosts).flatMap((group, idx, all) => {
           // 年が切り替わる箇所に divider を挟む。
           // 最初の group の前にも挟むことで「初年度」が必ず表示される。
           const prevYear =
@@ -1003,6 +1184,12 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                   <p className="text-sm leading-relaxed text-white/80">{cp.text}</p>
                 </div>
               ) : null}
+
+              <PostTags
+                tags={cp.tags ?? []}
+                selectedKeys={selectedTagKeys}
+                onToggle={toggleTagKey}
+              />
                 </div>
               </div>
             ))}
@@ -1011,10 +1198,14 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           return nodes;
         })}
 
-        {posts.length > 0 && (
+        {visiblePosts.length > 0 && (
           <div className="flex items-center gap-3 pl-14 sm:pl-16">
             <div className="h-px flex-1 bg-gradient-to-r from-indigo-500/30 to-transparent" />
-            <span className="text-xs text-white/30">{posts.length} チェックポイント</span>
+            <span className="text-xs text-white/30">
+              {selectedTagKeys.length > 0
+                ? `${visiblePosts.length} / ${posts.length} チェックポイント`
+                : `${posts.length} チェックポイント`}
+            </span>
           </div>
         )}
       </div>
@@ -1108,12 +1299,14 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             <CheckpointPostScreen
               threadUri={thread.uri}
               threadTitle={thread.title}
+              threadTags={threadTagCounts}
               onSubmitted={onModalSubmitted}
             />
           )}
           {modal === "checkpoint-edit" && editingPost && (
             <CheckpointEditScreen
               post={editingPost}
+              threadTags={threadTagCounts}
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
             />
