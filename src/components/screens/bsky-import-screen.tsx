@@ -6,6 +6,8 @@ import { Modal } from "@/components/ui/modal";
 import { getAgent } from "@/lib/atp-agent";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { createPost } from "@/lib/pds/posts";
+import { recordTagUsage } from "@/lib/pds/tags";
+import { extractTagsFromText, sanitizeTagsForRecord } from "@/lib/tags";
 import {
   extractImagesFromEmbed,
   fetchBskyPosts,
@@ -304,18 +306,25 @@ export function BlueskyImportScreen({
     setError(null);
     try {
       const selected = [...feedPosts, ...urlPosts].filter((p) => p.selected);
+      // 元投稿の本文に書かれたハッシュタグを、そのまま Trailcast のタグとして取り込む
+      const importedTags: string[] = [];
       for (const post of selected) {
+        const tags = sanitizeTagsForRecord(extractTagsFromText(post.text));
+        if (tags) importedTags.push(...tags);
         await createPost({
           thread: threadUri,
           text: post.text || undefined,
           imageUrls: post.imageUrls.length > 0
             ? post.imageUrls.slice(0, 4)
             : undefined,
+          tags,
           checkpointAt: post.createdAt,
           sourceRef: post.uri,
           createdAt: new Date().toISOString(),
         });
       }
+      // 辞書更新はサジェスト用なので、まとめて 1 回だけ・失敗は無視する
+      if (importedTags.length > 0) await recordTagUsage(importedTags);
       onSubmitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : "インポートに失敗しました");
