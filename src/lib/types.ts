@@ -3,6 +3,10 @@ import type { BlobRef } from "@atproto/api";
 export const NSID_THREAD = "net.shino3.trailcast.thread";
 export const NSID_POST = "net.shino3.trailcast.post";
 export const NSID_BOOKMARK = "net.shino3.trailcast.bookmark";
+export const NSID_TAG_INDEX = "net.shino3.trailcast.tagIndex";
+
+/** tagIndex は 1 ユーザー 1 レコードなので rkey は固定。 */
+export const TAG_INDEX_RKEY = "self";
 
 export type ThreadSortOrder = "asc" | "desc";
 
@@ -32,6 +36,11 @@ export interface PostRecord {
   images?: BlobRef[];
   imageUrls?: string[];
   location?: Location;
+  /**
+   * 絞り込み・集計用のタグ。先頭の `#` は含めずに保存し、比較は
+   * 大文字小文字を区別しない。既存レコードとの後方互換のため optional。
+   */
+  tags?: string[];
   checkpointAt: string;
   exif?: Record<string, unknown>;
   sourceRef?: string; // at-uri
@@ -41,6 +50,22 @@ export interface PostRecord {
 export interface BookmarkRecord {
   subject: string; // at-uri
   createdAt: string;
+}
+
+export interface TagEntry {
+  /** 先頭の `#` を含まないタグ文字列 */
+  tag: string;
+  count: number;
+  lastUsedAt: string;
+}
+
+/**
+ * 自分が使ったタグの辞書。post.tags が正であり、こちらは
+ * サジェスト用に導出したキャッシュ (壊れても post から再構築できる)。
+ */
+export interface TagIndexRecord {
+  tags: TagEntry[];
+  updatedAt: string;
 }
 
 export interface RecordMeta {
