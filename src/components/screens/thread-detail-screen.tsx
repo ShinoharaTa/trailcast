@@ -1176,12 +1176,16 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 <>
                   <PostImages post={cp} pdsUrl={pdsUrl} onOpenLightbox={openLightbox} />
                   {cp.text && (
-                    <p className="mt-4 text-xs leading-relaxed text-white/70">{cp.text}</p>
+                    <p className="mt-4 whitespace-pre-wrap text-xs leading-relaxed text-white/70">
+                      {cp.text}
+                    </p>
                   )}
                 </>
               ) : cp.text ? (
                 <div className="rounded-2xl border border-white/5 bg-gradient-to-br from-white/[0.04] to-white/[0.01] p-5">
-                  <p className="text-sm leading-relaxed text-white/80">{cp.text}</p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/80">
+                    {cp.text}
+                  </p>
                 </div>
               ) : null}
 

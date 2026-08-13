@@ -615,7 +615,7 @@ function PostSelectCard({
             </div>
           )}
           {(post.text || post.isReply) && (
-            <p className="text-sm leading-relaxed text-white/80">
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/80">
               {post.isReply && (
                 <span className="mr-1.5 inline-flex translate-y-[-1px] items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 align-middle text-[10px] font-bold text-sky-300 ring-1 ring-sky-400/20">
                   <ReplyIcon className="size-2.5" strokeWidth={2.5} />
