@@ -9,7 +9,7 @@
 // この差を設けているのは、`#Day2` と `#day2` を別タグとして数えたくない一方で、
 // ユーザーが選んだ大文字小文字はそのまま見せたいため。
 
-import type { TagEntry } from "@/lib/types";
+import type { TagEntry, TagGroup } from "@/lib/types";
 
 /** 1 チェックポイントに付けられるタグの上限 (lexicon の maxLength と一致させる) */
 export const MAX_TAGS_PER_POST = 8;
@@ -177,6 +177,74 @@ export function countWithTagAdded(
     return filterPostsByTags(posts, selectedKeys).length;
   }
   return filterPostsByTags(posts, [...selectedKeys, key]).length;
+}
+
+// ─── グループ (スレッド単位のカスタムフィルター) ─────────────
+
+/** 1 スレッドに定義できるタググループの上限 (lexicon の maxLength と一致させる) */
+export const MAX_TAG_GROUPS = 4;
+
+/** 1 グループに入れられるタグの上限 (lexicon の maxLength と一致させる) */
+export const MAX_TAGS_PER_GROUP = 8;
+
+/** グループ見出しの最大長 (grapheme 単位) */
+export const MAX_TAG_GROUP_LABEL_LENGTH = 20;
+
+export interface GroupedTagCounts {
+  groups: Array<{ label: string; items: TagCount[] }>;
+  /** どのグループにも属さないタグ。countTags の並び (件数順) を保つ */
+  rest: TagCount[];
+}
+
+/**
+ * 集計済みタグをスレッドのグループ定義に沿って振り分ける。
+ *
+ * - グループ内の並びは作者が定義した順を尊重する (件数順にしない)
+ * - グループに定義されているがスレッド内で未使用のタグは count 0 で返す
+ *   (呼び出し側の「0 件チップは無効化」の仕組みでそのまま押せなくなる)
+ * - グループ未定義なら全件を rest に返し、従来のフラット表示になる
+ */
+export function groupTagCounts(
+  counts: TagCount[],
+  tagGroups: TagGroup[] | undefined,
+): GroupedTagCounts {
+  if (!tagGroups || tagGroups.length === 0) {
+    return { groups: [], rest: counts };
+  }
+  const byKey = new Map(counts.map((c) => [c.key, c]));
+  const claimed = new Set<string>();
+  const groups = tagGroups
+    .map((g) => ({
+      label: g.label,
+      items: dedupeTags(g.tags).map((tag) => {
+        const key = tagKey(tag);
+        claimed.add(key);
+        return byKey.get(key) ?? { tag, key, count: 0 };
+      }),
+    }))
+    .filter((g) => g.items.length > 0);
+  return { groups, rest: counts.filter((c) => !claimed.has(c.key)) };
+}
+
+/**
+ * 保存直前のサニタイズ。見出し・タグの正規化 → 空グループ除去 → 上限適用。
+ * 有効なグループが無ければ undefined を返し、空の `tagGroups: []` を
+ * レコードに書き込まないようにする。
+ */
+export function sanitizeTagGroupsForRecord(
+  groups: TagGroup[],
+): TagGroup[] | undefined {
+  const out: TagGroup[] = [];
+  for (const g of groups) {
+    if (out.length >= MAX_TAG_GROUPS) break;
+    const label = sliceGraphemes(g.label.trim(), MAX_TAG_GROUP_LABEL_LENGTH);
+    const tags = dedupeTags(
+      g.tags.map(normalizeTag).filter((t): t is string => t !== null),
+    ).slice(0, MAX_TAGS_PER_GROUP);
+    if (!label || tags.length === 0) continue;
+    out.push({ label, tags });
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 // ─── サジェスト ──────────────────────────────────────────────
