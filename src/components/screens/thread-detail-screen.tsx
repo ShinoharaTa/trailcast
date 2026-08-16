@@ -438,14 +438,14 @@ function TagFilterBar({
           <button
             type="button"
             onClick={onClear}
-            className="ml-auto rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-white/50 transition hover:bg-white/10 hover:text-white/80"
+            className="ml-auto rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:bg-white/10 hover:text-white/80 md:px-2.5 md:py-1 md:text-[11px]"
           >
             クリア
           </button>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2 md:gap-1.5">
         {counts.map((t) => {
           const active = selectedKeys.includes(t.key);
           // 選択に加えたときの該当件数。0 なら選んでも空になるので無効化する
@@ -458,7 +458,7 @@ function TagFilterBar({
               onClick={() => onToggle(t.key)}
               disabled={disabled}
               aria-pressed={active}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${
+              className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition md:px-3 md:py-1 md:text-xs ${
                 active
                   ? "bg-indigo-500 text-white shadow-sm shadow-indigo-900/40"
                   : disabled
@@ -505,7 +505,7 @@ function PostTags({
 }) {
   if (tags.length === 0) return null;
   return (
-    <div className="mt-3 flex flex-wrap gap-1.5">
+    <div className="mt-3 flex flex-wrap gap-2 md:gap-1.5">
       {tags.map((tag) => {
         const key = tagKey(tag);
         const active = selectedKeys.includes(key);
@@ -515,7 +515,7 @@ function PostTags({
             type="button"
             onClick={() => onToggle(key)}
             aria-pressed={active}
-            className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition ${
+            className={`rounded-full px-3 py-1.5 text-xs font-medium transition md:px-2.5 md:py-0.5 md:text-[11px] ${
               active
                 ? "bg-indigo-500/30 text-indigo-100"
                 : "bg-indigo-500/10 text-indigo-300/80 hover:bg-indigo-500/20 hover:text-indigo-200"
