@@ -12,9 +12,26 @@ import {
   type ThreadWithMeta,
 } from "@/lib/types";
 import { useBlobUrl } from "@/components/ui/blob-image";
+import { TagInput } from "@/components/ui/tag-input";
+import {
+  MAX_TAG_GROUPS,
+  MAX_TAG_GROUP_LABEL_LENGTH,
+  MAX_TAGS_PER_GROUP,
+  sanitizeTagGroupsForRecord,
+  type TagCount,
+} from "@/lib/tags";
+
+/** 編集中のグループ。並べ替え・削除しても TagInput の内部状態が壊れないよう id を持つ */
+interface EditableTagGroup {
+  id: number;
+  label: string;
+  tags: string[];
+}
 
 export interface ThreadEditScreenProps {
   thread: ThreadWithMeta;
+  /** タグ絞り込みグループの入力サジェスト用。スレッド内で使用中のタグ */
+  threadTags?: TagCount[];
   onSubmitted: () => void;
   onCancel: () => void;
   onRequestDelete?: () => void;
@@ -22,6 +39,7 @@ export interface ThreadEditScreenProps {
 
 export function ThreadEditScreen({
   thread,
+  threadTags,
   onSubmitted,
   onCancel,
   onRequestDelete,
@@ -35,6 +53,31 @@ export function ThreadEditScreen({
   const [sortOrder, setSortOrder] = useState<ThreadSortOrder>(
     thread.sortOrder === "desc" ? "desc" : "asc",
   );
+
+  // タグ絞り込みのカスタムグループ
+  const [tagGroups, setTagGroups] = useState<EditableTagGroup[]>(() =>
+    (thread.tagGroups ?? []).map((g, i) => ({
+      id: i,
+      label: g.label,
+      tags: [...g.tags],
+    })),
+  );
+  const nextGroupId = useRef((thread.tagGroups ?? []).length);
+
+  const addTagGroup = () => {
+    setTagGroups((gs) => [
+      ...gs,
+      { id: nextGroupId.current++, label: "", tags: [] },
+    ]);
+  };
+
+  const updateTagGroup = (id: number, patch: Partial<EditableTagGroup>) => {
+    setTagGroups((gs) => gs.map((g) => (g.id === id ? { ...g, ...patch } : g)));
+  };
+
+  const removeTagGroup = (id: number) => {
+    setTagGroups((gs) => gs.filter((g) => g.id !== id));
+  };
 
   // カバー画像の状態: 既存維持 / 新規選択 / 削除
   const threadDid = parseAtUri(thread.uri).repo;
@@ -98,6 +141,7 @@ export function ThreadEditScreen({
           createdAt: thread.createdAt,
           // デフォルト (asc) のときはあえて値を残し、明示しなくても正しく動作させる。
           sortOrder: sortOrder === "desc" ? "desc" : undefined,
+          tagGroups: sanitizedTagGroups,
         },
         { coverBlob },
       );
@@ -110,13 +154,20 @@ export function ThreadEditScreen({
 
   const initialSortOrder: ThreadSortOrder =
     thread.sortOrder === "desc" ? "desc" : "asc";
+  // 保存されるのはサニタイズ後の形なので、dirty 判定もその形で比較する
+  // (見出しだけ・タグだけの書きかけグループは保存対象にならない)
+  const sanitizedTagGroups = sanitizeTagGroupsForRecord(tagGroups);
+  const tagGroupsDirty =
+    JSON.stringify(sanitizedTagGroups ?? []) !==
+    JSON.stringify(thread.tagGroups ?? []);
   const dirty =
     title.trim() !== thread.title ||
     (description.trim() || undefined) !== thread.description ||
     visibility !== thread.visibility ||
     sortOrder !== initialSortOrder ||
     coverFile !== null ||
-    coverRemoved;
+    coverRemoved ||
+    tagGroupsDirty;
 
   return (
     <div>
@@ -224,6 +275,62 @@ export function ThreadEditScreen({
               新しい順 (降順)
             </button>
           </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+          <div className="text-sm text-white/70">タグ絞り込みのグループ</div>
+          <p className="mb-3 mt-0.5 text-[11px] text-white/40">
+            「場所」「食事」のような見出しでタグをまとめると、スレッド詳細の絞り込みが見出し付きで表示されます
+          </p>
+          {tagGroups.length > 0 && (
+            <div className="space-y-3">
+              {tagGroups.map((g) => (
+                <div
+                  key={g.id}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] p-3"
+                >
+                  <div className="mb-2.5 flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={g.label}
+                      onChange={(e) =>
+                        updateTagGroup(g.id, { label: e.target.value })
+                      }
+                      placeholder="見出し (例: 場所)"
+                      maxLength={MAX_TAG_GROUP_LABEL_LENGTH}
+                      className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeTagGroup(g.id)}
+                      aria-label={`グループ${g.label ? ` ${g.label}` : ""} を削除`}
+                      className="flex size-9 shrink-0 items-center justify-center rounded-lg text-white/40 transition hover:bg-red-500/10 hover:text-red-400 md:size-8"
+                    >
+                      <TrashIcon className="size-4" />
+                    </button>
+                  </div>
+                  <TagInput
+                    value={g.tags}
+                    onChange={(tags) => updateTagGroup(g.id, { tags })}
+                    threadTags={threadTags}
+                    label="このグループのタグ"
+                    maxTags={MAX_TAGS_PER_GROUP}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          {tagGroups.length < MAX_TAG_GROUPS && (
+            <button
+              type="button"
+              onClick={addTagGroup}
+              className={`w-full rounded-lg border border-dashed border-white/15 py-2.5 text-xs font-medium text-white/50 transition hover:border-indigo-400/40 hover:text-white/80 ${
+                tagGroups.length > 0 ? "mt-3" : ""
+              }`}
+            >
+              + グループを追加 ({tagGroups.length}/{MAX_TAG_GROUPS})
+            </button>
+          )}
         </div>
 
         <div>
