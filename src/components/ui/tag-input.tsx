@@ -45,8 +45,9 @@ export interface TagInputProps {
   /** 表示中スレッドで既に使われているタグ。候補の上位に出す */
   threadTags?: TagCount[];
   /**
-   * スレッドに定義されたタググループ。候補の最上段に見出し付きで表示し、
-   * 未使用のタグでもグループから直接選べるようにする
+   * スレッドに定義されたタググループ。入力欄の上に見出し付きの
+   * 選択ボタンとして常時表示する (フォーカス不要 = キーボードが出ない)。
+   * ボタンに出したタグはドロップダウン候補には重複して出さない
    */
   tagGroups?: TagGroup[];
   disabled?: boolean;
@@ -85,44 +86,28 @@ export function TagInput({
 
   const isFull = value.length >= maxTags;
 
-  // スレッドのグループ定義から出す候補。選択済み・入力に前方一致しないものは除く
-  const groupSections = useMemo(() => {
-    if (isFull || !tagGroups || tagGroups.length === 0) return [];
-    const selected = new Set(value.map(tagKey));
-    const query = tagKey(draft.trim().replace(/^[#＃]+/, ""));
+  // 入力欄の上に常時表示する選択ボタンのグループ
+  const pickerGroups = useMemo(() => {
+    if (!tagGroups || tagGroups.length === 0) return [];
     return tagGroups
-      .map((g) => ({
-        label: g.label,
-        tags: dedupeTags(g.tags).filter((tag) => {
-          const key = tagKey(tag);
-          return !selected.has(key) && (!query || key.startsWith(query));
-        }),
-      }))
+      .map((g) => ({ label: g.label, tags: dedupeTags(g.tags) }))
       .filter((g) => g.tags.length > 0);
-  }, [tagGroups, value, draft, isFull]);
+  }, [tagGroups]);
+
+  const groupTagKeys = useMemo(
+    () => new Set(pickerGroups.flatMap((g) => g.tags.map(tagKey))),
+    [pickerGroups],
+  );
 
   const suggestions = useMemo<TagSuggestion[]>(() => {
     if (isFull) return [];
-    // グループ側に出したタグは重複して出さない
-    const groupKeys = new Set(
-      groupSections.flatMap((g) => g.tags.map(tagKey)),
-    );
     return buildTagSuggestions({
       query: draft,
       dictionary,
       threadTags,
       exclude: value,
-    }).filter((s) => !groupKeys.has(s.key));
-  }, [draft, dictionary, threadTags, value, isFull, groupSections]);
-
-  // ↑↓ / Enter の対象になる候補の一覧。表示順 (グループ → その他) と一致させる
-  const navItems = useMemo(
-    () => [
-      ...groupSections.flatMap((g) => g.tags),
-      ...suggestions.map((s) => s.tag),
-    ],
-    [groupSections, suggestions],
-  );
+    }).filter((s) => !groupTagKeys.has(s.key));
+  }, [draft, dictionary, threadTags, value, isFull, groupTagKeys]);
 
   // 候補の中身が変わったら選択位置をリセットする (別のタグを誤確定しないため)
   useEffect(() => {
@@ -153,14 +138,14 @@ export function TagInput({
     // IME 変換中の Enter はタグ確定ではなく変換確定なので無視する
     if (e.nativeEvent.isComposing) return;
 
-    if (e.key === "ArrowDown" && navItems.length > 0) {
+    if (e.key === "ArrowDown" && suggestions.length > 0) {
       e.preventDefault();
-      setActiveIndex((i) => (i + 1) % navItems.length);
+      setActiveIndex((i) => (i + 1) % suggestions.length);
       return;
     }
-    if (e.key === "ArrowUp" && navItems.length > 0) {
+    if (e.key === "ArrowUp" && suggestions.length > 0) {
       e.preventDefault();
-      setActiveIndex((i) => (i <= 0 ? navItems.length - 1 : i - 1));
+      setActiveIndex((i) => (i <= 0 ? suggestions.length - 1 : i - 1));
       return;
     }
     if (e.key === "Escape" && activeIndex >= 0) {
@@ -171,8 +156,8 @@ export function TagInput({
     if (e.key === "Enter" || e.key === "," || e.key === " ") {
       // Enter でフォームが送信されたり、スペースが入力欄に残ったりしないようにする
       e.preventDefault();
-      const picked = activeIndex >= 0 ? navItems[activeIndex] : null;
-      addTags(picked ?? draft);
+      const picked = activeIndex >= 0 ? suggestions[activeIndex] : null;
+      addTags(picked ? picked.tag : draft);
       return;
     }
     if (e.key === "Backspace" && draft === "" && value.length > 0) {
@@ -190,21 +175,17 @@ export function TagInput({
     if (draft.trim()) addTags(draft);
   };
 
-  const showSuggestions = focused && navItems.length > 0;
+  const showSuggestions = focused && suggestions.length > 0;
 
-  // 表示順 (グループ → その他) に対応する activeIndex の開始位置
-  const groupOffsets: number[] = [];
-  {
-    let acc = 0;
-    for (const g of groupSections) {
-      groupOffsets.push(acc);
-      acc += g.tags.length;
+  // グループボタンのトグル。選択済みなら外し、未選択なら追加する
+  const toggleGroupTag = (tag: string) => {
+    const key = tagKey(tag);
+    if (value.some((t) => tagKey(t) === key)) {
+      removeTag(tag);
+    } else {
+      addTags(tag);
     }
-  }
-  const flatOffset = groupOffsets.length
-    ? groupOffsets[groupOffsets.length - 1] +
-      groupSections[groupSections.length - 1].tags.length
-    : 0;
+  };
 
   return (
     <div ref={containerRef} onBlur={handleBlur} className="relative">
@@ -216,6 +197,42 @@ export function TagInput({
           {value.length}/{maxTags}
         </span>
       </div>
+
+      {/* スレッドのグループ: フォーカス不要で押せる選択ボタン。
+          自由入力やその他の候補は下の入力欄から */}
+      {pickerGroups.length > 0 && (
+        <div className="mb-2.5 space-y-2">
+          {pickerGroups.map((g, gi) => (
+            <div key={`${g.label}-${gi}`}>
+              <p className="mb-1 text-[11px] font-medium text-white/40">
+                {g.label}
+              </p>
+              <div className="flex flex-wrap gap-2 md:gap-1.5">
+                {g.tags.map((tag) => {
+                  const key = tagKey(tag);
+                  const selected = value.some((t) => tagKey(t) === key);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggleGroupTag(tag)}
+                      disabled={disabled || (isFull && !selected)}
+                      aria-pressed={selected}
+                      className={`rounded-full px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed md:px-3 md:py-1 md:text-xs ${
+                        selected
+                          ? "bg-indigo-500 text-white shadow-sm shadow-indigo-900/40"
+                          : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90 disabled:opacity-40"
+                      }`}
+                    >
+                      #{tag}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div
         onClick={() => inputRef.current?.focus()}
@@ -271,66 +288,31 @@ export function TagInput({
 
       {showSuggestions && (
         <div className="absolute inset-x-0 z-20 mt-1.5 max-h-56 overflow-y-auto rounded-xl border border-white/10 bg-surface-800 p-1.5 shadow-xl shadow-black/40">
-          {groupSections.map((g, gi) => (
-            <div key={`${g.label}-${gi}`} className="mb-2">
-              <p className="px-1 pb-1 text-[10px] font-medium text-white/40">
-                {g.label}
-              </p>
-              <div className="flex flex-wrap gap-2 md:gap-1.5">
-                {g.tags.map((tag, ti) => {
-                  const index = groupOffsets[gi] + ti;
-                  return (
-                    <button
-                      key={tagKey(tag)}
-                      type="button"
-                      // mousedown で処理して、blur による確定より先にタグを追加する
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        addTags(tag);
-                      }}
-                      onMouseEnter={() => setActiveIndex(index)}
-                      className={`rounded-full px-3 py-1.5 text-sm font-medium transition md:px-2.5 md:py-1 md:text-xs ${
-                        index === activeIndex
-                          ? "bg-indigo-500/30 text-indigo-100"
-                          : "bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20"
-                      }`}
-                    >
-                      #{tag}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-          {suggestions.length > 0 && (
-            <div className="flex flex-wrap gap-2 md:gap-1.5">
-              {suggestions.map((s, i) => (
-                <button
-                  key={s.key}
-                  type="button"
-                  // mousedown で処理して、blur による確定より先にタグを追加する
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    addTags(s.tag);
-                  }}
-                  onMouseEnter={() => setActiveIndex(flatOffset + i)}
-                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition md:px-2.5 md:py-1 md:text-xs ${
-                    flatOffset + i === activeIndex
-                      ? "bg-indigo-500/30 text-indigo-100"
-                      : s.inThread
-                        ? "bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20"
-                        : "bg-white/5 text-white/60 hover:bg-white/10"
-                  }`}
-                >
-                  #{s.tag}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex flex-wrap gap-2 md:gap-1.5">
+            {suggestions.map((s, i) => (
+              <button
+                key={s.key}
+                type="button"
+                // mousedown で処理して、blur による確定より先にタグを追加する
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  addTags(s.tag);
+                }}
+                onMouseEnter={() => setActiveIndex(i)}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition md:px-2.5 md:py-1 md:text-xs ${
+                  i === activeIndex
+                    ? "bg-indigo-500/30 text-indigo-100"
+                    : s.inThread
+                      ? "bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20"
+                      : "bg-white/5 text-white/60 hover:bg-white/10"
+                }`}
+              >
+                #{s.tag}
+              </button>
+            ))}
+          </div>
           <p className="px-1 pb-0.5 pt-2 text-[10px] text-white/25">
-            {groupSections.length > 0
-              ? "スレッドのグループ → 使用中のタグの順に表示しています"
-              : "このスレッドで使用中のタグを先に表示しています"}
+            このスレッドで使用中のタグを先に表示しています
           </p>
         </div>
       )}
