@@ -40,6 +40,11 @@ const mockThread: ThreadRecord = {
   visibility: "public",
   sortOrder: "asc",
   createdAt: "2026-08-10T21:00:00.000Z",
+  // グループ表示の確認用。「ラーメン」はスレッド内で未使用 (0 件チップの確認)
+  tagGroups: [
+    { label: "食事", tags: ["そば", "ランチ", "カフェ", "ラーメン"] },
+    { label: "風呂と宿", tags: ["温泉", "宿"] },
+  ],
 };
 
 const threadUri = buildAtUri(MOCK_DID, NSID_THREAD, MOCK_THREAD_RKEY);
