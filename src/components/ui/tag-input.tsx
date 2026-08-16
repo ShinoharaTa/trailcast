@@ -47,6 +47,10 @@ export interface TagInputProps {
   disabled?: boolean;
   /** ラベルの下に出す補助テキスト */
   hint?: string;
+  /** 入力欄のラベル。省略時は「タグ」 */
+  label?: string;
+  /** タグ数の上限。省略時はチェックポイントの上限 (MAX_TAGS_PER_POST) */
+  maxTags?: number;
 }
 
 /**
@@ -63,6 +67,8 @@ export function TagInput({
   threadTags = [],
   disabled = false,
   hint,
+  label = "タグ",
+  maxTags = MAX_TAGS_PER_POST,
 }: TagInputProps) {
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
@@ -71,7 +77,7 @@ export function TagInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const isFull = value.length >= MAX_TAGS_PER_POST;
+  const isFull = value.length >= maxTags;
 
   const suggestions = useMemo<TagSuggestion[]>(() => {
     if (isFull) return [];
@@ -92,15 +98,12 @@ export function TagInput({
     (input: string) => {
       const parsed = parseTagInput(input);
       if (parsed.length === 0) return;
-      const merged = dedupeTags([...value, ...parsed]).slice(
-        0,
-        MAX_TAGS_PER_POST,
-      );
+      const merged = dedupeTags([...value, ...parsed]).slice(0, maxTags);
       onChange(merged);
       setDraft("");
       setActiveIndex(-1);
     },
-    [value, onChange],
+    [value, onChange, maxTags],
   );
 
   const removeTag = useCallback(
@@ -157,9 +160,11 @@ export function TagInput({
   return (
     <div ref={containerRef} onBlur={handleBlur} className="relative">
       <div className="mb-1.5 flex items-center justify-between">
-        <label className="block text-xs font-medium text-white/50">タグ</label>
+        <label className="block text-xs font-medium text-white/50">
+          {label}
+        </label>
         <span className="text-[11px] text-white/25">
-          {value.length}/{MAX_TAGS_PER_POST}
+          {value.length}/{maxTags}
         </span>
       </div>
 
@@ -200,7 +205,7 @@ export function TagInput({
           onFocus={() => setFocused(true)}
           placeholder={
             isFull
-              ? `タグは最大${MAX_TAGS_PER_POST}件です`
+              ? `タグは最大${maxTags}件です`
               : value.length === 0
                 ? "#温泉 のように入力"
                 : "追加"
