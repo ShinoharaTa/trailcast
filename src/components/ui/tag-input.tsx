@@ -183,9 +183,9 @@ export function TagInput({
               disabled={disabled}
               aria-label={`タグ #${tag} を外す`}
               // タッチで押しやすいようモバイルでは一回り大きくする (写真の削除ボタンと同じ扱い)
-              className="flex size-5 items-center justify-center rounded-full text-indigo-300/60 transition hover:bg-indigo-400/20 hover:text-indigo-100 md:size-4"
+              className="flex size-6 items-center justify-center rounded-full text-indigo-300/60 transition hover:bg-indigo-400/20 hover:text-indigo-100 md:size-4"
             >
-              <CloseIcon className="size-2.5" />
+              <CloseIcon className="size-3 md:size-2.5" />
             </button>
           </span>
         ))}
@@ -206,7 +206,8 @@ export function TagInput({
                 : "追加"
           }
           aria-label="タグを入力"
-          className="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-sm text-white placeholder-white/20 outline-none disabled:cursor-not-allowed"
+          // モバイルは 16px 未満だと iOS がフォーカス時に自動ズームするので text-base にする
+          className="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-base text-white placeholder-white/20 outline-none disabled:cursor-not-allowed md:text-sm"
         />
       </div>
 
@@ -216,7 +217,7 @@ export function TagInput({
 
       {showSuggestions && (
         <div className="absolute inset-x-0 z-20 mt-1.5 max-h-56 overflow-y-auto rounded-xl border border-white/10 bg-surface-800 p-1.5 shadow-xl shadow-black/40">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2 md:gap-1.5">
             {suggestions.map((s, i) => (
               <button
                 key={s.key}
@@ -227,7 +228,7 @@ export function TagInput({
                   addTags(s.tag);
                 }}
                 onMouseEnter={() => setActiveIndex(i)}
-                className={`rounded-full px-2.5 py-1 text-xs font-medium transition ${
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition md:px-2.5 md:py-1 md:text-xs ${
                   i === activeIndex
                     ? "bg-indigo-500/30 text-indigo-100"
                     : s.inThread
