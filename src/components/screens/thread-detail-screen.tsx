@@ -1331,6 +1331,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               threadUri={thread.uri}
               threadTitle={thread.title}
               threadTags={threadTagCounts}
+              tagGroups={thread.tagGroups}
               onSubmitted={onModalSubmitted}
             />
           )}
@@ -1338,6 +1339,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             <CheckpointEditScreen
               post={editingPost}
               threadTags={threadTagCounts}
+              tagGroups={thread.tagGroups}
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
             />

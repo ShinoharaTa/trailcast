@@ -10,7 +10,7 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 import { TagInput } from "@/components/ui/tag-input";
 import { recordTagUsage } from "@/lib/pds/tags";
 import { sanitizeTagsForRecord, type TagCount } from "@/lib/tags";
-import type { Location } from "@/lib/types";
+import type { Location, TagGroup } from "@/lib/types";
 
 const MAX_IMAGES = 4;
 const MAX_TEXT = 200;
@@ -60,6 +60,8 @@ export interface CheckpointPostScreenProps {
   threadTitle: string;
   /** このスレッドで既に使われているタグ。タグ候補の上位に出す */
   threadTags?: TagCount[];
+  /** スレッドのタググループ。候補の最上段に見出し付きで出す */
+  tagGroups?: TagGroup[];
   onSubmitted: () => void;
 }
 
@@ -67,6 +69,7 @@ export function CheckpointPostScreen({
   threadUri,
   threadTitle,
   threadTags,
+  tagGroups,
   onSubmitted,
 }: CheckpointPostScreenProps) {
   const handle = useAuthStore((s) => s.handle);
@@ -325,6 +328,7 @@ export function CheckpointPostScreen({
           value={tags}
           onChange={setTags}
           threadTags={threadTags}
+          tagGroups={tagGroups}
           disabled={submitting}
           hint={
             crosspostToBsky
