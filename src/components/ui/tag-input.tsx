@@ -12,7 +12,7 @@ import {
   type TagCount,
   type TagSuggestion,
 } from "@/lib/tags";
-import type { TagEntry } from "@/lib/types";
+import type { TagEntry, TagGroup } from "@/lib/types";
 
 /**
  * 自分のタグ辞書を読む hook。
@@ -44,9 +44,19 @@ export interface TagInputProps {
   onChange: (tags: string[]) => void;
   /** 表示中スレッドで既に使われているタグ。候補の上位に出す */
   threadTags?: TagCount[];
+  /**
+   * スレッドに定義されたタググループ。入力欄の上に見出し付きの
+   * 選択ボタンとして常時表示する (フォーカス不要 = キーボードが出ない)。
+   * ボタンに出したタグはドロップダウン候補には重複して出さない
+   */
+  tagGroups?: TagGroup[];
   disabled?: boolean;
   /** ラベルの下に出す補助テキスト */
   hint?: string;
+  /** 入力欄のラベル。省略時は「タグ」 */
+  label?: string;
+  /** タグ数の上限。省略時はチェックポイントの上限 (MAX_TAGS_PER_POST) */
+  maxTags?: number;
 }
 
 /**
@@ -61,8 +71,11 @@ export function TagInput({
   value,
   onChange,
   threadTags = [],
+  tagGroups,
   disabled = false,
   hint,
+  label = "タグ",
+  maxTags = MAX_TAGS_PER_POST,
 }: TagInputProps) {
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
@@ -71,7 +84,20 @@ export function TagInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const isFull = value.length >= MAX_TAGS_PER_POST;
+  const isFull = value.length >= maxTags;
+
+  // 入力欄の上に常時表示する選択ボタンのグループ
+  const pickerGroups = useMemo(() => {
+    if (!tagGroups || tagGroups.length === 0) return [];
+    return tagGroups
+      .map((g) => ({ label: g.label, tags: dedupeTags(g.tags) }))
+      .filter((g) => g.tags.length > 0);
+  }, [tagGroups]);
+
+  const groupTagKeys = useMemo(
+    () => new Set(pickerGroups.flatMap((g) => g.tags.map(tagKey))),
+    [pickerGroups],
+  );
 
   const suggestions = useMemo<TagSuggestion[]>(() => {
     if (isFull) return [];
@@ -80,8 +106,8 @@ export function TagInput({
       dictionary,
       threadTags,
       exclude: value,
-    });
-  }, [draft, dictionary, threadTags, value, isFull]);
+    }).filter((s) => !groupTagKeys.has(s.key));
+  }, [draft, dictionary, threadTags, value, isFull, groupTagKeys]);
 
   // 候補の中身が変わったら選択位置をリセットする (別のタグを誤確定しないため)
   useEffect(() => {
@@ -92,15 +118,12 @@ export function TagInput({
     (input: string) => {
       const parsed = parseTagInput(input);
       if (parsed.length === 0) return;
-      const merged = dedupeTags([...value, ...parsed]).slice(
-        0,
-        MAX_TAGS_PER_POST,
-      );
+      const merged = dedupeTags([...value, ...parsed]).slice(0, maxTags);
       onChange(merged);
       setDraft("");
       setActiveIndex(-1);
     },
-    [value, onChange],
+    [value, onChange, maxTags],
   );
 
   const removeTag = useCallback(
@@ -154,14 +177,62 @@ export function TagInput({
 
   const showSuggestions = focused && suggestions.length > 0;
 
+  // グループボタンのトグル。選択済みなら外し、未選択なら追加する
+  const toggleGroupTag = (tag: string) => {
+    const key = tagKey(tag);
+    if (value.some((t) => tagKey(t) === key)) {
+      removeTag(tag);
+    } else {
+      addTags(tag);
+    }
+  };
+
   return (
     <div ref={containerRef} onBlur={handleBlur} className="relative">
       <div className="mb-1.5 flex items-center justify-between">
-        <label className="block text-xs font-medium text-white/50">タグ</label>
+        <label className="block text-xs font-medium text-white/50">
+          {label}
+        </label>
         <span className="text-[11px] text-white/25">
-          {value.length}/{MAX_TAGS_PER_POST}
+          {value.length}/{maxTags}
         </span>
       </div>
+
+      {/* スレッドのグループ: フォーカス不要で押せる選択ボタン。
+          自由入力やその他の候補は下の入力欄から */}
+      {pickerGroups.length > 0 && (
+        <div className="mb-2.5 space-y-2">
+          {pickerGroups.map((g, gi) => (
+            <div key={`${g.label}-${gi}`}>
+              <p className="mb-1 text-[11px] font-medium text-white/40">
+                {g.label}
+              </p>
+              <div className="flex flex-wrap gap-2 md:gap-1.5">
+                {g.tags.map((tag) => {
+                  const key = tagKey(tag);
+                  const selected = value.some((t) => tagKey(t) === key);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggleGroupTag(tag)}
+                      disabled={disabled || (isFull && !selected)}
+                      aria-pressed={selected}
+                      className={`rounded-full px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed md:px-3 md:py-1 md:text-xs ${
+                        selected
+                          ? "bg-indigo-500 text-white shadow-sm shadow-indigo-900/40"
+                          : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90 disabled:opacity-40"
+                      }`}
+                    >
+                      #{tag}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div
         onClick={() => inputRef.current?.focus()}
@@ -200,7 +271,7 @@ export function TagInput({
           onFocus={() => setFocused(true)}
           placeholder={
             isFull
-              ? `タグは最大${MAX_TAGS_PER_POST}件です`
+              ? `タグは最大${maxTags}件です`
               : value.length === 0
                 ? "#温泉 のように入力"
                 : "追加"

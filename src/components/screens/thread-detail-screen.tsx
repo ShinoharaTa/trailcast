@@ -5,6 +5,7 @@ import type { NavigationProps } from "@/lib/use-navigation";
 import type {
   ThreadWithMeta,
   PostWithMeta,
+  TagGroup,
 } from "@/lib/types";
 import { parseAtUri, buildAtUri, NSID_THREAD } from "@/lib/types";
 import { getThread, deleteThread, listPostsForThread } from "@/lib/pds/threads";
@@ -31,7 +32,9 @@ import {
   countTags,
   countWithTagAdded,
   filterPostsByTags,
+  groupTagCounts,
   tagKey,
+  type TagCount,
 } from "@/lib/tags";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -412,6 +415,7 @@ function YearDivider({ year }: { year: number }) {
  */
 function TagFilterBar({
   posts,
+  tagGroups,
   selectedKeys,
   onToggle,
   onClear,
@@ -419,15 +423,53 @@ function TagFilterBar({
 }: {
   /** 絞り込み前の全投稿。件数集計はこちらを基準にする */
   posts: PostWithMeta[];
+  /** スレッドに定義されたカスタムグループ。未定義なら従来のフラット表示 */
+  tagGroups?: TagGroup[];
   selectedKeys: string[];
   onToggle: (key: string) => void;
   onClear: () => void;
   matchedCount: number;
 }) {
   const counts = useMemo(() => countTags(posts), [posts]);
+  const grouped = useMemo(
+    () => groupTagCounts(counts, tagGroups),
+    [counts, tagGroups],
+  );
   if (counts.length === 0) return null;
 
   const filtering = selectedKeys.length > 0;
+
+  const renderChip = (t: TagCount) => {
+    const active = selectedKeys.includes(t.key);
+    // 選択に加えたときの該当件数。0 なら選んでも空になるので無効化する
+    const resulting = countWithTagAdded(posts, selectedKeys, t.key);
+    const disabled = !active && resulting === 0;
+    return (
+      <button
+        key={t.key}
+        type="button"
+        onClick={() => onToggle(t.key)}
+        disabled={disabled}
+        aria-pressed={active}
+        className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition md:px-3 md:py-1 md:text-xs ${
+          active
+            ? "bg-indigo-500 text-white shadow-sm shadow-indigo-900/40"
+            : disabled
+              ? "cursor-not-allowed bg-white/[0.03] text-white/20"
+              : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90"
+        }`}
+      >
+        #{t.tag}
+        <span
+          className={`tabular-nums ${
+            active ? "text-white/70" : "text-white/30"
+          }`}
+        >
+          {t.count}
+        </span>
+      </button>
+    );
+  };
 
   return (
     <div className="mb-8 rounded-2xl border border-white/5 bg-white/[0.02] p-3.5">
@@ -445,38 +487,22 @@ function TagFilterBar({
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 md:gap-1.5">
-        {counts.map((t) => {
-          const active = selectedKeys.includes(t.key);
-          // 選択に加えたときの該当件数。0 なら選んでも空になるので無効化する
-          const resulting = countWithTagAdded(posts, selectedKeys, t.key);
-          const disabled = !active && resulting === 0;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => onToggle(t.key)}
-              disabled={disabled}
-              aria-pressed={active}
-              className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition md:px-3 md:py-1 md:text-xs ${
-                active
-                  ? "bg-indigo-500 text-white shadow-sm shadow-indigo-900/40"
-                  : disabled
-                    ? "cursor-not-allowed bg-white/[0.03] text-white/20"
-                    : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90"
-              }`}
-            >
-              #{t.tag}
-              <span
-                className={`tabular-nums ${
-                  active ? "text-white/70" : "text-white/30"
-                }`}
-              >
-                {t.count}
-              </span>
-            </button>
-          );
-        })}
+      <div className="space-y-2.5">
+        {grouped.groups.map((g, i) => (
+          <div key={`${g.label}-${i}`}>
+            <div className="mb-1.5 text-[11px] font-medium text-white/40">
+              {g.label}
+            </div>
+            <div className="flex flex-wrap gap-2 md:gap-1.5">
+              {g.items.map(renderChip)}
+            </div>
+          </div>
+        ))}
+        {grouped.rest.length > 0 && (
+          <div className="flex flex-wrap gap-2 md:gap-1.5">
+            {grouped.rest.map(renderChip)}
+          </div>
+        )}
       </div>
 
       {filtering && (
@@ -1060,6 +1086,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
         <TagFilterBar
           posts={posts}
+          tagGroups={thread.tagGroups}
           selectedKeys={selectedTagKeys}
           onToggle={toggleTagKey}
           onClear={clearTagFilter}
@@ -1304,6 +1331,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               threadUri={thread.uri}
               threadTitle={thread.title}
               threadTags={threadTagCounts}
+              tagGroups={thread.tagGroups}
               onSubmitted={onModalSubmitted}
             />
           )}
@@ -1311,6 +1339,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             <CheckpointEditScreen
               post={editingPost}
               threadTags={threadTagCounts}
+              tagGroups={thread.tagGroups}
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
             />
@@ -1318,6 +1347,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           {modal === "thread-edit" && thread && (
             <ThreadEditScreen
               thread={thread}
+              threadTags={threadTagCounts}
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
               onRequestDelete={() => {

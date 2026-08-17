@@ -10,6 +10,17 @@ export const TAG_INDEX_RKEY = "self";
 
 export type ThreadSortOrder = "asc" | "desc";
 
+/**
+ * スレッド詳細の絞り込みに出すタグのグループ (例: 「場所: #大阪駅 #東京駅」)。
+ * 表示の整理のためだけのもので、タグの実体は常に post.tags 側にある。
+ */
+export interface TagGroup {
+  /** フィルターの見出し (例: 場所) */
+  label: string;
+  /** 先頭の `#` を含まないタグ */
+  tags: string[];
+}
+
 export interface ThreadRecord {
   title: string;
   description?: string;
@@ -22,6 +33,11 @@ export interface ThreadRecord {
    * 既存レコードとの後方互換のため optional で扱う。
    */
   sortOrder?: ThreadSortOrder;
+  /**
+   * タグ絞り込みのカスタムグループ。未設定なら従来どおりフラット表示。
+   * 既存レコードとの後方互換のため optional。
+   */
+  tagGroups?: TagGroup[];
 }
 
 export interface Location {

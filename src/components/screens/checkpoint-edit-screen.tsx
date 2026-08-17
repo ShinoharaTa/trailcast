@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { PinIcon, CloseIcon } from "@/components/ui/icons";
-import type { PostWithMeta, Location } from "@/lib/types";
+import type { PostWithMeta, Location, TagGroup } from "@/lib/types";
 import { parseAtUri } from "@/lib/types";
 import { updatePost } from "@/lib/pds/posts";
 import { BlobImage } from "@/components/ui/blob-image";
@@ -28,6 +28,8 @@ export interface CheckpointEditScreenProps {
   post: PostWithMeta;
   /** このスレッドで既に使われているタグ。タグ候補の上位に出す */
   threadTags?: TagCount[];
+  /** スレッドのタググループ。候補の最上段に見出し付きで出す */
+  tagGroups?: TagGroup[];
   onSubmitted: () => void;
   onCancel: () => void;
 }
@@ -35,6 +37,7 @@ export interface CheckpointEditScreenProps {
 export function CheckpointEditScreen({
   post,
   threadTags,
+  tagGroups,
   onSubmitted,
   onCancel,
 }: CheckpointEditScreenProps) {
@@ -112,6 +115,7 @@ export function CheckpointEditScreen({
           value={tags}
           onChange={setTags}
           threadTags={threadTags}
+          tagGroups={tagGroups}
           disabled={saving}
           hint="スレッド内の絞り込みに使えます"
         />
