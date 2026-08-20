@@ -42,7 +42,7 @@
           },
           "tags": {
             "type": "array",
-            "maxLength": 8,
+            "maxLength": 50,
             "items": {
               "type": "string",
               "maxLength": 64
