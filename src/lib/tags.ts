@@ -11,8 +11,11 @@
 
 import type { TagEntry, TagGroup } from "@/lib/types";
 
-/** 1 チェックポイントに付けられるタグの上限 (lexicon の maxLength と一致させる) */
-export const MAX_TAGS_PER_POST = 8;
+/**
+ * 1 チェックポイントに付けられるタグの上限 (lexicon の maxLength と一致させる)。
+ * 実用上は当たらない安全上限で、UI では通常時に上限を見せない (#10)。
+ */
+export const MAX_TAGS_PER_POST = 50;
 
 /** タグ 1 件の最大長 (grapheme 単位。lexicon 側はバイト長ではなく文字数上限) */
 export const MAX_TAG_LENGTH = 64;
@@ -181,11 +184,14 @@ export function countWithTagAdded(
 
 // ─── グループ (スレッド単位のカスタムフィルター) ─────────────
 
-/** 1 スレッドに定義できるタググループの上限 (lexicon の maxLength と一致させる) */
-export const MAX_TAG_GROUPS = 4;
+/**
+ * 1 スレッドに定義できるタググループの上限 (lexicon の maxLength と一致させる)。
+ * MAX_TAGS_PER_POST と同じく、実用上は当たらない安全上限。
+ */
+export const MAX_TAG_GROUPS = 50;
 
 /** 1 グループに入れられるタグの上限 (lexicon の maxLength と一致させる) */
-export const MAX_TAGS_PER_GROUP = 8;
+export const MAX_TAGS_PER_GROUP = 50;
 
 /** グループ見出しの最大長 (grapheme 単位) */
 export const MAX_TAG_GROUP_LABEL_LENGTH = 20;

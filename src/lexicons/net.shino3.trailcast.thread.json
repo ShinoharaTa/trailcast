@@ -49,7 +49,7 @@
           },
           "tagGroups": {
             "type": "array",
-            "maxLength": 4,
+            "maxLength": 50,
             "description": "Custom tag filter groups for this thread. Display-level curation only; post.tags remains the source of truth.",
             "items": {
               "type": "object",
@@ -62,7 +62,7 @@
                 },
                 "tags": {
                   "type": "array",
-                  "maxLength": 8,
+                  "maxLength": 50,
                   "items": {
                     "type": "string",
                     "maxLength": 64

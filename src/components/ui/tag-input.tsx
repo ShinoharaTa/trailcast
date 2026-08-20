@@ -5,12 +5,10 @@ import { CloseIcon } from "@/components/ui/icons";
 import { loadTagDictionary } from "@/lib/pds/tags";
 import {
   MAX_TAGS_PER_POST,
-  buildTagSuggestions,
   dedupeTags,
   parseTagInput,
   tagKey,
   type TagCount,
-  type TagSuggestion,
 } from "@/lib/tags";
 import type { TagEntry, TagGroup } from "@/lib/types";
 
@@ -39,16 +37,15 @@ export function useTagDictionary(enabled = true): TagEntry[] {
   return dictionary;
 }
 
+/** 「よく使うタグ」の折りたたみ時に見せる件数 */
+const DICT_VISIBLE_DEFAULT = 10;
+
 export interface TagInputProps {
   value: string[];
   onChange: (tags: string[]) => void;
-  /** 表示中スレッドで既に使われているタグ。候補の上位に出す */
+  /** 表示中スレッドで既に使われているタグ。「このスレッドのタグ」として出す */
   threadTags?: TagCount[];
-  /**
-   * スレッドに定義されたタググループ。入力欄の上に見出し付きの
-   * 選択ボタンとして常時表示する (フォーカス不要 = キーボードが出ない)。
-   * ボタンに出したタグはドロップダウン候補には重複して出さない
-   */
+  /** スレッドに定義されたタググループ。見出し付きで最上段に出す */
   tagGroups?: TagGroup[];
   disabled?: boolean;
   /** ラベルの下に出す補助テキスト */
@@ -62,10 +59,14 @@ export interface TagInputProps {
 /**
  * チェックポイントに付けるタグの入力欄。
  *
- * - Enter / スペース / カンマ で確定
- * - 空の状態で Backspace を押すと直前のタグを削除
- * - ↑ / ↓ で候補を選び、Enter で確定
- * - 候補は「このスレッドで使用中のタグ」→「自分が過去に使ったタグ」の順
+ * 候補はすべて入力欄の**上**に常時表示のトグルチップとして並べる:
+ *   スレッドのグループ (見出しごと) → このスレッドのタグ → よく使うタグ (個人辞書)
+ *
+ * - チップはタップで付け外し。フォーカス不要なのでキーボードが出ない
+ * - 入力欄に文字を打つと、チップがその場で前方一致に絞り込まれる
+ *   (浮くドロップダウンを使わないので、モバイルでキーボードに隠れない #10)
+ * - 新規タグは自由入力。Enter / スペース / カンマ で確定、
+ *   空の状態で Backspace を押すと直前のタグを削除
  */
 export function TagInput({
   value,
@@ -79,14 +80,16 @@ export function TagInput({
 }: TagInputProps) {
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
+  const [dictExpanded, setDictExpanded] = useState(false);
   const dictionary = useTagDictionary();
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const isFull = value.length >= maxTags;
+  const selectedKeys = useMemo(() => new Set(value.map(tagKey)), [value]);
 
-  // 入力欄の上に常時表示する選択ボタンのグループ
+  // ─── 候補セクションの組み立て ───────────────────────────
+
   const pickerGroups = useMemo(() => {
     if (!tagGroups || tagGroups.length === 0) return [];
     return tagGroups
@@ -99,20 +102,49 @@ export function TagInput({
     [pickerGroups],
   );
 
-  const suggestions = useMemo<TagSuggestion[]>(() => {
-    if (isFull) return [];
-    return buildTagSuggestions({
-      query: draft,
-      dictionary,
-      threadTags,
-      exclude: value,
-    }).filter((s) => !groupTagKeys.has(s.key));
-  }, [draft, dictionary, threadTags, value, isFull, groupTagKeys]);
+  // このスレッドのタグ (件数順)。グループに出したものは重複して出さない
+  const threadSection = useMemo(
+    () =>
+      threadTags.filter((t) => !groupTagKeys.has(t.key)).map((t) => t.tag),
+    [threadTags, groupTagKeys],
+  );
 
-  // 候補の中身が変わったら選択位置をリセットする (別のタグを誤確定しないため)
-  useEffect(() => {
-    setActiveIndex(-1);
-  }, [draft]);
+  // よく使うタグ (個人辞書、使用回数 → 直近使用順)。グループ・スレッド分は除く
+  const dictSection = useMemo(() => {
+    const threadKeys = new Set(threadTags.map((t) => t.key));
+    return dictionary
+      .filter((e) => {
+        const key = tagKey(e.tag);
+        return !groupTagKeys.has(key) && !threadKeys.has(key);
+      })
+      .sort(
+        (a, b) =>
+          b.count - a.count ||
+          (Date.parse(b.lastUsedAt) || 0) - (Date.parse(a.lastUsedAt) || 0) ||
+          (tagKey(a.tag) < tagKey(b.tag) ? -1 : 1),
+      )
+      .map((e) => e.tag);
+  }, [dictionary, groupTagKeys, threadTags]);
+
+  // 入力中の文字列での前方一致絞り込み。チップをその場でフィルタする
+  const query = tagKey(draft.trim().replace(/^[#＃]+/, ""));
+  const matches = (tag: string) => !query || tagKey(tag).startsWith(query);
+
+  const visibleGroups = pickerGroups
+    .map((g) => ({ label: g.label, tags: g.tags.filter(matches) }))
+    .filter((g) => g.tags.length > 0);
+  const visibleThread = threadSection.filter(matches);
+  const dictMatches = dictSection.filter(matches);
+  // 絞り込み中は折りたたみを無視して一致分をすべて見せる
+  const dictVisible =
+    query || dictExpanded
+      ? dictMatches
+      : dictMatches.slice(0, DICT_VISIBLE_DEFAULT);
+  const dictHiddenCount = dictMatches.length - dictVisible.length;
+  const hasCandidates =
+    visibleGroups.length > 0 || visibleThread.length > 0 || dictVisible.length > 0;
+
+  // ─── 追加 / 削除 ─────────────────────────────────────────
 
   const addTags = useCallback(
     (input: string) => {
@@ -121,7 +153,6 @@ export function TagInput({
       const merged = dedupeTags([...value, ...parsed]).slice(0, maxTags);
       onChange(merged);
       setDraft("");
-      setActiveIndex(-1);
     },
     [value, onChange, maxTags],
   );
@@ -134,30 +165,27 @@ export function TagInput({
     [value, onChange],
   );
 
+  const toggleTag = (tag: string) => {
+    if (selectedKeys.has(tagKey(tag))) {
+      removeTag(tag);
+    } else {
+      addTags(tag);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     // IME 変換中の Enter はタグ確定ではなく変換確定なので無視する
     if (e.nativeEvent.isComposing) return;
 
-    if (e.key === "ArrowDown" && suggestions.length > 0) {
+    if (e.key === "Escape" && draft) {
       e.preventDefault();
-      setActiveIndex((i) => (i + 1) % suggestions.length);
-      return;
-    }
-    if (e.key === "ArrowUp" && suggestions.length > 0) {
-      e.preventDefault();
-      setActiveIndex((i) => (i <= 0 ? suggestions.length - 1 : i - 1));
-      return;
-    }
-    if (e.key === "Escape" && activeIndex >= 0) {
-      e.preventDefault();
-      setActiveIndex(-1);
+      setDraft("");
       return;
     }
     if (e.key === "Enter" || e.key === "," || e.key === " ") {
       // Enter でフォームが送信されたり、スペースが入力欄に残ったりしないようにする
       e.preventDefault();
-      const picked = activeIndex >= 0 ? suggestions[activeIndex] : null;
-      addTags(picked ? picked.tag : draft);
+      addTags(draft);
       return;
     }
     if (e.key === "Backspace" && draft === "" && value.length > 0) {
@@ -171,66 +199,98 @@ export function TagInput({
   const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     if (containerRef.current?.contains(e.relatedTarget as Node | null)) return;
     setFocused(false);
-    setActiveIndex(-1);
     if (draft.trim()) addTags(draft);
   };
 
-  const showSuggestions = focused && suggestions.length > 0;
+  // ─── 描画 ────────────────────────────────────────────────
 
-  // グループボタンのトグル。選択済みなら外し、未選択なら追加する
-  const toggleGroupTag = (tag: string) => {
+  const renderChip = (tag: string) => {
     const key = tagKey(tag);
-    if (value.some((t) => tagKey(t) === key)) {
-      removeTag(tag);
-    } else {
-      addTags(tag);
-    }
+    const selected = selectedKeys.has(key);
+    return (
+      <button
+        key={key}
+        type="button"
+        // mousedown を殺して、入力中でも blur による draft 確定を挟まず押せるようにする
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => toggleTag(tag)}
+        disabled={disabled || (isFull && !selected)}
+        aria-pressed={selected}
+        className={`rounded-full px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed md:px-3 md:py-1 md:text-xs ${
+          selected
+            ? "bg-indigo-500 text-white shadow-sm shadow-indigo-900/40"
+            : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90 disabled:opacity-40"
+        }`}
+      >
+        #{tag}
+      </button>
+    );
   };
 
+  const sectionLabelClass = "mb-1 text-[11px] font-medium text-white/40";
+  const chipRowClass = "flex flex-wrap gap-2 md:gap-1.5";
+  const expandButtonClass =
+    "rounded-full px-3.5 py-2 text-sm font-medium text-indigo-300/80 transition hover:bg-indigo-500/10 hover:text-indigo-200 md:px-3 md:py-1 md:text-xs";
+
   return (
-    <div ref={containerRef} onBlur={handleBlur} className="relative">
+    <div ref={containerRef} onBlur={handleBlur}>
       <div className="mb-1.5 flex items-center justify-between">
         <label className="block text-xs font-medium text-white/50">
           {label}
         </label>
         <span className="text-[11px] text-white/25">
-          {value.length}/{maxTags}
+          {isFull
+            ? `上限 ${maxTags} 件`
+            : value.length > 0
+              ? `${value.length}件`
+              : ""}
         </span>
       </div>
 
-      {/* スレッドのグループ: フォーカス不要で押せる選択ボタン。
-          自由入力やその他の候補は下の入力欄から */}
-      {pickerGroups.length > 0 && (
+      {hasCandidates && (
         <div className="mb-2.5 space-y-2">
-          {pickerGroups.map((g, gi) => (
+          {visibleGroups.map((g, gi) => (
             <div key={`${g.label}-${gi}`}>
-              <p className="mb-1 text-[11px] font-medium text-white/40">
-                {g.label}
-              </p>
-              <div className="flex flex-wrap gap-2 md:gap-1.5">
-                {g.tags.map((tag) => {
-                  const key = tagKey(tag);
-                  const selected = value.some((t) => tagKey(t) === key);
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => toggleGroupTag(tag)}
-                      disabled={disabled || (isFull && !selected)}
-                      aria-pressed={selected}
-                      className={`rounded-full px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed md:px-3 md:py-1 md:text-xs ${
-                        selected
-                          ? "bg-indigo-500 text-white shadow-sm shadow-indigo-900/40"
-                          : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90 disabled:opacity-40"
-                      }`}
-                    >
-                      #{tag}
-                    </button>
-                  );
-                })}
-              </div>
+              <p className={sectionLabelClass}>{g.label}</p>
+              <div className={chipRowClass}>{g.tags.map(renderChip)}</div>
             </div>
           ))}
+          {visibleThread.length > 0 && (
+            <div>
+              <p className={sectionLabelClass}>このスレッドのタグ</p>
+              <div className={chipRowClass}>{visibleThread.map(renderChip)}</div>
+            </div>
+          )}
+          {dictVisible.length > 0 && (
+            <div>
+              <p className={sectionLabelClass}>よく使うタグ</p>
+              <div className={chipRowClass}>
+                {dictVisible.map(renderChip)}
+                {dictHiddenCount > 0 && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setDictExpanded(true)}
+                    className={expandButtonClass}
+                  >
+                    もっと見る ({dictHiddenCount})
+                  </button>
+                )}
+                {dictExpanded &&
+                  !query &&
+                  dictMatches.length > DICT_VISIBLE_DEFAULT && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setDictExpanded(false)}
+                      className={expandButtonClass}
+                    >
+                      閉じる
+                    </button>
+                  )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -273,7 +333,7 @@ export function TagInput({
             isFull
               ? `タグは最大${maxTags}件です`
               : value.length === 0
-                ? "#温泉 のように入力"
+                ? "#温泉 のように入力・絞り込み"
                 : "追加"
           }
           aria-label="タグを入力"
@@ -282,40 +342,7 @@ export function TagInput({
         />
       </div>
 
-      {hint && !showSuggestions && (
-        <p className="mt-1 text-[11px] text-white/30">{hint}</p>
-      )}
-
-      {showSuggestions && (
-        <div className="absolute inset-x-0 z-20 mt-1.5 max-h-56 overflow-y-auto rounded-xl border border-white/10 bg-surface-800 p-1.5 shadow-xl shadow-black/40">
-          <div className="flex flex-wrap gap-2 md:gap-1.5">
-            {suggestions.map((s, i) => (
-              <button
-                key={s.key}
-                type="button"
-                // mousedown で処理して、blur による確定より先にタグを追加する
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  addTags(s.tag);
-                }}
-                onMouseEnter={() => setActiveIndex(i)}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium transition md:px-2.5 md:py-1 md:text-xs ${
-                  i === activeIndex
-                    ? "bg-indigo-500/30 text-indigo-100"
-                    : s.inThread
-                      ? "bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20"
-                      : "bg-white/5 text-white/60 hover:bg-white/10"
-                }`}
-              >
-                #{s.tag}
-              </button>
-            ))}
-          </div>
-          <p className="px-1 pb-0.5 pt-2 text-[10px] text-white/25">
-            このスレッドで使用中のタグを先に表示しています
-          </p>
-        </div>
-      )}
+      {hint && <p className="mt-1 text-[11px] text-white/30">{hint}</p>}
     </div>
   );
 }

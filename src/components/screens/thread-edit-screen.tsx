@@ -328,7 +328,7 @@ export function ThreadEditScreen({
                 tagGroups.length > 0 ? "mt-3" : ""
               }`}
             >
-              + グループを追加 ({tagGroups.length}/{MAX_TAG_GROUPS})
+              + グループを追加
             </button>
           )}
         </div>
