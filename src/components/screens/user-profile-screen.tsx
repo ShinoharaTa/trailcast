@@ -14,6 +14,7 @@ import {
 } from "@/lib/pds/identity";
 import { BlobImage } from "@/components/ui/blob-image";
 import { HomeLink } from "@/components/ui/home-link";
+import { SettingsIcon } from "@/components/ui/icons";
 
 function isModifiedClick(e: React.MouseEvent): boolean {
   return (
@@ -144,9 +145,24 @@ export function UserProfileScreen({ navigate, params }: NavigationProps) {
           </div>
 
           {isOwner && (
-            <span className="shrink-0 rounded-full bg-indigo-500/15 px-3 py-1 text-[11px] font-semibold text-indigo-300">
-              あなた
-            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="rounded-full bg-indigo-500/15 px-3 py-1 text-[11px] font-semibold text-indigo-300">
+                あなた
+              </span>
+              <a
+                href="/settings"
+                onClick={(e) => {
+                  if (isModifiedClick(e)) return;
+                  e.preventDefault();
+                  navigate("settings");
+                }}
+                aria-label="設定"
+                title="設定"
+                className="rounded-lg p-2 text-white/50 transition hover:bg-white/5 hover:text-white"
+              >
+                <SettingsIcon className="size-5" />
+              </a>
+            </div>
           )}
         </div>
       </header>
