@@ -3,9 +3,12 @@ pages_build_output_dir = "out"
 compatibility_date = "2025-04-01"
 
 # Public スレッドの投稿集約インデックス (#14)
-# database_id は `npx wrangler d1 create trailcast-index` の出力で置き換える。
-# ローカル開発 (`wrangler pages dev` / `d1 execute --local`) では未設定でも動く。
+# database_id は Cloudflare ダッシュボードで作成した D1 の Database ID。
+# wrangler.toml を持つ Pages プロジェクトではこのファイルが source of truth に
+# なるため、ダッシュボード側のバインディング設定は使われない。
+# ローカル開発 (`wrangler pages dev` / `d1 execute --local`) は database_id に
+# 関わらず .wrangler/state 以下のローカル DB を使う。
 [[d1_databases]]
 binding = "DB"
 database_name = "trailcast-index"
-database_id = "PLACEHOLDER_RUN_WRANGLER_D1_CREATE"
+database_id = "7679a1d3-5e2b-4b45-9534-063ef8404d27"
