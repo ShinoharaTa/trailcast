@@ -1,3 +1,11 @@
 name = "trailcast"
 pages_build_output_dir = "out"
 compatibility_date = "2025-04-01"
+
+# Public スレッドの投稿集約インデックス (#14)
+# database_id は `npx wrangler d1 create trailcast-index` の出力で置き換える。
+# ローカル開発 (`wrangler pages dev` / `d1 execute --local`) では未設定でも動く。
+[[d1_databases]]
+binding = "DB"
+database_name = "trailcast-index"
+database_id = "PLACEHOLDER_RUN_WRANGLER_D1_CREATE"

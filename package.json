@@ -11,6 +11,8 @@
     "build": "next build",
     "preview": "npx wrangler pages dev out",
     "deploy": "npm run build && npx wrangler pages deploy out",
+    "db:schema:local": "wrangler d1 execute trailcast-index --local --file=db/schema.sql",
+    "db:schema:remote": "wrangler d1 execute trailcast-index --remote --file=db/schema.sql",
     "og:test": "tsx scripts/og-test.ts",
     "og:build": "tsx scripts/og-default-build.ts",
     "lint": "next lint",

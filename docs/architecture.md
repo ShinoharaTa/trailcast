@@ -155,19 +155,42 @@ Tauri 内での利用のため、SSR / API Routes は使用しない。サーバ
 | Hono + Vercel (Edge Functions) | Next.js との親和性、デプロイ容易 | 長時間の Firehose 接続には不向き |
 | 専用の小型サーバー（VPS 等） | Firehose の常時購読が安定 | 運用コスト・管理負荷 |
 
-### インデクサーの動作
+### インデクサーの動作（採用: Cloudflare D1 + A+C 方式）
 
-Public Event の投稿を集約するために、AT Protocol の Firehose (`com.atproto.sync.subscribeRepos`) を購読し、`net.shino3.trailcast.*` のレコードだけをフィルタして DB に保存する。
+Firehose の常時購読は採らない。Workers は長時間接続に向かず、専用サーバの運用コストに見合わないため。代わりに次の 2 経路でインデックスを維持する。
 
-クライアント（Tauri アプリまたは Web）は、インデクサーの API を通じて「あるスレッドに紐づく全投稿」を時系列で取得できる。
+| | 方式 | 役割 |
+|---|---|---|
+| **A** | クライアント write-through | 投稿・編集・削除の直後にクライアントが `/api/index/post` を叩き、即座に反映する |
+| **C** | オンデマンド同期 | 設定画面の「同期」から自分の repo を全走査し、インデックスを作り直す。A の取りこぼしと失敗の回復手段 |
 
-Private Event の場合は、スレッド作成者の PDS に直接 `listRecords` するだけで済むため、インデクサーは不要。
+将来 Public スレッドが本格運用され A+C で追いつかなくなったら、Firehose / Jetstream 購読を再検討する。
+
+#### 原則
+
+- **正本は常に PDS。D1 は at-uri の紐付けだけを持つ導出キャッシュ**で、全消ししても各ユーザーの同期で完全に再構築できる。本文・画像・位置情報は D1 に置かない。
+- **インデックス対象は Public スレッドのみ。** Private Event はスレッド作成者の PDS に直接 `listRecords` するだけで済むため、インデクサーを通さない。
+- **書き込みは必ずサーバ側で検証する。** クライアントは post の at-uri を渡すだけで、Worker が投稿者の PDS に `getRecord` して実在と `thread` フィールド、スレッドの `visibility` を確認してから行を作る。これによりクライアント認証なしで、嘘の紐付けを書き込めない構造になる。
+- **読み取りは D1 を優先し、失敗したら PDS 直読みにフォールバック**する。D1 が落ちてもアプリは従来の挙動で動き続ける。
+- **インデックスからの削除は PDS からの削除に従属させる。** 「インデックスだけ消す」API は用意しない（本人確認の仕組みが必要になるため）。ユーザーは PDS 上のレコードを消してから同期すれば、世代 GC でインデックスからも落ちる。
+
+#### スキーマ・API
+
+`db/schema.sql`（`post_index` / `sync_state`）と `functions/api/index/*` を参照。
+
+| endpoint | 用途 |
+|---|---|
+| `GET /api/index/thread?uri=` | スレッドに紐づく post の at-uri を `checkpoint_at` 昇順で返す |
+| `POST /api/index/post` | 1 件を検証して upsert。PDS 上に無ければ行を削除（削除の伝播） |
+| `POST /api/index/sync` | 指定 repo を 1 ページずつ走査して upsert。cursor を返すのでクライアントが回す |
+| `GET /api/index/status?did=` | 最終同期日時・インデックス件数 |
+
+同期の世代管理は、1 ページ目でサーバが発行する `startedAt` をクライアントが echo し、全ページを走り切った時点で `indexed_at < startedAt` の行を消すことで行う。途中で中断した場合は消さないので、インデックスが欠けることはない。
 
 ## 未確定事項
 
 - [ ] Next.js の SSG 出力を Tauri にバンドルする具体的なビルドパイプライン
 - [ ] Tauri Mobile (iOS / Android) の対応時期と優先度
 - [ ] AT Protocol OAuth (DPOP) の Tauri 内での具体的な実装方式
-- [ ] インデクサーの Firehose 購読方式（常時接続 vs ポーリング vs Jetstream）
 - [ ] Public Event の「参加者」管理の仕組み（招待制 / リンク共有制）
 - [ ] Web 閲覧版をフル機能のクライアントにするかどうか（読み取り専用 vs 投稿も可能）
