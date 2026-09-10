@@ -57,11 +57,13 @@ type ModalKind =
   | "checkpoint-post"
   | "checkpoint-edit"
   | "bsky-import"
-  | "thread-edit";
+  | "thread-edit"
+  | "thread-edit-tags";
 
 function modalMaxWidth(kind: ModalKind): "lg" | "2xl" | "3xl" {
   switch (kind) {
     case "thread-edit":
+    case "thread-edit-tags":
     case "checkpoint-post":
     case "checkpoint-edit":
       return "2xl";
@@ -421,6 +423,8 @@ function TagFilterBar({
   onToggle,
   onClear,
   matchedCount,
+  canEdit = false,
+  onEditGroups,
 }: {
   /** 絞り込み前の全投稿。件数集計はこちらを基準にする */
   posts: PostWithMeta[];
@@ -430,6 +434,9 @@ function TagFilterBar({
   onToggle: (key: string) => void;
   onClear: () => void;
   matchedCount: number;
+  /** スレッド所有者ならグループ編集への導線を出す (#37) */
+  canEdit?: boolean;
+  onEditGroups?: () => void;
 }) {
   const counts = useMemo(() => countTags(posts), [posts]);
   const grouped = useMemo(
@@ -477,15 +484,28 @@ function TagFilterBar({
       <div className="mb-2.5 flex items-center gap-2">
         <HashIcon className="size-3.5 text-white/30" />
         <span className="text-xs font-medium text-white/50">タグで絞り込む</span>
-        {filtering && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="ml-auto rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:bg-white/10 hover:text-white/80 md:px-2.5 md:py-1 md:text-[11px]"
-          >
-            クリア
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {filtering && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:bg-white/10 hover:text-white/80 md:px-2.5 md:py-1 md:text-[11px]"
+            >
+              クリア
+            </button>
+          )}
+          {canEdit && onEditGroups && (
+            // グループの追加・編集はこれまでスレッド編集画面の奥にしか無く、
+            // ここから直接飛べなかった (#37)
+            <button
+              type="button"
+              onClick={onEditGroups}
+              className="rounded-full px-3 py-1.5 text-xs font-medium text-indigo-300 transition hover:bg-indigo-500/10 hover:text-indigo-200 md:px-2.5 md:py-1 md:text-[11px]"
+            >
+              グループを編集
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2.5">
@@ -1093,6 +1113,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           onToggle={toggleTagKey}
           onClear={clearTagFilter}
           matchedCount={visiblePosts.length}
+          canEdit={isOwner}
+          onEditGroups={() => setModal("thread-edit-tags")}
         />
 
         {posts.length > 0 && visiblePosts.length === 0 && (
@@ -1347,10 +1369,14 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               onCancel={closeModal}
             />
           )}
-          {modal === "thread-edit" && thread && (
+          {(modal === "thread-edit" || modal === "thread-edit-tags") &&
+            thread && (
             <ThreadEditScreen
               thread={thread}
               threadTags={threadTagCounts}
+              initialSection={
+                modal === "thread-edit-tags" ? "tagGroups" : undefined
+              }
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
               onRequestDelete={() => {

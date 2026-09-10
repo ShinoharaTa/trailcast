@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BlobRef } from "@atproto/api";
 import { PhotoIcon, TrashIcon } from "@/components/ui/icons";
 import { updateThread } from "@/lib/pds/threads";
@@ -22,6 +22,7 @@ import {
   sanitizeDefaultTagsForRecord,
   sanitizeTagGroupsForRecord,
   sanitizeThreadTagsForRecord,
+  tagKey,
   type TagCount,
 } from "@/lib/tags";
 
@@ -39,6 +40,11 @@ export interface ThreadEditScreenProps {
   onSubmitted: () => void;
   onCancel: () => void;
   onRequestDelete?: () => void;
+  /**
+   * 開いた直後にスクロールして見せる節。スレッド詳細の絞り込みパネルから
+   * 「グループを編集」で来たときに使う (#37)。
+   */
+  initialSection?: "tagGroups";
 }
 
 export function ThreadEditScreen({
@@ -47,6 +53,7 @@ export function ThreadEditScreen({
   onSubmitted,
   onCancel,
   onRequestDelete,
+  initialSection,
 }: ThreadEditScreenProps) {
   const [title, setTitle] = useState(thread.title);
   const [description, setDescription] = useState(thread.description ?? "");
@@ -75,6 +82,25 @@ export function ThreadEditScreen({
     })),
   );
   const nextGroupId = useRef((thread.tagGroups ?? []).length);
+
+  const tagGroupsSectionRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (initialSection !== "tagGroups") return;
+    // グループが 1 つも無ければ空のグループを用意して、すぐ入力できる状態にする
+    setTagGroups((gs) =>
+      gs.length > 0
+        ? gs
+        : [{ id: nextGroupId.current++, label: "", tags: [] }],
+    );
+    // モーダルの開くアニメーション後にスクロールしたいので 1 フレーム待つ
+    const t = window.setTimeout(() => {
+      tagGroupsSectionRef.current?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      });
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [initialSection]);
 
   const addTagGroup = () => {
     setTagGroups((gs) => [
@@ -181,6 +207,14 @@ export function ThreadEditScreen({
       JSON.stringify(thread.tags ?? []) ||
     JSON.stringify(sanitizedDefaultTags ?? []) !==
       JSON.stringify(thread.defaultTags ?? []);
+  // どのグループにも入っていない使用中タグ (大文字小文字を区別しない)
+  const assignedKeys = new Set(
+    tagGroups.flatMap((g) => g.tags.map((t) => tagKey(t))),
+  );
+  const unassignedTags = (threadTags ?? []).filter(
+    (t) => !assignedKeys.has(tagKey(t.tag)),
+  );
+
   const dirty =
     title.trim() !== thread.title ||
     (description.trim() || undefined) !== thread.description ||
@@ -317,7 +351,10 @@ export function ThreadEditScreen({
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+        <div
+          ref={tagGroupsSectionRef}
+          className="scroll-mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+        >
           <div className="text-sm text-white/70">タグ絞り込みのグループ</div>
           <p className="mb-3 mt-0.5 text-[11px] text-white/40">
             「場所」「食事」のような見出しでタグをまとめると、スレッド詳細の絞り込みが見出し付きで表示されます
@@ -356,6 +393,33 @@ export function ThreadEditScreen({
                     label="このグループのタグ"
                     maxTags={MAX_TAGS_PER_GROUP}
                   />
+                  {unassignedTags.length > 0 &&
+                    g.tags.length < MAX_TAGS_PER_GROUP && (
+                      // スレッドで使われているのにどのグループにも入っていない
+                      // タグを、入力せずワンタップで入れられるようにする (#37)
+                      <div className="mt-2">
+                        <div className="mb-1 text-[11px] text-white/35">
+                          未分類のタグから追加
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {unassignedTags.map((t) => (
+                            <button
+                              key={t.key}
+                              type="button"
+                              onClick={() =>
+                                updateTagGroup(g.id, {
+                                  tags: [...g.tags, t.tag],
+                                })
+                              }
+                              className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-white/60 transition hover:bg-indigo-500/20 hover:text-indigo-200"
+                            >
+                              + #{t.tag}
+                              <span className="ml-1 text-white/30">{t.count}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                 </div>
               ))}
             </div>
