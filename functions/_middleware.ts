@@ -28,6 +28,13 @@ interface PagesContext {
 
 export const onRequest = async (context: PagesContext): Promise<Response> => {
   const reqUrl = new URL(context.request.url);
+
+  // /api/* は Pages Functions のハンドラに丸ごと任せる。
+  // OGP 構築 (外部 API 呼び出し) も SPA フォールバックも不要。
+  if (reqUrl.pathname.startsWith("/api/")) {
+    return context.next();
+  }
+
   const isGet =
     context.request.method === "GET" || context.request.method === "HEAD";
 
