@@ -20,6 +20,7 @@ import {
   json,
   preflight,
   requireDb,
+  withDbErrors,
   upsertStatement,
   verifyPostValue,
 } from "../../_index-db";
@@ -29,9 +30,10 @@ const PAGE_SIZE = 100;
 
 export const onRequestOptions = () => preflight();
 
-export const onRequestPost = async (
-  ctx: PagesFunctionContext,
-): Promise<Response> => {
+export const onRequestPost = (ctx: PagesFunctionContext): Promise<Response> =>
+  withDbErrors(() => handleSync(ctx));
+
+async function handleSync(ctx: PagesFunctionContext): Promise<Response> {
   const db = requireDb(ctx.env);
   if (db instanceof Response) return db;
 
