@@ -38,6 +38,16 @@ export interface ThreadRecord {
    * 既存レコードとの後方互換のため optional。
    */
   tagGroups?: TagGroup[];
+  /**
+   * スレッド自体の分類タグ (旅行 / オフ会 など)。投稿には伝播しない。
+   * プロフィールやダッシュボードでスレッドを絞り込むためのもの。optional。
+   */
+  tags?: string[];
+  /**
+   * このスレッドの新規投稿に既定で入れるタグ。投稿側で個別に外せる。
+   * `tags` (スレッドの分類) とは役割が違うので別フィールド。optional。
+   */
+  defaultTags?: string[];
 }
 
 export interface Location {

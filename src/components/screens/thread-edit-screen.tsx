@@ -17,7 +17,9 @@ import {
   MAX_TAG_GROUPS,
   MAX_TAG_GROUP_LABEL_LENGTH,
   MAX_TAGS_PER_GROUP,
+  sanitizeDefaultTagsForRecord,
   sanitizeTagGroupsForRecord,
+  sanitizeThreadTagsForRecord,
   type TagCount,
 } from "@/lib/tags";
 
@@ -52,6 +54,14 @@ export function ThreadEditScreen({
   // 既存レコードに sortOrder が無い場合は "asc" として扱う。
   const [sortOrder, setSortOrder] = useState<ThreadSortOrder>(
     thread.sortOrder === "desc" ? "desc" : "asc",
+  );
+
+  // スレッド自体の分類タグ / 新規投稿の既定タグ (#36 #38)
+  const [threadTagList, setThreadTagList] = useState<string[]>(
+    () => [...(thread.tags ?? [])],
+  );
+  const [defaultTags, setDefaultTags] = useState<string[]>(
+    () => [...(thread.defaultTags ?? [])],
   );
 
   // タグ絞り込みのカスタムグループ
@@ -142,6 +152,8 @@ export function ThreadEditScreen({
           // デフォルト (asc) のときはあえて値を残し、明示しなくても正しく動作させる。
           sortOrder: sortOrder === "desc" ? "desc" : undefined,
           tagGroups: sanitizedTagGroups,
+          tags: sanitizedThreadTags,
+          defaultTags: sanitizedDefaultTags,
         },
         { coverBlob },
       );
@@ -160,6 +172,13 @@ export function ThreadEditScreen({
   const tagGroupsDirty =
     JSON.stringify(sanitizedTagGroups ?? []) !==
     JSON.stringify(thread.tagGroups ?? []);
+  const sanitizedThreadTags = sanitizeThreadTagsForRecord(threadTagList);
+  const sanitizedDefaultTags = sanitizeDefaultTagsForRecord(defaultTags);
+  const threadTagsDirty =
+    JSON.stringify(sanitizedThreadTags ?? []) !==
+      JSON.stringify(thread.tags ?? []) ||
+    JSON.stringify(sanitizedDefaultTags ?? []) !==
+      JSON.stringify(thread.defaultTags ?? []);
   const dirty =
     title.trim() !== thread.title ||
     (description.trim() || undefined) !== thread.description ||
@@ -167,7 +186,8 @@ export function ThreadEditScreen({
     sortOrder !== initialSortOrder ||
     coverFile !== null ||
     coverRemoved ||
-    tagGroupsDirty;
+    tagGroupsDirty ||
+    threadTagsDirty;
 
   return (
     <div>
@@ -233,6 +253,22 @@ export function ThreadEditScreen({
             </div>
           </button>
         </div>
+
+        <TagInput
+          label="スレッドのタグ"
+          value={threadTagList}
+          onChange={setThreadTagList}
+          disabled={submitting}
+          hint="スレッド自体の分類 (例: 旅行, オフ会)。プロフィールで絞り込みに使えます"
+        />
+        <TagInput
+          label="投稿に既定で付けるタグ"
+          value={defaultTags}
+          onChange={setDefaultTags}
+          threadTags={threadTags}
+          disabled={submitting}
+          hint="このスレッドの新しいチェックポイントに最初から入ります。投稿ごとに外せます"
+        />
 
         <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
           <div className="mb-2 flex items-center justify-between">

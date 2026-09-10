@@ -62,6 +62,8 @@ export interface CheckpointPostScreenProps {
   threadTags?: TagCount[];
   /** スレッドのタググループ。候補の最上段に見出し付きで出す */
   tagGroups?: TagGroup[];
+  /** スレッド設定の既定タグ。初期値として入れる (外せる) */
+  defaultTags?: string[];
   onSubmitted: () => void;
 }
 
@@ -70,11 +72,12 @@ export function CheckpointPostScreen({
   threadTitle,
   threadTags,
   tagGroups,
+  defaultTags,
   onSubmitted,
 }: CheckpointPostScreenProps) {
   const handle = useAuthStore((s) => s.handle);
   const [text, setText] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>(() => [...(defaultTags ?? [])]);
   // 画像は選択直後に「縮小 + 圧縮 + EXIF 抽出」まで完了させた状態で保持する。
   // 元 File への参照は保持しない (iOS Safari での NotReadableError 回避のため)。
   // previewUrl は画像追加時に 1 回だけ作り、削除時 / アンマウント時に revoke する。
@@ -331,9 +334,10 @@ export function CheckpointPostScreen({
           tagGroups={tagGroups}
           disabled={submitting}
           hint={
-            crosspostToBsky
+            (defaultTags?.length ? "スレッドの既定タグが入っています。" : "") +
+            (crosspostToBsky
               ? "スレッド内の絞り込みに使えます。Bluesky にはハッシュタグとして付きます"
-              : "スレッド内の絞り込みに使えます"
+              : "スレッド内の絞り込みに使えます")
           }
         />
 

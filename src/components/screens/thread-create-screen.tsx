@@ -7,11 +7,18 @@ import { PhotoIcon } from "@/components/ui/icons";
 import { createThread } from "@/lib/pds/threads";
 import { uploadImage } from "@/lib/pds/posts";
 import { processCoverImage } from "@/lib/image-processing";
+import { TagInput } from "@/components/ui/tag-input";
+import {
+  sanitizeDefaultTagsForRecord,
+  sanitizeThreadTagsForRecord,
+} from "@/lib/tags";
 
 export function ThreadCreateScreen({ navigate }: NavigationProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<"private" | "public">("private");
+  const [threadTags, setThreadTags] = useState<string[]>([]);
+  const [defaultTags, setDefaultTags] = useState<string[]>([]);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -46,6 +53,8 @@ export function ThreadCreateScreen({ navigate }: NavigationProps) {
           title: title.trim(),
           description: description.trim() || undefined,
           visibility,
+          tags: sanitizeThreadTagsForRecord(threadTags),
+          defaultTags: sanitizeDefaultTagsForRecord(defaultTags),
           coverImage,
           createdAt: new Date().toISOString(),
         },
@@ -95,6 +104,20 @@ export function ThreadCreateScreen({ navigate }: NavigationProps) {
               className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
             />
           </div>
+          <TagInput
+            label="スレッドのタグ"
+            value={threadTags}
+            onChange={setThreadTags}
+            disabled={submitting}
+            hint="スレッド自体の分類 (例: 旅行, オフ会)。プロフィールで絞り込みに使えます"
+          />
+          <TagInput
+            label="投稿に既定で付けるタグ"
+            value={defaultTags}
+            onChange={setDefaultTags}
+            disabled={submitting}
+            hint="このスレッドの新しいチェックポイントに最初から入ります。投稿ごとに外せます"
+          />
           <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
             <span className="text-sm text-white/70">公開設定</span>
             <button

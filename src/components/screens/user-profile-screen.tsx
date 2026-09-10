@@ -14,6 +14,7 @@ import {
 } from "@/lib/pds/identity";
 import { BlobImage } from "@/components/ui/blob-image";
 import { HomeLink } from "@/components/ui/home-link";
+import { ThreadTagChips } from "@/components/ui/thread-tag-chips";
 import { SettingsIcon } from "@/components/ui/icons";
 
 function isModifiedClick(e: React.MouseEvent): boolean {
@@ -245,6 +246,7 @@ export function UserProfileScreen({ navigate, params }: NavigationProps) {
                     </span>
                   </div>
                   <h3 className="text-lg font-bold text-white">{t.title}</h3>
+                  <ThreadTagChips tags={t.tags} className="mt-1.5" />
                   {t.description && (
                     <p className="mt-1 line-clamp-2 text-sm text-white/50">
                       {t.description}

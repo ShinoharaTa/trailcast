@@ -10,6 +10,7 @@ import { listThreads, getThread } from "@/lib/pds/threads";
 import { listBookmarks } from "@/lib/pds/bookmarks";
 import { PlusIcon } from "@/components/ui/icons";
 import { BlobImage } from "@/components/ui/blob-image";
+import { ThreadTagChips } from "@/components/ui/thread-tag-chips";
 import { LandingScreen } from "@/components/screens/landing-screen";
 import { getProfile, type ProfileView } from "@/lib/pds/identity";
 import { OgBackfillModal } from "@/components/og/og-backfill-modal";
@@ -315,6 +316,7 @@ export function HomeScreen({ navigate }: NavigationProps) {
                     </span>
                   </div>
                   <h3 className="text-lg font-bold text-white">{t.title}</h3>
+                  <ThreadTagChips tags={t.tags} className="mt-1.5" />
                   {t.description && (
                     <p className="mt-1 line-clamp-2 text-sm text-white/50">
                       {t.description}

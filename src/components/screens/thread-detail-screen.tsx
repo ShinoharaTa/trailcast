@@ -48,6 +48,7 @@ import { ShareScreen } from "@/components/screens/share-screen";
 import { CheckpointPostScreen } from "@/components/screens/checkpoint-post-screen";
 import { CheckpointEditScreen } from "@/components/screens/checkpoint-edit-screen";
 import { BlueskyImportScreen } from "@/components/screens/bsky-import-screen";
+import { ThreadTagChips } from "@/components/ui/thread-tag-chips";
 import { ThreadEditScreen } from "@/components/screens/thread-edit-screen";
 import { LoginModal } from "@/components/auth/login-modal";
 
@@ -976,6 +977,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             {thread.description}
           </p>
         )}
+        <ThreadTagChips tags={thread.tags} max={20} className="mt-3" />
 
         {!isAuthenticated && (
           <div className="mt-6">
@@ -1332,6 +1334,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               threadTitle={thread.title}
               threadTags={threadTagCounts}
               tagGroups={thread.tagGroups}
+              defaultTags={thread.defaultTags}
               onSubmitted={onModalSubmitted}
             />
           )}
@@ -1365,6 +1368,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         open={modal === "bsky-import"}
         onClose={closeModal}
         threadUri={thread.uri}
+        defaultTags={thread.defaultTags}
         onSubmitted={onModalSubmitted}
       />
 
