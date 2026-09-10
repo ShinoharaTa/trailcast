@@ -41,13 +41,19 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { Lightbox } from "@/components/ui/lightbox";
 import { useBlobUrl, usePdsUrl } from "@/components/ui/blob-image";
-import { extractBlobCid, buildBlobUrl } from "@/lib/pds/blob-url";
+import {
+  extractBlobCid,
+  buildBlobUrl,
+  buildCdnImageUrl,
+  toThumbnailUrl,
+} from "@/lib/pds/blob-url";
 import { getProfile, type ProfileView } from "@/lib/pds/identity";
 import { getUserProfileHref } from "@/lib/app-routes";
 import { ShareScreen } from "@/components/screens/share-screen";
 import { CheckpointPostScreen } from "@/components/screens/checkpoint-post-screen";
 import { CheckpointEditScreen } from "@/components/screens/checkpoint-edit-screen";
 import { BlueskyImportScreen } from "@/components/screens/bsky-import-screen";
+import { ThreadTagChips } from "@/components/ui/thread-tag-chips";
 import { ThreadEditScreen } from "@/components/screens/thread-edit-screen";
 import { LoginModal } from "@/components/auth/login-modal";
 
@@ -56,11 +62,13 @@ type ModalKind =
   | "checkpoint-post"
   | "checkpoint-edit"
   | "bsky-import"
-  | "thread-edit";
+  | "thread-edit"
+  | "thread-edit-tags";
 
 function modalMaxWidth(kind: ModalKind): "lg" | "2xl" | "3xl" {
   switch (kind) {
     case "thread-edit":
+    case "thread-edit-tags":
     case "checkpoint-post":
     case "checkpoint-edit":
       return "2xl";
@@ -79,24 +87,38 @@ function PostImages({
   /** 画像クリック時に同じ post の全画像を Lightbox へ渡す */
   onOpenLightbox: (urls: string[], initialIndex: number) => void;
 }) {
+  // 一覧 (タイル) は軽いサムネイル、Lightbox は原寸、と URL を分ける (#34)。
+  //   - 取り込み投稿: feed_fullsize (最大 2000px) → feed_thumbnail
+  //   - 自前 blob   : PDS getBlob (原寸) → CDN feed_thumbnail (同寸だが再エンコードで軽い)
+  // サムネイルが読めなかったら原寸に落とす (CDN が 404 を返すことがある)。
   const urls: string[] = [];
+  const tileUrls: string[] = [];
   if (post.imageUrls && post.imageUrls.length > 0) {
-    urls.push(...post.imageUrls);
+    for (const u of post.imageUrls) {
+      urls.push(u);
+      tileUrls.push(toThumbnailUrl(u));
+    }
   } else if (post.images && post.images.length > 0 && pdsUrl) {
     const did = parseAtUri(post.uri).repo;
     for (const img of post.images) {
       const cid = extractBlobCid(img);
-      if (cid) urls.push(buildBlobUrl(pdsUrl, did, cid));
+      if (!cid) continue;
+      urls.push(buildBlobUrl(pdsUrl, did, cid));
+      tileUrls.push(buildCdnImageUrl(did, cid, "feed_thumbnail"));
     }
   }
   if (urls.length === 0) return null;
 
+  /** サムネイルが落ちたら原寸へ差し替える (1 回だけ) */
+  const fallbackToFull = (e: React.SyntheticEvent<HTMLImageElement>, i: number) => {
+    const el = e.currentTarget;
+    if (el.src !== urls[i]) el.src = urls[i];
+  };
+
   const Tile = ({
-    url,
     i,
     className = "",
   }: {
-    url: string;
     i: number;
     className?: string;
   }) => (
@@ -107,10 +129,12 @@ function PostImages({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={url}
+        src={tileUrls[i]}
+        onError={(e) => fallbackToFull(e, i)}
         alt=""
         className="absolute inset-0 h-full w-full cursor-zoom-in object-cover transition hover:opacity-95"
         loading="lazy"
+        decoding="async"
       />
     </button>
   );
@@ -130,10 +154,12 @@ function PostImages({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={urls[0]}
+            src={tileUrls[0]}
+            onError={(e) => fallbackToFull(e, 0)}
             alt=""
             className="aspect-[16/9] w-full cursor-zoom-in object-cover transition hover:opacity-95"
             loading="lazy"
+            decoding="async"
           />
         </button>
       </div>
@@ -142,24 +168,24 @@ function PostImages({
   if (urls.length === 2) {
     return (
       <div className="grid aspect-[16/9] grid-cols-2 gap-1 overflow-hidden rounded-2xl">
-        <Tile url={urls[0]} i={0} />
-        <Tile url={urls[1]} i={1} />
+        <Tile i={0} />
+        <Tile i={1} />
       </div>
     );
   }
   if (urls.length === 3) {
     return (
       <div className="grid aspect-[16/9] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-2xl">
-        <Tile url={urls[0]} i={0} className="row-span-2" />
-        <Tile url={urls[1]} i={1} />
-        <Tile url={urls[2]} i={2} />
+        <Tile i={0} className="row-span-2" />
+        <Tile i={1} />
+        <Tile i={2} />
       </div>
     );
   }
   return (
     <div className="grid aspect-square grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-2xl">
-      {urls.slice(0, 4).map((url, i) => (
-        <Tile key={i} url={url} i={i} />
+      {urls.slice(0, 4).map((_, i) => (
+        <Tile key={i} i={i} />
       ))}
     </div>
   );
@@ -476,6 +502,8 @@ function TagFilterBar({
   onToggle,
   onClear,
   matchedCount,
+  canEdit = false,
+  onEditGroups,
 }: {
   /** 絞り込み前の全投稿。件数集計はこちらを基準にする */
   posts: PostWithMeta[];
@@ -485,6 +513,9 @@ function TagFilterBar({
   onToggle: (key: string) => void;
   onClear: () => void;
   matchedCount: number;
+  /** スレッド所有者ならグループ編集への導線を出す (#37) */
+  canEdit?: boolean;
+  onEditGroups?: () => void;
 }) {
   const counts = useMemo(() => countTags(posts), [posts]);
   const grouped = useMemo(
@@ -532,15 +563,28 @@ function TagFilterBar({
       <div className="mb-2.5 flex items-center gap-2">
         <HashIcon className="size-3.5 text-white/30" />
         <span className="text-xs font-medium text-white/50">タグで絞り込む</span>
-        {filtering && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="ml-auto rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:bg-white/10 hover:text-white/80 md:px-2.5 md:py-1 md:text-[11px]"
-          >
-            クリア
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {filtering && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:bg-white/10 hover:text-white/80 md:px-2.5 md:py-1 md:text-[11px]"
+            >
+              クリア
+            </button>
+          )}
+          {canEdit && onEditGroups && (
+            // グループの追加・編集はこれまでスレッド編集画面の奥にしか無く、
+            // ここから直接飛べなかった (#37)
+            <button
+              type="button"
+              onClick={onEditGroups}
+              className="rounded-full px-3 py-1.5 text-xs font-medium text-indigo-300 transition hover:bg-indigo-500/10 hover:text-indigo-200 md:px-2.5 md:py-1 md:text-[11px]"
+            >
+              グループを編集
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2.5">
@@ -1045,6 +1089,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             {thread.description}
           </p>
         )}
+        <ThreadTagChips tags={thread.tags} max={20} className="mt-3" />
 
         {!isAuthenticated && (
           <div className="mt-6">
@@ -1168,6 +1213,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           onToggle={toggleTagKey}
           onClear={clearTagFilter}
           matchedCount={visiblePosts.length}
+          canEdit={isOwner}
+          onEditGroups={() => setModal("thread-edit-tags")}
         />
 
         {posts.length > 0 && visiblePosts.length === 0 && (
@@ -1412,6 +1459,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               threadTitle={thread.title}
               threadTags={threadTagCounts}
               tagGroups={thread.tagGroups}
+              defaultTags={thread.defaultTags}
               onSubmitted={onModalSubmitted}
             />
           )}
@@ -1424,10 +1472,14 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               onCancel={closeModal}
             />
           )}
-          {modal === "thread-edit" && thread && (
+          {(modal === "thread-edit" || modal === "thread-edit-tags") &&
+            thread && (
             <ThreadEditScreen
               thread={thread}
               threadTags={threadTagCounts}
+              initialSection={
+                modal === "thread-edit-tags" ? "tagGroups" : undefined
+              }
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
               onRequestDelete={() => {
@@ -1445,6 +1497,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         open={modal === "bsky-import"}
         onClose={closeModal}
         threadUri={thread.uri}
+        defaultTags={thread.defaultTags}
         onSubmitted={onModalSubmitted}
       />
 
