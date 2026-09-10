@@ -160,3 +160,39 @@ export function buildBlobUrl(
 ): string {
   return `${normalizeEndpoint(pdsUrl)}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(cid)}`;
 }
+
+/* ---------- 一覧用サムネイル ---------- */
+
+const BSKY_CDN = "https://cdn.bsky.app";
+
+export type CdnImagePreset = "feed_thumbnail" | "feed_fullsize";
+
+/**
+ * Bluesky の画像 CDN 経由の URL を組み立てる。
+ *
+ * CDN は任意の repo の blob を did/cid でオンデマンドに取りに行くので、カスタム
+ * lexicon (net.shino3.trailcast.post) の blob でも配信される (実データで確認済み)。
+ * 同じ 1000px でも PDS の getBlob より再エンコードで半分ほど軽い。
+ *
+ * ただし CDN 側の都合で 404 になりうるので、表示側は getBlob へのフォールバックを
+ * 必ず持つこと (`buildBlobUrl`)。
+ */
+export function buildCdnImageUrl(
+  did: string,
+  cid: string,
+  preset: CdnImagePreset,
+): string {
+  return `${BSKY_CDN}/img/${preset}/plain/${encodeURIComponent(did)}/${encodeURIComponent(cid)}@jpeg`;
+}
+
+/**
+ * 取り込み投稿の imageUrls は Bluesky の `feed_fullsize` (最大 2000px) で保存されて
+ * いる。一覧に出すには重すぎるので `feed_thumbnail` に差し替える。
+ * CDN 以外の URL はそのまま返す。
+ */
+export function toThumbnailUrl(url: string): string {
+  return url.replace(
+    /^https:\/\/cdn\.bsky\.app\/img\/feed_fullsize\//,
+    `${BSKY_CDN}/img/feed_thumbnail/`,
+  );
+}
