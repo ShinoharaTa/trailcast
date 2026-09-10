@@ -5,14 +5,21 @@
  * まだ一度も同期していなければ lastSyncedAt は null。
  */
 
-import { errorJson, json, preflight, requireDb } from "../../_index-db";
+import {
+  errorJson,
+  json,
+  preflight,
+  requireDb,
+  withDbErrors,
+} from "../../_index-db";
 import type { PagesFunctionContext } from "../../_types";
 
 export const onRequestOptions = () => preflight();
 
-export const onRequestGet = async (
-  ctx: PagesFunctionContext,
-): Promise<Response> => {
+export const onRequestGet = (ctx: PagesFunctionContext): Promise<Response> =>
+  withDbErrors(() => handleStatus(ctx));
+
+async function handleStatus(ctx: PagesFunctionContext): Promise<Response> {
   const db = requireDb(ctx.env);
   if (db instanceof Response) return db;
 

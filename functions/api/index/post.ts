@@ -9,19 +9,24 @@
  * PDS 上に無ければ (= 削除済み) インデックスからも消すので、削除の伝播も兼ねる。
  */
 
-import { errorJson, json, preflight, requireDb } from "../../_index-db";
 import {
   deleteStatement,
+  errorJson,
+  json,
+  preflight,
+  requireDb,
   upsertStatement,
   verifyPostUri,
+  withDbErrors,
 } from "../../_index-db";
 import type { PagesFunctionContext } from "../../_types";
 
 export const onRequestOptions = () => preflight();
 
-export const onRequestPost = async (
-  ctx: PagesFunctionContext,
-): Promise<Response> => {
+export const onRequestPost = (ctx: PagesFunctionContext): Promise<Response> =>
+  withDbErrors(() => handlePost(ctx));
+
+async function handlePost(ctx: PagesFunctionContext): Promise<Response> {
   const db = requireDb(ctx.env);
   if (db instanceof Response) return db;
 

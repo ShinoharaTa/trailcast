@@ -6,7 +6,13 @@
  */
 
 import { NSID_THREAD, parseAtUri } from "../../_atproto";
-import { errorJson, json, preflight, requireDb } from "../../_index-db";
+import {
+  errorJson,
+  json,
+  preflight,
+  requireDb,
+  withDbErrors,
+} from "../../_index-db";
 import type { PagesFunctionContext } from "../../_types";
 
 const DEFAULT_LIMIT = 200;
@@ -21,9 +27,10 @@ interface Row {
 
 export const onRequestOptions = () => preflight();
 
-export const onRequestGet = async (
-  ctx: PagesFunctionContext,
-): Promise<Response> => {
+export const onRequestGet = (ctx: PagesFunctionContext): Promise<Response> =>
+  withDbErrors(() => handleThread(ctx));
+
+async function handleThread(ctx: PagesFunctionContext): Promise<Response> {
   const db = requireDb(ctx.env);
   if (db instanceof Response) return db;
 

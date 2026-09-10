@@ -201,3 +201,29 @@ export function preflight(): Response {
     },
   });
 }
+
+/**
+ * D1 アクセスの例外を JSON エラーに変換する。
+ *
+ * 素で throw すると Cloudflare は `error code: 1101` (Worker threw exception)
+ * という本文だけを返し、原因が分からない。実際、本番 D1 にスキーマを流し忘れた
+ * ときに 1101 しか出ず切り分けに時間がかかったので、少なくとも「何が起きたか」
+ * は呼び出し側に伝える。
+ */
+export async function withDbErrors(
+  handler: () => Promise<Response>,
+): Promise<Response> {
+  try {
+    return await handler();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (/no such table|no such column/i.test(message)) {
+      return errorJson(
+        `D1 のスキーマが未適用です。db/schema.sql を実行してください (${message})`,
+        500,
+      );
+    }
+    console.error("[index] D1 error", message);
+    return errorJson(`D1 エラー: ${message}`, 500);
+  }
+}
