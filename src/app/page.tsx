@@ -7,6 +7,7 @@ import { HomeScreen } from "@/components/screens/home-screen";
 import { ThreadCreateScreen } from "@/components/screens/thread-create-screen";
 import { ThreadDetailScreen } from "@/components/screens/thread-detail-screen";
 import { UserProfileScreen } from "@/components/screens/user-profile-screen";
+import { SettingsScreen } from "@/components/screens/settings-screen";
 import type { ScreenId } from "@/lib/app-routes";
 import { useNavigation } from "@/lib/use-navigation";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -14,6 +15,7 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 // 未認証だと操作できない画面（URL は保持したまま LoginScreen に差し替える）
 const AUTH_REQUIRED_SCREENS: ReadonlySet<ScreenId> = new Set<ScreenId>([
   "thread-create",
+  "settings",
 ]);
 
 export default function Page() {
@@ -71,6 +73,7 @@ export default function Page() {
       {currentScreen === "thread-create" && <ThreadCreateScreen {...nav} />}
       {currentScreen === "thread-detail" && <ThreadDetailScreen {...nav} />}
       {currentScreen === "user-profile" && <UserProfileScreen {...nav} />}
+      {currentScreen === "settings" && <SettingsScreen {...nav} />}
     </main>
   );
 }
