@@ -15,7 +15,7 @@ import {
   type TagEntry,
   type TagIndexRecord,
 } from "@/lib/types";
-import { listRecordsViaPds } from "@/lib/pds/repo-read";
+import { listAllRecordsViaPds } from "@/lib/pds/repo-read";
 import {
   MAX_TAG_INDEX_ENTRIES,
   dedupeTags,
@@ -140,13 +140,12 @@ export async function rebuildTagIndexFromPosts(): Promise<TagEntry[]> {
   if (!hasActiveSession()) return [];
   try {
     const did = getMyDid();
-    const res = await listRecordsViaPds<PostRecord>(did, NSID_POST, {
-      limit: 100,
+    const records = await listAllRecordsViaPds<PostRecord>(did, NSID_POST, {
       reverse: true,
     });
 
     const byKey = new Map<string, TagEntry>();
-    for (const r of res.records) {
+    for (const r of records) {
       const usedAt = r.value.createdAt ?? r.value.checkpointAt ?? "";
       for (const tag of dedupeTags(r.value.tags ?? [])) {
         const key = tagKey(tag);

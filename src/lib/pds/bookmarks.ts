@@ -5,6 +5,7 @@ import {
   type BookmarkWithMeta,
   parseAtUri,
 } from "@/lib/types";
+import { listAllRecordsViaPds } from "@/lib/pds/repo-read";
 
 function generateTid(): string {
   const now = BigInt(Date.now()) * 1000n;
@@ -32,17 +33,14 @@ export async function createBookmark(
 }
 
 export async function listBookmarks(): Promise<BookmarkWithMeta[]> {
-  const agent = getAgent();
-  const res = await agent.com.atproto.repo.listRecords({
-    repo: getMyDid(),
-    collection: NSID_BOOKMARK,
-    limit: 100,
-    reverse: true,
-  });
-  return res.data.records.map((r) => {
-    const val = r.value as unknown as BookmarkRecord;
+  const records = await listAllRecordsViaPds<BookmarkRecord>(
+    getMyDid(),
+    NSID_BOOKMARK,
+    { reverse: true },
+  );
+  return records.map((r) => {
     const { rkey } = parseAtUri(r.uri);
-    return { ...val, uri: r.uri, cid: r.cid, rkey };
+    return { ...r.value, uri: r.uri, cid: r.cid, rkey };
   });
 }
 

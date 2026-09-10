@@ -104,3 +104,42 @@ export async function listRecordsViaPds<T = unknown>(
     cursor: data.cursor,
   };
 }
+
+/** ページングの暴走を防ぐ安全弁 (100 件/ページ × 50 = 5000 レコード)。 */
+const MAX_LIST_PAGES = 50;
+
+/**
+ * `listRecordsViaPds` を cursor が尽きるまで辿り、collection の全レコードを返す。
+ *
+ * `com.atproto.repo.listRecords` は 1 回で最大 100 件しか返さないため、
+ * 1 ページだけ取って絞り込む実装だと repo 全体が 100 件を超えた時点で
+ * 古いレコードが取りこぼされる (#12)。repo 全体を走査する必要がある
+ * 用途では必ずこちらを使う。
+ */
+export async function listAllRecordsViaPds<T = unknown>(
+  did: string,
+  collection: string,
+  opts: Omit<ListRecordsOptions, "cursor"> = {},
+): Promise<Array<XrpcRecord<T>>> {
+  const limit = opts.limit ?? 100;
+  const all: Array<XrpcRecord<T>> = [];
+  let cursor: string | undefined;
+
+  for (let page = 0; page < MAX_LIST_PAGES; page++) {
+    const res = await listRecordsViaPds<T>(did, collection, {
+      ...opts,
+      limit,
+      cursor,
+    });
+    all.push(...res.records);
+    // cursor が無ければ終端。レコード 0 件で cursor だけ返る PDS もあるので
+    // そちらも終端として扱う (無限ループ防止)。
+    if (!res.cursor || res.records.length === 0) return all;
+    cursor = res.cursor;
+  }
+
+  console.warn(
+    `listAllRecordsViaPds: ${collection} が ${MAX_LIST_PAGES} ページ上限に達しました (${all.length} 件で打ち切り)`,
+  );
+  return all;
+}
