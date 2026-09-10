@@ -71,6 +71,18 @@
                 }
               }
             }
+          },
+          "tags": {
+            "type": "array",
+            "maxLength": 20,
+            "items": { "type": "string", "maxLength": 64 },
+            "description": "Tags classifying the thread itself (e.g. 旅行, オフ会), stored without the leading '#'. Not propagated to posts; used to filter threads on profile / dashboard."
+          },
+          "defaultTags": {
+            "type": "array",
+            "maxLength": 10,
+            "items": { "type": "string", "maxLength": 64 },
+            "description": "Tags pre-filled on new checkpoints in this thread (the author can remove them per post). Stored without the leading '#'."
           }
         }
       }

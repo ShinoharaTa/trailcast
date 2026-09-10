@@ -115,6 +115,36 @@ export function sanitizeTagsForRecord(tags: string[]): string[] | undefined {
   return normalized.length > 0 ? normalized : undefined;
 }
 
+/** スレッド自体に付ける分類タグの上限 (lexicon の maxLength と揃える) */
+export const MAX_TAGS_PER_THREAD = 20;
+/** スレッドの既定タグの上限 (lexicon の maxLength と揃える) */
+export const MAX_DEFAULT_TAGS = 10;
+
+/** スレッドの分類タグ用サニタイズ。上限だけ post と違う。 */
+export function sanitizeThreadTagsForRecord(
+  tags: string[],
+): string[] | undefined {
+  return sanitizeTagsForRecord(tags)?.slice(0, MAX_TAGS_PER_THREAD);
+}
+
+/** スレッドの既定タグ用サニタイズ。 */
+export function sanitizeDefaultTagsForRecord(
+  tags: string[],
+): string[] | undefined {
+  return sanitizeTagsForRecord(tags)?.slice(0, MAX_DEFAULT_TAGS);
+}
+
+/**
+ * 既定タグを投稿のタグの先頭に足す。重複は大文字小文字を無視して落とす。
+ * 投稿画面の初期値と Bluesky 取り込みの両方から使う。
+ */
+export function mergeDefaultTags(
+  defaultTags: string[] | undefined,
+  tags: string[],
+): string[] {
+  return dedupeTags([...(defaultTags ?? []), ...tags]);
+}
+
 // ─── 絞り込み / 集計 ──────────────────────────────────────────
 
 export interface TagCount {

@@ -7,7 +7,9 @@ import { getAgent } from "@/lib/atp-agent";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { createPost } from "@/lib/pds/posts";
 import { recordTagUsage } from "@/lib/pds/tags";
-import { extractTagsFromText, sanitizeTagsForRecord } from "@/lib/tags";
+import { extractTagsFromText, sanitizeTagsForRecord,
+  mergeDefaultTags,
+} from "@/lib/tags";
 import {
   extractImagesFromEmbed,
   fetchBskyPosts,
@@ -57,6 +59,8 @@ export interface BlueskyImportScreenProps {
   open: boolean;
   onClose: () => void;
   threadUri: string;
+  /** スレッド設定の既定タグ。取り込んだ投稿にも付ける */
+  defaultTags?: string[];
   onSubmitted: () => void;
 }
 
@@ -78,6 +82,7 @@ export function BlueskyImportScreen({
   open,
   onClose,
   threadUri,
+  defaultTags,
   onSubmitted,
 }: BlueskyImportScreenProps) {
   const { did } = useAuthStore();
@@ -306,10 +311,13 @@ export function BlueskyImportScreen({
     setError(null);
     try {
       const selected = [...feedPosts, ...urlPosts].filter((p) => p.selected);
-      // 元投稿の本文に書かれたハッシュタグを、そのまま Trailcast のタグとして取り込む
+      // 元投稿の本文に書かれたハッシュタグを、そのまま Trailcast のタグとして取り込む。
+      // スレッドの既定タグがあれば先頭に足す。
       const importedTags: string[] = [];
       for (const post of selected) {
-        const tags = sanitizeTagsForRecord(extractTagsFromText(post.text));
+        const tags = sanitizeTagsForRecord(
+          mergeDefaultTags(defaultTags, extractTagsFromText(post.text)),
+        );
         if (tags) importedTags.push(...tags);
         await createPost({
           thread: threadUri,
