@@ -1,0 +1,49 @@
+{
+  "lexicon": 1,
+  "id": "net.shino3.trailcast.tagIndex",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Personal dictionary of tags this user has used on checkpoints. A derived cache: post.tags is the source of truth, and this record exists so tag suggestions do not require walking every post record.",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["tags", "updatedAt"],
+        "properties": {
+          "tags": {
+            "type": "array",
+            "maxLength": 500,
+            "items": { "type": "ref", "ref": "#tagEntry" },
+            "description": "Used tags, most recently used first"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Last time this dictionary was updated"
+          }
+        }
+      }
+    },
+    "tagEntry": {
+      "type": "object",
+      "required": ["tag", "count", "lastUsedAt"],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Tag text without the leading '#'"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many times this tag has been applied"
+        },
+        "lastUsedAt": {
+          "type": "string",
+          "format": "datetime",
+          "description": "Most recent use of this tag"
+        }
+      }
+    }
+  }
+}

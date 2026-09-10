@@ -7,7 +7,10 @@ import { getAgent } from "@/lib/atp-agent";
 import { processSelectedImage, type PreparedImage } from "@/lib/image-process";
 import { buildCrosspostText, buildEmbedImages } from "@/lib/bsky-crosspost";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import type { Location } from "@/lib/types";
+import { TagInput } from "@/components/ui/tag-input";
+import { recordTagUsage } from "@/lib/pds/tags";
+import { sanitizeTagsForRecord, type TagCount } from "@/lib/tags";
+import type { Location, TagGroup } from "@/lib/types";
 
 const MAX_IMAGES = 4;
 const MAX_TEXT = 200;
@@ -55,16 +58,23 @@ export interface CheckpointPostScreenProps {
   threadUri: string;
   /** Bluesky 同時投稿のテキストとリンク URL を組み立てるのに使う */
   threadTitle: string;
+  /** このスレッドで既に使われているタグ。タグ候補の上位に出す */
+  threadTags?: TagCount[];
+  /** スレッドのタググループ。候補の最上段に見出し付きで出す */
+  tagGroups?: TagGroup[];
   onSubmitted: () => void;
 }
 
 export function CheckpointPostScreen({
   threadUri,
   threadTitle,
+  threadTags,
+  tagGroups,
   onSubmitted,
 }: CheckpointPostScreenProps) {
   const handle = useAuthStore((s) => s.handle);
   const [text, setText] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   // 画像は選択直後に「縮小 + 圧縮 + EXIF 抽出」まで完了させた状態で保持する。
   // 元 File への参照は保持しない (iOS Safari での NotReadableError 回避のため)。
   // previewUrl は画像追加時に 1 回だけ作り、削除時 / アンマウント時に revoke する。
@@ -230,6 +240,8 @@ export function CheckpointPostScreen({
     setSubmitting(true);
     setError(null);
     try {
+      const recordTags = sanitizeTagsForRecord(tags);
+
       // 画像はすでに縮小 + 圧縮済みの Blob を保持しているのでそのままアップロード。
       const blobs = await Promise.all(
         images.map(async (img) => {
@@ -258,6 +270,7 @@ export function CheckpointPostScreen({
           handle: effectiveHandle,
           threadUri,
           body: text,
+          tags: recordTags,
         });
         const res = await agent.post({
           text: bskyText,
@@ -276,10 +289,13 @@ export function CheckpointPostScreen({
         text: text.trim() || undefined,
         images: blobs.length > 0 ? blobs : undefined,
         location: location ?? undefined,
+        tags: recordTags,
         checkpointAt: checkpointIso,
         sourceRef,
         createdAt,
       });
+      // タグ辞書はサジェスト用のキャッシュなので、失敗しても投稿は成功扱い。
+      if (recordTags) await recordTagUsage(recordTags);
       onSubmitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : "投稿に失敗しました");
@@ -307,6 +323,19 @@ export function CheckpointPostScreen({
             {text.length}/{MAX_TEXT}
           </span>
         </div>
+
+        <TagInput
+          value={tags}
+          onChange={setTags}
+          threadTags={threadTags}
+          tagGroups={tagGroups}
+          disabled={submitting}
+          hint={
+            crosspostToBsky
+              ? "スレッド内の絞り込みに使えます。Bluesky にはハッシュタグとして付きます"
+              : "スレッド内の絞り込みに使えます"
+          }
+        />
 
         <div>
           <label className="mb-2 block text-xs font-medium text-white/50">

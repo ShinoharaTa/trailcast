@@ -17,7 +17,8 @@ const IDENTITY_ENDPOINT = "https://bsky.social";
 const APPVIEW_ENDPOINT = "https://public.api.bsky.app";
 const DEFAULT_PDS = "https://bsky.social";
 
-const NSID_THREAD = "net.shino3.trailcast.thread";
+export const NSID_THREAD = "net.shino3.trailcast.thread";
+export const NSID_POST = "net.shino3.trailcast.post";
 
 export interface BlobRef {
   $type?: string;
@@ -35,6 +36,28 @@ export interface ThreadRecord {
   ogImage?: BlobRef;
   createdAt: string;
   sortOrder?: "asc" | "desc";
+}
+
+/** インデックスに必要な post のフィールドだけ (本文・画像は D1 に持たない) */
+export interface PostRecord {
+  thread: string;
+  checkpointAt: string;
+}
+
+export interface AtUriParts {
+  repo: string;
+  collection: string;
+  rkey: string;
+}
+
+/** `at://<repo>/<collection>/<rkey>` を分解する。形が違えば null。 */
+export function parseAtUri(uri: string): AtUriParts | null {
+  if (typeof uri !== "string" || !uri.startsWith("at://")) return null;
+  const parts = uri.slice("at://".length).split("/");
+  if (parts.length !== 3) return null;
+  const [repo, collection, rkey] = parts;
+  if (!repo || !collection || !rkey) return null;
+  return { repo, collection, rkey };
 }
 
 export interface ProfileView {
@@ -193,4 +216,43 @@ export async function buildBlobUrl(
   return `${normalizeEndpoint(pds)}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(
     did,
   )}&cid=${encodeURIComponent(cid)}`;
+}
+
+export interface ListRecordsPage<T> {
+  records: Array<{ uri: string; cid: string; value: T }>;
+  cursor?: string;
+}
+
+/**
+ * 指定 DID の PDS から `com.atproto.repo.listRecords` を 1 ページ分取得する。
+ *
+ * Worker は subrequest 数に上限があるので、ここでは全件ループせず 1 ページだけ
+ * 返し、ページングは呼び出し側 (= /api/index/sync がクライアントに cursor を
+ * 返す) に任せる。
+ */
+export async function listRecords<T = unknown>(
+  did: string,
+  collection: string,
+  opts: { limit?: number; cursor?: string } = {},
+): Promise<ListRecordsPage<T> | null> {
+  const pds = await resolveDidPds(did);
+  const url = new URL("/xrpc/com.atproto.repo.listRecords", pds);
+  url.searchParams.set("repo", did);
+  url.searchParams.set("collection", collection);
+  url.searchParams.set("limit", String(opts.limit ?? 100));
+  if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
+  const res = await fetch(url.toString(), FETCH_OPTS);
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    records?: Array<{ uri: string; cid?: string; value: T }>;
+    cursor?: string;
+  };
+  return {
+    records: (data.records ?? []).map((r) => ({
+      uri: r.uri,
+      cid: r.cid ?? "",
+      value: r.value,
+    })),
+    cursor: data.cursor,
+  };
 }

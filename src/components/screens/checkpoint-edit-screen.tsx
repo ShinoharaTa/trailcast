@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import { PinIcon, CloseIcon } from "@/components/ui/icons";
-import type { PostWithMeta, Location } from "@/lib/types";
+import type { PostWithMeta, Location, TagGroup } from "@/lib/types";
 import { parseAtUri } from "@/lib/types";
 import { updatePost } from "@/lib/pds/posts";
 import { BlobImage } from "@/components/ui/blob-image";
+import { TagInput } from "@/components/ui/tag-input";
+import { recordTagUsage } from "@/lib/pds/tags";
+import { sanitizeTagsForRecord, tagKey, type TagCount } from "@/lib/tags";
 
 const MAX_TEXT = 200;
 
@@ -23,16 +26,23 @@ function toLocalInput(iso: string): string {
 
 export interface CheckpointEditScreenProps {
   post: PostWithMeta;
+  /** このスレッドで既に使われているタグ。タグ候補の上位に出す */
+  threadTags?: TagCount[];
+  /** スレッドのタググループ。候補の最上段に見出し付きで出す */
+  tagGroups?: TagGroup[];
   onSubmitted: () => void;
   onCancel: () => void;
 }
 
 export function CheckpointEditScreen({
   post,
+  threadTags,
+  tagGroups,
   onSubmitted,
   onCancel,
 }: CheckpointEditScreenProps) {
   const [text, setText] = useState(post.text ?? "");
+  const [tags, setTags] = useState<string[]>(post.tags ?? []);
   const [checkpointAt, setCheckpointAt] = useState(post.checkpointAt);
   const [location, setLocation] = useState<Location | null>(post.location ?? null);
   const [saving, setSaving] = useState(false);
@@ -42,16 +52,23 @@ export function CheckpointEditScreen({
     setSaving(true);
     setError(null);
     try {
+      const recordTags = sanitizeTagsForRecord(tags);
       await updatePost(post.rkey, {
         thread: post.thread,
         text: text.trim() || undefined,
         images: post.images,
+        imageUrls: post.imageUrls,
         location: location ?? undefined,
+        tags: recordTags,
         checkpointAt: checkpointAt || post.checkpointAt,
         exif: post.exif,
         sourceRef: post.sourceRef,
         createdAt: post.createdAt,
       });
+      // 編集で新しく付いたタグだけを辞書に加算する (再保存で回数が膨らまないように)
+      const before = new Set((post.tags ?? []).map(tagKey));
+      const added = (recordTags ?? []).filter((t) => !before.has(tagKey(t)));
+      if (added.length > 0) await recordTagUsage(added);
       onSubmitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存に失敗しました");
@@ -93,6 +110,15 @@ export function CheckpointEditScreen({
             {text.length}/{MAX_TEXT}
           </span>
         </div>
+
+        <TagInput
+          value={tags}
+          onChange={setTags}
+          threadTags={threadTags}
+          tagGroups={tagGroups}
+          disabled={saving}
+          hint="スレッド内の絞り込みに使えます"
+        />
 
         {images.length > 0 && (
           <div>

@@ -3,6 +3,12 @@ import {
   BrowserOAuthClient,
   type OAuthSession,
 } from "@atproto/oauth-client-browser";
+import {
+  API_MOCK_ENABLED,
+  MOCK_DID,
+  createMockSessionManager,
+  installApiMockFetch,
+} from "@/lib/api-mock";
 
 // 旧 App Password セッションのキー。OAuth 移行時に強制ログアウトする目印。
 const LEGACY_SESSION_KEY = "trailcast_session";
@@ -113,6 +119,15 @@ export async function initAuth(): Promise<{
   did: string;
   isCallback: boolean;
 } | null> {
+  // UI 確認用モック (NEXT_PUBLIC_API_MOCK=1 の dev 起動時のみ)。
+  // OAuth を通さずログイン済み状態を再現する。詳細は api-mock.ts を参照。
+  if (API_MOCK_ENABLED) {
+    if (!_agent) {
+      installApiMockFetch();
+      _agent = new Agent(createMockSessionManager());
+    }
+    return { did: MOCK_DID, isCallback: false };
+  }
   if (!_initPromise) {
     _initPromise = (async (): Promise<InitResult> => {
       const client = await getOAuthClient();

@@ -1,10 +1,12 @@
 import { getAgent, getMyDid } from "@/lib/atp-agent";
 import {
   NSID_POST,
+  buildAtUri,
   type PostRecord,
   type PostWithMeta,
 } from "@/lib/types";
 import { getRecordViaPds } from "@/lib/pds/repo-read";
+import { notifyPostIndexed } from "@/lib/index-api";
 
 function generateTid(): string {
   const now = BigInt(Date.now()) * 1000n;
@@ -32,6 +34,9 @@ export async function createPost(
     rkey,
     record: record as unknown as Record<string, unknown>,
   });
+  // Public スレッドの集約インデックスに反映する (#14 方式 A)。
+  // 失敗しても投稿自体は成功なので待たない・投げない。
+  void notifyPostIndexed(res.data.uri);
   return { ...record, uri: res.data.uri, cid: res.data.cid, rkey };
 }
 
@@ -54,16 +59,21 @@ export async function updatePost(
     rkey,
     record: record as unknown as Record<string, unknown>,
   });
+  void notifyPostIndexed(res.data.uri);
   return { ...record, uri: res.data.uri, cid: res.data.cid, rkey };
 }
 
 export async function deletePost(rkey: string): Promise<void> {
   const agent = getAgent();
+  const did = getMyDid();
   await agent.com.atproto.repo.deleteRecord({
-    repo: getMyDid(),
+    repo: did,
     collection: NSID_POST,
     rkey,
   });
+  // サーバは PDS に getRecord して不在を確認したらインデックスから消すので、
+  // 削除も作成と同じ入口でよい。
+  void notifyPostIndexed(buildAtUri(did, NSID_POST, rkey));
 }
 
 /**
@@ -86,6 +96,8 @@ export async function refreshFromSource(
       ? bskyData.viewImageUrls.slice(0, 4)
       : post.imageUrls,
     location: post.location,
+    // タグは取り込み後にユーザーが編集しうるので、元投稿では上書きしない
+    tags: post.tags,
     checkpointAt: post.checkpointAt,
     exif: post.exif,
     sourceRef: post.sourceRef,

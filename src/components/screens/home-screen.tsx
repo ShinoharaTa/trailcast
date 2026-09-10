@@ -12,6 +12,11 @@ import { PlusIcon } from "@/components/ui/icons";
 import { BlobImage } from "@/components/ui/blob-image";
 import { LandingScreen } from "@/components/screens/landing-screen";
 import { getProfile, type ProfileView } from "@/lib/pds/identity";
+import { OgBackfillModal } from "@/components/og/og-backfill-modal";
+import {
+  isBackfillDismissedForever,
+  isBackfillDismissedThisSession,
+} from "@/lib/og/backfill";
 
 function isModifiedClick(e: React.MouseEvent): boolean {
   return (
@@ -106,18 +111,39 @@ export function HomeScreen({ navigate }: NavigationProps) {
     (BookmarkWithMeta & { thread?: ThreadWithMeta })[]
   >([]);
   const [loading, setLoading] = useState(true);
+  const [ogBackfillTargets, setOgBackfillTargets] = useState<ThreadWithMeta[]>(
+    [],
+  );
+  const [ogBackfillOpen, setOgBackfillOpen] = useState(false);
 
-  const loadThreads = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result = await listThreads();
-      setThreads(result);
-    } catch (e) {
-      console.error("Failed to load threads:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const loadThreads = useCallback(
+    async (opts: { detectBackfill?: boolean } = {}) => {
+      setLoading(true);
+      try {
+        const result = await listThreads();
+        setThreads(result);
+
+        // OG 画像が未設定のスレッドを検出。初回ロードのみ確認モーダルを開く。
+        // 同セッション内 / 永続的に dismiss 済みの場合はスキップ。
+        if (
+          opts.detectBackfill &&
+          !isBackfillDismissedForever() &&
+          !isBackfillDismissedThisSession()
+        ) {
+          const missing = result.filter((t) => !t.ogImage);
+          if (missing.length > 0) {
+            setOgBackfillTargets(missing);
+            setOgBackfillOpen(true);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load threads:", e);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   const loadBookmarks = useCallback(async () => {
     try {
@@ -146,9 +172,21 @@ export function HomeScreen({ navigate }: NavigationProps) {
       setBookmarksData([]);
       return;
     }
-    loadThreads();
+    loadThreads({ detectBackfill: true });
     loadBookmarks();
   }, [isAuthenticated, loadThreads, loadBookmarks]);
+
+  const handleBackfillClose = useCallback(
+    (succeeded: number) => {
+      setOgBackfillOpen(false);
+      // 1 件以上更新できた場合は最新の ogImage を反映するため再ロード。
+      // 検出は再度発火させない (= detectBackfill: false)。
+      if (succeeded > 0) {
+        loadThreads({ detectBackfill: false });
+      }
+    },
+    [loadThreads],
+  );
 
   // 未認証: ランディング (ログインフォーム埋め込み)
   if (!isAuthenticated) {
@@ -309,6 +347,12 @@ export function HomeScreen({ navigate }: NavigationProps) {
           )}
         </div>
       )}
+
+      <OgBackfillModal
+        open={ogBackfillOpen}
+        targets={ogBackfillTargets}
+        onClose={handleBackfillClose}
+      />
     </div>
   );
 }

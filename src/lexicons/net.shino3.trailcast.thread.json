@@ -46,6 +46,31 @@
             "type": "string",
             "knownValues": ["asc", "desc"],
             "description": "Display order of checkpoints by checkpointAt. 'asc' (default) shows oldest first, 'desc' shows newest first."
+          },
+          "tagGroups": {
+            "type": "array",
+            "maxLength": 50,
+            "description": "Custom tag filter groups for this thread. Display-level curation only; post.tags remains the source of truth.",
+            "items": {
+              "type": "object",
+              "required": ["label", "tags"],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "maxLength": 20,
+                  "description": "Group heading shown in the filter UI (e.g. 場所)"
+                },
+                "tags": {
+                  "type": "array",
+                  "maxLength": 50,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "description": "Tags in this group, stored without the leading #"
+                }
+              }
+            }
           }
         }
       }
