@@ -9,6 +9,8 @@ import { uploadImage } from "@/lib/pds/posts";
 import { processCoverImage } from "@/lib/image-processing";
 import { TagInput } from "@/components/ui/tag-input";
 import {
+  MAX_DEFAULT_TAGS,
+  MAX_TAGS_PER_THREAD,
   sanitizeDefaultTagsForRecord,
   sanitizeThreadTagsForRecord,
 } from "@/lib/tags";
@@ -106,6 +108,7 @@ export function ThreadCreateScreen({ navigate }: NavigationProps) {
           </div>
           <TagInput
             label="スレッドのタグ"
+          maxTags={MAX_TAGS_PER_THREAD}
             value={threadTags}
             onChange={setThreadTags}
             disabled={submitting}
@@ -113,6 +116,7 @@ export function ThreadCreateScreen({ navigate }: NavigationProps) {
           />
           <TagInput
             label="投稿に既定で付けるタグ"
+          maxTags={MAX_DEFAULT_TAGS}
             value={defaultTags}
             onChange={setDefaultTags}
             disabled={submitting}

@@ -17,6 +17,8 @@ import {
   MAX_TAG_GROUPS,
   MAX_TAG_GROUP_LABEL_LENGTH,
   MAX_TAGS_PER_GROUP,
+  MAX_DEFAULT_TAGS,
+  MAX_TAGS_PER_THREAD,
   sanitizeDefaultTagsForRecord,
   sanitizeTagGroupsForRecord,
   sanitizeThreadTagsForRecord,
@@ -256,6 +258,7 @@ export function ThreadEditScreen({
 
         <TagInput
           label="スレッドのタグ"
+          maxTags={MAX_TAGS_PER_THREAD}
           value={threadTagList}
           onChange={setThreadTagList}
           disabled={submitting}
@@ -263,6 +266,7 @@ export function ThreadEditScreen({
         />
         <TagInput
           label="投稿に既定で付けるタグ"
+          maxTags={MAX_DEFAULT_TAGS}
           value={defaultTags}
           onChange={setDefaultTags}
           threadTags={threadTags}
