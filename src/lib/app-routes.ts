@@ -6,7 +6,8 @@ export type ScreenId =
   | "home"
   | "thread-create"
   | "thread-detail"
-  | "user-profile";
+  | "user-profile"
+  | "settings";
 
 export interface ScreenParams {
   threadUri?: string;
@@ -40,6 +41,7 @@ const RESERVED_TOP_SEGMENTS: ReadonlySet<string> = new Set([
   "login",
   "new",
   "auth",
+  "settings",
 ]);
 
 /**
@@ -63,6 +65,7 @@ function isUserIdentifier(seg: string): boolean {
  *   - /                    : home
  *   - /login               : login
  *   - /new                 : thread-create
+ *   - /settings            : settings
  *   - /{did|handle}        : user-profile
  *   - /{did|handle}/{rkey} : thread-detail
  *
@@ -81,6 +84,8 @@ export function screenToPathname(
       return "/auth/callback";
     case "thread-create":
       return "/new";
+    case "settings":
+      return "/settings";
     case "thread-detail": {
       if (!params.threadUri) return "/";
       const { repo, rkey } = parseAtUri(params.threadUri);
@@ -109,6 +114,7 @@ export function parsePathname(pathname: string): Route {
   if (parts.length === 1) {
     if (parts[0] === "login") return { screen: "login", params: {} };
     if (parts[0] === "new") return { screen: "thread-create", params: {} };
+    if (parts[0] === "settings") return { screen: "settings", params: {} };
     if (isUserIdentifier(parts[0])) {
       return {
         screen: "user-profile",
