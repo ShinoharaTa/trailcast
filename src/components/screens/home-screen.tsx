@@ -8,7 +8,7 @@ import type { ThreadWithMeta, BookmarkWithMeta } from "@/lib/types";
 import { parseAtUri } from "@/lib/types";
 import { listThreads, getThread } from "@/lib/pds/threads";
 import { listBookmarks } from "@/lib/pds/bookmarks";
-import { PlusIcon } from "@/components/ui/icons";
+import { PlusIcon, SettingsIcon, UserIcon } from "@/components/ui/icons";
 import { BlobImage } from "@/components/ui/blob-image";
 import { ThreadTagChips } from "@/components/ui/thread-tag-chips";
 import { LandingScreen } from "@/components/screens/landing-screen";
@@ -105,7 +105,7 @@ function BookmarkCard({
 }
 
 export function HomeScreen({ navigate }: NavigationProps) {
-  const { handle, isAuthenticated, logout } = useAuthStore();
+  const { handle, isAuthenticated } = useAuthStore();
   const [activeTab, setActiveTab] = useState<"threads" | "bookmarks">("threads");
   const [threads, setThreads] = useState<ThreadWithMeta[]>([]);
   const [bookmarksData, setBookmarksData] = useState<
@@ -198,8 +198,16 @@ export function HomeScreen({ navigate }: NavigationProps) {
     <div className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white">Dashboard</h2>
-          {handle ? (
+          <h2 className="text-3xl font-bold tracking-tight text-white">ダッシュボード</h2>
+          <p className="mt-1 text-sm text-white/40">
+            {handle ? `@${handle}` : "あなたのチェックポイント"}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* プロフィール / 設定は以前 @handle の小さなリンクと
+              プロフィール画面の歯車にしか無く、辿り着けなかった (#26)。
+              ラベル付きのボタンとしてダッシュボードに置く。 */}
+          {handle && (
             <a
               href={getUserProfileHref(handle)}
               onClick={(e) => {
@@ -207,21 +215,25 @@ export function HomeScreen({ navigate }: NavigationProps) {
                 e.preventDefault();
                 navigate("user-profile", { userIdentifier: handle });
               }}
-              className="mt-1 inline-block text-sm text-white/40 transition hover:text-white/70"
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-white/60 transition hover:bg-white/5 hover:text-white"
             >
-              @{handle}
+              <UserIcon className="size-4" />
+              プロフィール
             </a>
-          ) : (
-            <p className="mt-1 text-sm text-white/40">あなたのチェックポイント</p>
           )}
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={logout}
-            className="rounded-lg px-3 py-2 text-xs font-medium text-white/40 transition hover:bg-white/5 hover:text-white/70"
+          <a
+            href="/settings"
+            onClick={(e) => {
+              if (isModifiedClick(e)) return;
+              e.preventDefault();
+              navigate("settings");
+            }}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-white/60 transition hover:bg-white/5 hover:text-white"
           >
-            ログアウト
-          </button>
+            <SettingsIcon className="size-4" />
+            設定
+          </a>
+          {/* ログアウトは滅多に押さないので設定画面へ移した (#30) */}
           <button
             onClick={() => navigate("thread-create")}
             className="flex items-center gap-2 rounded-xl bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:bg-indigo-400"

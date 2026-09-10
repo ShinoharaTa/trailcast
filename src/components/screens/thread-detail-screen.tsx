@@ -41,7 +41,12 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { Lightbox } from "@/components/ui/lightbox";
 import { useBlobUrl, usePdsUrl } from "@/components/ui/blob-image";
-import { extractBlobCid, buildBlobUrl } from "@/lib/pds/blob-url";
+import {
+  extractBlobCid,
+  buildBlobUrl,
+  buildCdnImageUrl,
+  toThumbnailUrl,
+} from "@/lib/pds/blob-url";
 import { getProfile, type ProfileView } from "@/lib/pds/identity";
 import { getUserProfileHref } from "@/lib/app-routes";
 import { ShareScreen } from "@/components/screens/share-screen";
@@ -80,24 +85,38 @@ function PostImages({
   /** 画像クリック時に同じ post の全画像を Lightbox へ渡す */
   onOpenLightbox: (urls: string[], initialIndex: number) => void;
 }) {
+  // 一覧 (タイル) は軽いサムネイル、Lightbox は原寸、と URL を分ける (#34)。
+  //   - 取り込み投稿: feed_fullsize (最大 2000px) → feed_thumbnail
+  //   - 自前 blob   : PDS getBlob (原寸) → CDN feed_thumbnail (同寸だが再エンコードで軽い)
+  // サムネイルが読めなかったら原寸に落とす (CDN が 404 を返すことがある)。
   const urls: string[] = [];
+  const tileUrls: string[] = [];
   if (post.imageUrls && post.imageUrls.length > 0) {
-    urls.push(...post.imageUrls);
+    for (const u of post.imageUrls) {
+      urls.push(u);
+      tileUrls.push(toThumbnailUrl(u));
+    }
   } else if (post.images && post.images.length > 0 && pdsUrl) {
     const did = parseAtUri(post.uri).repo;
     for (const img of post.images) {
       const cid = extractBlobCid(img);
-      if (cid) urls.push(buildBlobUrl(pdsUrl, did, cid));
+      if (!cid) continue;
+      urls.push(buildBlobUrl(pdsUrl, did, cid));
+      tileUrls.push(buildCdnImageUrl(did, cid, "feed_thumbnail"));
     }
   }
   if (urls.length === 0) return null;
 
+  /** サムネイルが落ちたら原寸へ差し替える (1 回だけ) */
+  const fallbackToFull = (e: React.SyntheticEvent<HTMLImageElement>, i: number) => {
+    const el = e.currentTarget;
+    if (el.src !== urls[i]) el.src = urls[i];
+  };
+
   const Tile = ({
-    url,
     i,
     className = "",
   }: {
-    url: string;
     i: number;
     className?: string;
   }) => (
@@ -108,10 +127,12 @@ function PostImages({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={url}
+        src={tileUrls[i]}
+        onError={(e) => fallbackToFull(e, i)}
         alt=""
         className="absolute inset-0 h-full w-full cursor-zoom-in object-cover transition hover:opacity-95"
         loading="lazy"
+        decoding="async"
       />
     </button>
   );
@@ -131,10 +152,12 @@ function PostImages({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={urls[0]}
+            src={tileUrls[0]}
+            onError={(e) => fallbackToFull(e, 0)}
             alt=""
             className="aspect-[16/9] w-full cursor-zoom-in object-cover transition hover:opacity-95"
             loading="lazy"
+            decoding="async"
           />
         </button>
       </div>
@@ -143,24 +166,24 @@ function PostImages({
   if (urls.length === 2) {
     return (
       <div className="grid aspect-[16/9] grid-cols-2 gap-1 overflow-hidden rounded-2xl">
-        <Tile url={urls[0]} i={0} />
-        <Tile url={urls[1]} i={1} />
+        <Tile i={0} />
+        <Tile i={1} />
       </div>
     );
   }
   if (urls.length === 3) {
     return (
       <div className="grid aspect-[16/9] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-2xl">
-        <Tile url={urls[0]} i={0} className="row-span-2" />
-        <Tile url={urls[1]} i={1} />
-        <Tile url={urls[2]} i={2} />
+        <Tile i={0} className="row-span-2" />
+        <Tile i={1} />
+        <Tile i={2} />
       </div>
     );
   }
   return (
     <div className="grid aspect-square grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-2xl">
-      {urls.slice(0, 4).map((url, i) => (
-        <Tile key={i} url={url} i={i} />
+      {urls.slice(0, 4).map((_, i) => (
+        <Tile key={i} i={i} />
       ))}
     </div>
   );
@@ -180,6 +203,62 @@ function isModifiedClick(e: React.MouseEvent): boolean {
 function shortenDid(did: string): string {
   if (!did.startsWith("did:")) return did;
   return did.length > 24 ? `${did.slice(0, 12)}…${did.slice(-8)}` : did;
+}
+
+/**
+ * 投稿カードに出す小さな投稿者表示。Public スレッドで複数人の投稿が混ざるときだけ
+ * 使う (単独スレッドでは全部同じ人なので出さない)。getProfile はキャッシュされる
+ * ので、同じ DID の投稿が何十件あっても問い合わせは 1 回。
+ */
+function PostAuthorChip({
+  did,
+  navigate,
+}: {
+  did: string;
+  navigate: NavigationProps["navigate"];
+}) {
+  const [profile, setProfile] = useState<ProfileView | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getProfile(did)
+      .then((p) => {
+        if (!cancelled) setProfile(p);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [did]);
+
+  const identifier = profile?.handle ?? did;
+  const name =
+    profile?.displayName?.trim() || profile?.handle || shortenDid(did);
+
+  return (
+    <a
+      href={getUserProfileHref(identifier)}
+      onClick={(e) => {
+        if (isModifiedClick(e)) return;
+        e.preventDefault();
+        navigate("user-profile", { userIdentifier: identifier });
+      }}
+      title={profile?.handle ? `@${profile.handle}` : did}
+      className="inline-flex max-w-[12rem] items-center gap-1.5 rounded-full bg-white/5 py-0.5 pl-0.5 pr-2 text-white/70 transition hover:bg-white/10 hover:text-white"
+    >
+      <span className="size-4 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-indigo-500/30 to-violet-500/30">
+        {profile?.avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={profile.avatar} alt="" className="h-full w-full object-cover" loading="lazy" />
+        ) : (
+          <span className="flex h-full items-center justify-center text-[9px] font-bold text-white/80">
+            {name.charAt(0).toUpperCase()}
+          </span>
+        )}
+      </span>
+      <span className="truncate text-[11px] font-medium">{name}</span>
+    </a>
+  );
 }
 
 /**
@@ -892,6 +971,19 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
   const threadDid = parseAtUri(thread.uri).repo;
   const isOwner = myDid === threadDid;
+  // Public スレッドはログインしていれば誰でも投稿できる (README の仕様)。
+  const canPost =
+    isOwner || (isAuthenticated && thread?.visibility === "public");
+  // 投稿の編集・削除・再取得は「その投稿が自分の repo にあるか」で決める。
+  // updatePost / deletePost は自分の repo にしか書けないので、スレッド所有者で
+  // あっても他人の投稿は操作できないし、参加者は自分の投稿を操作できる。
+  const canManagePost = (post: PostWithMeta): boolean =>
+    myDid !== null && parseAtUri(post.uri).repo === myDid;
+  // 複数人の投稿が混ざっているときだけ、各投稿に投稿者を出す。
+  // ここは early return (loading / !thread) より後なので hook は使えない。
+  // posts は多くて数百件なので毎 render 数えても問題ない。
+  const multiAuthor =
+    new Set(posts.map((p) => parseAtUri(p.uri).repo)).size > 1;
 
   return (
     <div>
@@ -985,9 +1077,17 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               onClick={() => setLoginOpen(true)}
               className="rounded-lg bg-indigo-500/15 px-3.5 py-2 text-xs font-medium text-indigo-300 transition hover:bg-indigo-500/25"
             >
-              ログインして投稿する
+              {/* Private は投稿できないので、ログインの目的をぼかす */}
+              {thread.visibility === "public" ? "ログインして投稿する" : "ログイン"}
             </button>
           </div>
+        )}
+
+        {isAuthenticated && !isOwner && thread.visibility === "public" && (
+          <p className="mt-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3.5 py-2.5 text-xs leading-relaxed text-emerald-200/80">
+            Public スレッドです。右下の「＋」からあなたもチェックポイントを投稿できます。
+            投稿はあなたの PDS に保存され、このスレッドに紐づけて表示されます。
+          </p>
         )}
       </div>
 
@@ -1146,6 +1246,9 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 <div className="pb-10 pl-14 sm:pl-16">
               <div className="mb-3 flex min-h-5 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 <span className="font-mono font-bold text-indigo-400">{formatTimeOnly(cp.checkpointAt)}</span>
+                {multiAuthor && (
+                  <PostAuthorChip did={parseAtUri(cp.uri).repo} navigate={navigate} />
+                )}
                 {cp.location && (
                   <span className="flex items-center gap-1 text-white/40">
                     <PinIcon className="size-3" />
@@ -1163,7 +1266,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                       <LinkIcon className="size-2.5" />
                       元投稿
                     </a>
-                    {isOwner && (
+                    {canManagePost(cp) && (
                       <button
                         onClick={() => handleRefreshFromSource(cp)}
                         disabled={refreshingUri === cp.uri}
@@ -1176,7 +1279,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                     )}
                   </span>
                 )}
-                {isOwner && (
+                {canManagePost(cp) && (
                   // モバイル / タブレット (md 未満) では常時表示。
                   // md 以上はホバーでのみ表示する従来挙動。
                   <div className="ml-auto flex gap-1 transition md:opacity-0 md:group-hover:opacity-100">
@@ -1243,8 +1346,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         )}
       </div>
 
-      {/* Floating Action Button (bottom-right) */}
-      {isOwner && (
+      {/* Floating Action Button (bottom-right)。Public なら参加者にも出す */}
+      {canPost && (
         <>
           {/* Backdrop when expanded */}
           <div
