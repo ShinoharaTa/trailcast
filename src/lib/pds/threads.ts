@@ -9,6 +9,7 @@ import {
   parseAtUri,
 } from "@/lib/types";
 import { getRecordViaPds, listAllRecordsViaPds } from "@/lib/pds/repo-read";
+import { listIndexedPostRefs } from "@/lib/index-api";
 import { generateAndUploadThreadOgImage } from "@/lib/pds/og-image";
 
 function generateTid(): string {
@@ -131,12 +132,81 @@ export async function deleteThread(rkey: string): Promise<void> {
   });
 }
 
+/**
+ * 1 スレッドの表示で走査する repo の上限 (所有者を含む)。
+ *
+ * Public スレッドには誰でも投稿できるため、参加者が際限なく増えると閲覧側の
+ * リクエストがその数だけ増える。インデックス上の投稿数が多い順に採用して
+ * 打ち切る。ここに引っかかるほど参加者が増えたら、repo 走査ではなく
+ * インデックスを一覧として信用する方式に切り替える必要がある。
+ */
+const MAX_PARTICIPANT_REPOS = 25;
+
+/**
+ * 共有インデックスから、このスレッドに投稿している DID を投稿数の多い順に返す。
+ *
+ * インデックスを「投稿一覧」ではなく **参加者の発見** にだけ使うのが要点。
+ * 一覧そのものを信用すると (a) インデックスの取りこぼしがそのまま表示の欠落に
+ * なり、(b) 投稿 1 件ずつ getRecord する羽目になる。DID さえ分かれば、あとは
+ * 各 repo を従来どおり listRecords でまとめて読める。
+ */
+async function discoverParticipantDids(
+  threadUri: string,
+  ownerDid: string,
+): Promise<string[]> {
+  const refs = await listIndexedPostRefs(threadUri);
+  // インデックスが空 / 到達不能なら所有者だけ = 従来の挙動。
+  // Private スレッドはインデックス対象外なので常にこの経路になる。
+  if (!refs || refs.length === 0) return [];
+
+  const countByDid = new Map<string, number>();
+  for (const r of refs) {
+    if (r.author_did === ownerDid) continue;
+    countByDid.set(r.author_did, (countByDid.get(r.author_did) ?? 0) + 1);
+  }
+
+  const sorted = [...countByDid.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([did]) => did);
+
+  // 所有者の分を 1 枠使う
+  const limit = MAX_PARTICIPANT_REPOS - 1;
+  if (sorted.length > limit) {
+    console.warn(
+      `listPostsForThread: 参加者が ${sorted.length} 人いるため上位 ${limit} 人に絞ります`,
+    );
+    return sorted.slice(0, limit);
+  }
+  return sorted;
+}
+
+/**
+ * スレッドに紐づく投稿を checkpointAt 昇順で返す。
+ *
+ * Public スレッドでは投稿が参加者それぞれの repo に分散するため、共有
+ * インデックスで参加者の DID を割り出し、各 repo を読んでマージする。
+ * インデックスが使えないときは所有者の repo だけを読む従来動作に戻る。
+ */
 export async function listPostsForThread(
   threadUri: string,
 ): Promise<PostWithMeta[]> {
-  const { repo } = parseAtUri(threadUri);
-  const records = await listAllRecordsViaPds<PostRecord>(repo, NSID_POST);
-  return records
+  const { repo: ownerDid } = parseAtUri(threadUri);
+  const participantDids = await discoverParticipantDids(threadUri, ownerDid);
+
+  // 所有者の repo は失敗をそのまま投げる (従来どおりエラー表示にしたい)。
+  // 他の参加者は 1 人の PDS が落ちていても残りを表示したいので握りつぶす。
+  const [ownerRecords, ...participantRecords] = await Promise.all([
+    listAllRecordsViaPds<PostRecord>(ownerDid, NSID_POST),
+    ...participantDids.map((did) =>
+      listAllRecordsViaPds<PostRecord>(did, NSID_POST).catch((e) => {
+        console.warn("listPostsForThread: repo を読めませんでした", did, e);
+        return [];
+      }),
+    ),
+  ]);
+
+  return [ownerRecords, ...participantRecords]
+    .flat()
     .filter((r) => r.value.thread === threadUri)
     .map((r) => {
       const { rkey } = parseAtUri(r.uri);
