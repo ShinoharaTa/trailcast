@@ -41,7 +41,12 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { Lightbox } from "@/components/ui/lightbox";
 import { useBlobUrl, usePdsUrl } from "@/components/ui/blob-image";
-import { extractBlobCid, buildBlobUrl } from "@/lib/pds/blob-url";
+import {
+  extractBlobCid,
+  buildBlobUrl,
+  buildCdnImageUrl,
+  toThumbnailUrl,
+} from "@/lib/pds/blob-url";
 import { getProfile, type ProfileView } from "@/lib/pds/identity";
 import { getUserProfileHref } from "@/lib/app-routes";
 import { ShareScreen } from "@/components/screens/share-screen";
@@ -79,24 +84,38 @@ function PostImages({
   /** 画像クリック時に同じ post の全画像を Lightbox へ渡す */
   onOpenLightbox: (urls: string[], initialIndex: number) => void;
 }) {
+  // 一覧 (タイル) は軽いサムネイル、Lightbox は原寸、と URL を分ける (#34)。
+  //   - 取り込み投稿: feed_fullsize (最大 2000px) → feed_thumbnail
+  //   - 自前 blob   : PDS getBlob (原寸) → CDN feed_thumbnail (同寸だが再エンコードで軽い)
+  // サムネイルが読めなかったら原寸に落とす (CDN が 404 を返すことがある)。
   const urls: string[] = [];
+  const tileUrls: string[] = [];
   if (post.imageUrls && post.imageUrls.length > 0) {
-    urls.push(...post.imageUrls);
+    for (const u of post.imageUrls) {
+      urls.push(u);
+      tileUrls.push(toThumbnailUrl(u));
+    }
   } else if (post.images && post.images.length > 0 && pdsUrl) {
     const did = parseAtUri(post.uri).repo;
     for (const img of post.images) {
       const cid = extractBlobCid(img);
-      if (cid) urls.push(buildBlobUrl(pdsUrl, did, cid));
+      if (!cid) continue;
+      urls.push(buildBlobUrl(pdsUrl, did, cid));
+      tileUrls.push(buildCdnImageUrl(did, cid, "feed_thumbnail"));
     }
   }
   if (urls.length === 0) return null;
 
+  /** サムネイルが落ちたら原寸へ差し替える (1 回だけ) */
+  const fallbackToFull = (e: React.SyntheticEvent<HTMLImageElement>, i: number) => {
+    const el = e.currentTarget;
+    if (el.src !== urls[i]) el.src = urls[i];
+  };
+
   const Tile = ({
-    url,
     i,
     className = "",
   }: {
-    url: string;
     i: number;
     className?: string;
   }) => (
@@ -107,10 +126,12 @@ function PostImages({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={url}
+        src={tileUrls[i]}
+        onError={(e) => fallbackToFull(e, i)}
         alt=""
         className="absolute inset-0 h-full w-full cursor-zoom-in object-cover transition hover:opacity-95"
         loading="lazy"
+        decoding="async"
       />
     </button>
   );
@@ -130,10 +151,12 @@ function PostImages({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={urls[0]}
+            src={tileUrls[0]}
+            onError={(e) => fallbackToFull(e, 0)}
             alt=""
             className="aspect-[16/9] w-full cursor-zoom-in object-cover transition hover:opacity-95"
             loading="lazy"
+            decoding="async"
           />
         </button>
       </div>
@@ -142,24 +165,24 @@ function PostImages({
   if (urls.length === 2) {
     return (
       <div className="grid aspect-[16/9] grid-cols-2 gap-1 overflow-hidden rounded-2xl">
-        <Tile url={urls[0]} i={0} />
-        <Tile url={urls[1]} i={1} />
+        <Tile i={0} />
+        <Tile i={1} />
       </div>
     );
   }
   if (urls.length === 3) {
     return (
       <div className="grid aspect-[16/9] grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-2xl">
-        <Tile url={urls[0]} i={0} className="row-span-2" />
-        <Tile url={urls[1]} i={1} />
-        <Tile url={urls[2]} i={2} />
+        <Tile i={0} className="row-span-2" />
+        <Tile i={1} />
+        <Tile i={2} />
       </div>
     );
   }
   return (
     <div className="grid aspect-square grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-2xl">
-      {urls.slice(0, 4).map((url, i) => (
-        <Tile key={i} url={url} i={i} />
+      {urls.slice(0, 4).map((_, i) => (
+        <Tile key={i} i={i} />
       ))}
     </div>
   );
