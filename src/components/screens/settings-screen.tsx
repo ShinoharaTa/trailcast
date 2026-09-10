@@ -12,6 +12,7 @@ import {
   type SyncProgress,
 } from "@/lib/index-api";
 import { HomeLink } from "@/components/ui/home-link";
+import { resolveDidPds } from "@/lib/pds/blob-url";
 import { RefreshIcon } from "@/components/ui/icons";
 
 function formatDateTime(iso: string | null): string {
@@ -30,6 +31,9 @@ function formatDateTime(iso: string | null): string {
 export function SettingsScreen({ navigate }: NavigationProps) {
   const did = useAuthStore((s) => s.did);
   const handle = useAuthStore((s) => s.handle);
+  const logout = useAuthStore((s) => s.logout);
+  const [pdsUrl, setPdsUrl] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const [status, setStatus] = useState<IndexStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
@@ -47,6 +51,28 @@ export function SettingsScreen({ navigate }: NavigationProps) {
   useEffect(() => {
     setWriteThrough(isWriteThroughEnabled());
   }, []);
+
+  useEffect(() => {
+    if (!did) return;
+    let cancelled = false;
+    resolveDidPds(did).then((url) => {
+      if (!cancelled) setPdsUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [did]);
+
+  const handleLogout = useCallback(async () => {
+    setLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      setLoggingOut(false);
+      // ログアウト後の /settings は要ログイン画面になるので、ホームへ戻す
+      navigate("home");
+    }
+  }, [logout, navigate]);
 
   const loadStatus = useCallback(async () => {
     if (!did) return;
@@ -112,6 +138,32 @@ export function SettingsScreen({ navigate }: NavigationProps) {
       </header>
 
       <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-white/50">
+          アカウント
+        </h2>
+        <dl className="mt-3 space-y-3 text-sm">
+          <div>
+            <dt className="text-xs text-white/40">ハンドル</dt>
+            <dd className="mt-0.5 text-white">{handle ? `@${handle}` : "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-white/40">DID</dt>
+            <dd className="mt-0.5 break-all font-mono text-xs text-white/70">{did}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-white/40">PDS</dt>
+            <dd className="mt-0.5 break-all font-mono text-xs text-white/70">
+              {pdsUrl ?? "…"}
+            </dd>
+          </div>
+        </dl>
+        <p className="mt-3 text-xs leading-relaxed text-white/35">
+          スレッドと投稿はすべてこの PDS に保存されています。Trailcast は
+          そこに読み書きしているだけで、データを別に持っていません。
+        </p>
+      </section>
+
+      <section className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-white/50">
           共有インデックス
         </h2>
@@ -217,6 +269,23 @@ export function SettingsScreen({ navigate }: NavigationProps) {
         スレッドを Private に変更してから同期してください。インデックスは常に
         PDS の内容に従います。
       </p>
+
+      <section className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 p-5">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-white">ログアウト</p>
+          <p className="mt-1 text-xs text-white/40">
+            この端末のセッションを終了します。PDS 上のデータには影響しません。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          disabled={loggingOut}
+          className="shrink-0 rounded-lg border border-white/15 px-4 py-2 text-sm font-medium text-white/70 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 disabled:opacity-50"
+        >
+          {loggingOut ? "ログアウト中..." : "ログアウト"}
+        </button>
+      </section>
     </div>
   );
 }

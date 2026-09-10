@@ -104,7 +104,7 @@ function BookmarkCard({
 }
 
 export function HomeScreen({ navigate }: NavigationProps) {
-  const { handle, isAuthenticated, logout } = useAuthStore();
+  const { handle, isAuthenticated } = useAuthStore();
   const [activeTab, setActiveTab] = useState<"threads" | "bookmarks">("threads");
   const [threads, setThreads] = useState<ThreadWithMeta[]>([]);
   const [bookmarksData, setBookmarksData] = useState<
@@ -197,7 +197,7 @@ export function HomeScreen({ navigate }: NavigationProps) {
     <div className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white">Dashboard</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-white">ダッシュボード</h2>
           <p className="mt-1 text-sm text-white/40">
             {handle ? `@${handle}` : "あなたのチェックポイント"}
           </p>
@@ -232,12 +232,7 @@ export function HomeScreen({ navigate }: NavigationProps) {
             <SettingsIcon className="size-4" />
             設定
           </a>
-          <button
-            onClick={logout}
-            className="rounded-lg px-3 py-2 text-xs font-medium text-white/40 transition hover:bg-white/5 hover:text-white/70"
-          >
-            ログアウト
-          </button>
+          {/* ログアウトは滅多に押さないので設定画面へ移した (#30) */}
           <button
             onClick={() => navigate("thread-create")}
             className="flex items-center gap-2 rounded-xl bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:bg-indigo-400"
