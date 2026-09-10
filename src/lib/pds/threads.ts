@@ -8,7 +8,7 @@ import {
   type PostWithMeta,
   parseAtUri,
 } from "@/lib/types";
-import { getRecordViaPds, listRecordsViaPds } from "@/lib/pds/repo-read";
+import { getRecordViaPds, listAllRecordsViaPds } from "@/lib/pds/repo-read";
 import { generateAndUploadThreadOgImage } from "@/lib/pds/og-image";
 
 function generateTid(): string {
@@ -73,11 +73,10 @@ export async function listThreads(
   did?: string,
 ): Promise<ThreadWithMeta[]> {
   const repo = did ?? getMyDid();
-  const res = await listRecordsViaPds<ThreadRecord>(repo, NSID_THREAD, {
-    limit: 100,
+  const records = await listAllRecordsViaPds<ThreadRecord>(repo, NSID_THREAD, {
     reverse: true,
   });
-  return res.records.map((r) => {
+  return records.map((r) => {
     const { rkey } = parseAtUri(r.uri);
     return { ...r.value, uri: r.uri, cid: r.cid, rkey };
   });
@@ -111,15 +110,11 @@ export async function deleteThread(rkey: string): Promise<void> {
   const agent = getAgent();
   const did = getMyDid();
 
-  const postsRes = await agent.com.atproto.repo.listRecords({
-    repo: did,
-    collection: NSID_POST,
-    limit: 100,
-  });
+  // repo 全体を走査する必要があるのでページングして全件取る。
+  // 1 ページだけだと取りこぼした post が孤児レコードとして残る (#12)。
+  const postRecords = await listAllRecordsViaPds<PostRecord>(did, NSID_POST);
   const threadUri = `at://${did}/${NSID_THREAD}/${rkey}`;
-  const relatedPosts = postsRes.data.records.filter(
-    (r) => (r.value as unknown as { thread: string }).thread === threadUri,
-  );
+  const relatedPosts = postRecords.filter((r) => r.value.thread === threadUri);
   for (const post of relatedPosts) {
     const { rkey: postRkey } = parseAtUri(post.uri);
     await agent.com.atproto.repo.deleteRecord({
@@ -140,10 +135,8 @@ export async function listPostsForThread(
   threadUri: string,
 ): Promise<PostWithMeta[]> {
   const { repo } = parseAtUri(threadUri);
-  const res = await listRecordsViaPds<PostRecord>(repo, NSID_POST, {
-    limit: 100,
-  });
-  return res.records
+  const records = await listAllRecordsViaPds<PostRecord>(repo, NSID_POST);
+  return records
     .filter((r) => r.value.thread === threadUri)
     .map((r) => {
       const { rkey } = parseAtUri(r.uri);
