@@ -17,6 +17,7 @@ import { HomeLink } from "@/components/ui/home-link";
 import { SettingsIcon, ShareIcon } from "@/components/ui/icons";
 import { Modal } from "@/components/ui/modal";
 import { ProfileShareScreen } from "@/components/screens/profile-share-screen";
+import { ThreadTagChips } from "@/components/ui/thread-tag-chips";
 
 function isModifiedClick(e: React.MouseEvent): boolean {
   return (
@@ -260,6 +261,7 @@ export function UserProfileScreen({ navigate, params }: NavigationProps) {
                     </span>
                   </div>
                   <h3 className="text-lg font-bold text-white">{t.title}</h3>
+                  <ThreadTagChips tags={t.tags} className="mt-1.5" />
                   {t.description && (
                     <p className="mt-1 line-clamp-2 text-sm text-white/50">
                       {t.description}
