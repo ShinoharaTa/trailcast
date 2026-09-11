@@ -7,7 +7,9 @@ import type {
   PostWithMeta,
   TagGroup,
 } from "@/lib/types";
-import { parseAtUri, buildAtUri, NSID_THREAD } from "@/lib/types";
+import { parseAtUri, buildAtUri, NSID_THREAD,
+  effectiveSortOrder,
+} from "@/lib/types";
 import { getThread, deleteThread, listPostsForThread } from "@/lib/pds/threads";
 import { deletePost, refreshFromSource } from "@/lib/pds/posts";
 import {
@@ -662,8 +664,9 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   // 省略時の既定は desc (新しい順)。asc を明示したときだけ古い順のまま出す。
   const [posts, setPosts] = useState<PostWithMeta[]>([]);
   const orderedPosts = useMemo(() => {
-    return thread?.sortOrder === "asc" ? posts : [...posts].reverse();
-  }, [posts, thread?.sortOrder]);
+    if (!thread) return posts;
+    return effectiveSortOrder(thread) === "asc" ? posts : [...posts].reverse();
+  }, [posts, thread]);
 
   // タグ絞り込み (AND)。比較用の tagKey で保持する
   const [selectedTagKeys, setSelectedTagKeys] = useState<string[]>([]);
@@ -993,8 +996,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const threadDid = parseAtUri(thread.uri).repo;
   const isOwner = myDid === threadDid;
   // Public スレッドはログインしていれば誰でも投稿できる (README の仕様)。
+  // 終了したスレッドは参加者の投稿を受け付けない (所有者は追記できる)。
   const canPost =
-    isOwner || (isAuthenticated && thread?.visibility === "public");
+    isOwner ||
+    (isAuthenticated && thread?.visibility === "public" && !thread?.endedAt);
   // 投稿の編集・削除・再取得は「その投稿が自分の repo にあるか」で決める。
   // updatePost / deletePost は自分の repo にしか書けないので、スレッド所有者で
   // あっても他人の投稿は操作できないし、参加者は自分の投稿を操作できる。
@@ -1076,6 +1081,14 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           >
             {thread.visibility === "public" ? "Public" : "Private"}
           </span>
+          {thread.endedAt && (
+            <span
+              className="rounded-full bg-amber-500/15 px-3 py-0.5 text-[11px] font-bold text-amber-300"
+              title={`${formatDateTime(thread.endedAt)} に終了`}
+            >
+              終了
+            </span>
+          )}
           <span className="text-xs text-white/40">
             {formatDateTime(thread.createdAt)}
           </span>
@@ -1099,12 +1112,17 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               className="rounded-lg bg-indigo-500/15 px-3.5 py-2 text-xs font-medium text-indigo-300 transition hover:bg-indigo-500/25"
             >
               {/* Private は投稿できないので、ログインの目的をぼかす */}
-              {thread.visibility === "public" ? "ログインして投稿する" : "ログイン"}
+              {thread.visibility === "public" && !thread.endedAt
+                ? "ログインして投稿する"
+                : "ログイン"}
             </button>
           </div>
         )}
 
-        {isAuthenticated && !isOwner && thread.visibility === "public" && (
+        {isAuthenticated &&
+          !isOwner &&
+          thread.visibility === "public" &&
+          !thread.endedAt && (
           <p className="mt-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3.5 py-2.5 text-xs leading-relaxed text-emerald-200/80">
             Public スレッドです。右下の「＋」からあなたもチェックポイントを投稿できます。
             投稿はあなたの PDS に保存され、このスレッドに紐づけて表示されます。

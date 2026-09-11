@@ -326,6 +326,11 @@ export function HomeScreen({ navigate }: NavigationProps) {
                     >
                       {t.visibility === "public" ? "Public" : "Private"}
                     </span>
+                    {t.endedAt && (
+                      <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                        終了
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-lg font-bold text-white">{t.title}</h3>
                   <ThreadTagChips tags={t.tags} className="mt-1.5" />
