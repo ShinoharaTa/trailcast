@@ -901,7 +901,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const executeDeletePost = async (post: PostWithMeta) => {
     setConfirmTarget(null);
     try {
-      await deletePost(post.rkey);
+      await deletePost(post.rkey, post.thread);
       setPosts((prev) => prev.filter((p) => p.uri !== post.uri));
     } catch (e) {
       console.error("Failed to delete post:", e);
