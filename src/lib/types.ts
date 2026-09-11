@@ -48,6 +48,11 @@ export interface ThreadRecord {
    * `tags` (スレッドの分類) とは役割が違うので別フィールド。optional。
    */
   defaultTags?: string[];
+  /**
+   * 所有者の最終活動時刻 (チェックポイントの作成・編集・削除、スレッド編集)。
+   * 一覧の並び順に使う。無ければ createdAt で代用。optional。
+   */
+  updatedAt?: string;
 }
 
 export interface Location {

@@ -77,10 +77,18 @@ export async function listThreads(
   const records = await listAllRecordsViaPds<ThreadRecord>(repo, NSID_THREAD, {
     reverse: true,
   });
-  return records.map((r) => {
-    const { rkey } = parseAtUri(r.uri);
-    return { ...r.value, uri: r.uri, cid: r.cid, rkey };
-  });
+  return records
+    .map((r) => {
+      const { rkey } = parseAtUri(r.uri);
+      return { ...r.value, uri: r.uri, cid: r.cid, rkey };
+    })
+    // 最終活動が新しい順。updatedAt が無い古いレコードは createdAt で代用する
+    // ので、活動が無い限り従来どおり作成順に並ぶ。
+    .sort(
+      (a, b) =>
+        Date.parse(b.updatedAt ?? b.createdAt) -
+        Date.parse(a.updatedAt ?? a.createdAt),
+    );
 }
 
 export async function getThread(
@@ -97,7 +105,13 @@ export async function updateThread(
   ogContext?: ThreadOgContext,
 ): Promise<ThreadWithMeta> {
   const agent = getAgent();
-  const enriched = await withOgImage(record, ogContext);
+  // 一覧の並び順に使う最終活動時刻。呼び出し側が明示したときはそれを尊重する
+  // (OG backfill のように「内容は変えたが活動ではない」書き込み用)。
+  const stamped: ThreadRecord = {
+    ...record,
+    updatedAt: record.updatedAt ?? new Date().toISOString(),
+  };
+  const enriched = await withOgImage(stamped, ogContext);
   const res = await agent.com.atproto.repo.putRecord({
     repo: getMyDid(),
     collection: NSID_THREAD,

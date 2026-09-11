@@ -83,6 +83,11 @@
             "maxLength": 10,
             "items": { "type": "string", "maxLength": 64 },
             "description": "Tags pre-filled on new checkpoints in this thread (the author can remove them per post). Stored without the leading '#'."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Last activity by the thread owner (checkpoint created/edited/deleted, thread edited). Used to order thread lists; falls back to createdAt when absent."
           }
         }
       }
