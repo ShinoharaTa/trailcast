@@ -8,6 +8,7 @@ import { uploadImage } from "@/lib/pds/posts";
 import { processCoverImage } from "@/lib/image-processing";
 import {
   parseAtUri,
+  stripRecordMeta,
   type ThreadSortOrder,
   type ThreadWithMeta,
 } from "@/lib/types";
@@ -172,16 +173,19 @@ export function ThreadEditScreen({
       await updateThread(
         thread.rkey,
         {
+          // 触っていないフィールドを落とさないよう、既存 record を土台にする
+          ...stripRecordMeta(thread),
           title: title.trim(),
           description: description.trim() || undefined,
           visibility,
           coverImage,
-          createdAt: thread.createdAt,
           // 既定 (desc) のときは値を書かず、asc を選んだときだけ残す。
           sortOrder: sortOrder === "asc" ? "asc" : undefined,
           tagGroups: sanitizedTagGroups,
           tags: sanitizedThreadTags,
           defaultTags: sanitizedDefaultTags,
+          // 編集は活動なので一覧の並びを進める (spread で古い値が入るため明示)
+          updatedAt: new Date().toISOString(),
         },
         { coverBlob },
       );

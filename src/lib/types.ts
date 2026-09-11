@@ -116,6 +116,25 @@ export interface BookmarkWithMeta extends BookmarkRecord, RecordMeta {
   rkey: string;
 }
 
+/**
+ * `*WithMeta` から record 部分だけを取り出す。`uri / cid / rkey` は lexicon の
+ * schema 外なので putRecord に渡してはいけない。
+ *
+ * 既存レコードを編集して書き戻すときは、フィールドを列挙して組み立てるのではなく
+ * `{ ...stripRecordMeta(existing), 変更分 }` の形にすること。列挙だと、あとから
+ * 増えたフィールド (tagGroups / tags / defaultTags など) を落として消してしまう
+ * (実際に og/backfill で起きた)。
+ */
+export function stripRecordMeta<T extends RecordMeta & { rkey: string }>(
+  withMeta: T,
+): Omit<T, keyof RecordMeta | "rkey"> {
+  const copy: Partial<T> = { ...withMeta };
+  delete copy.uri;
+  delete copy.cid;
+  delete copy.rkey;
+  return copy as Omit<T, keyof RecordMeta | "rkey">;
+}
+
 export function parseAtUri(uri: string): {
   repo: string;
   collection: string;

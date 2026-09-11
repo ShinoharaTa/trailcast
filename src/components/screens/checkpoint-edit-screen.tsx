@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { PinIcon, CloseIcon } from "@/components/ui/icons";
 import type { PostWithMeta, Location, TagGroup } from "@/lib/types";
-import { parseAtUri } from "@/lib/types";
+import { parseAtUri,
+  stripRecordMeta,
+} from "@/lib/types";
 import { updatePost } from "@/lib/pds/posts";
 import { BlobImage } from "@/components/ui/blob-image";
 import { TagInput } from "@/components/ui/tag-input";
@@ -54,16 +56,12 @@ export function CheckpointEditScreen({
     try {
       const recordTags = sanitizeTagsForRecord(tags);
       await updatePost(post.rkey, {
-        thread: post.thread,
+        // 触っていないフィールド (images / exif / sourceRef など) を落とさない
+        ...stripRecordMeta(post),
         text: text.trim() || undefined,
-        images: post.images,
-        imageUrls: post.imageUrls,
         location: location ?? undefined,
         tags: recordTags,
         checkpointAt: checkpointAt || post.checkpointAt,
-        exif: post.exif,
-        sourceRef: post.sourceRef,
-        createdAt: post.createdAt,
       });
       // 編集で新しく付いたタグだけを辞書に加算する (再保存で回数が膨らまないように)
       const before = new Set((post.tags ?? []).map(tagKey));
