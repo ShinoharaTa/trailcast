@@ -45,7 +45,7 @@
           "sortOrder": {
             "type": "string",
             "knownValues": ["asc", "desc"],
-            "description": "Display order of checkpoints by checkpointAt. 'asc' (default) shows oldest first, 'desc' shows newest first."
+            "description": "Display order of checkpoints by checkpointAt. 'desc' (default) shows newest first, 'asc' shows oldest first."
           },
           "tagGroups": {
             "type": "array",

@@ -659,9 +659,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const { did: myDid, isAuthenticated } = useAuthStore();
   const [thread, setThread] = useState<ThreadWithMeta | null>(null);
   // 内部状態は常に「昇順 (古い順)」で保持し、表示時に thread.sortOrder で反転する。
+  // 省略時の既定は desc (新しい順)。asc を明示したときだけ古い順のまま出す。
   const [posts, setPosts] = useState<PostWithMeta[]>([]);
   const orderedPosts = useMemo(() => {
-    return thread?.sortOrder === "desc" ? [...posts].reverse() : posts;
+    return thread?.sortOrder === "asc" ? posts : [...posts].reverse();
   }, [posts, thread?.sortOrder]);
 
   // タグ絞り込み (AND)。比較用の tagKey で保持する
