@@ -8,6 +8,7 @@
 
 import { updateThread } from "@/lib/pds/threads";
 import type { ThreadRecord, ThreadWithMeta } from "@/lib/types";
+import { stripRecordMeta } from "@/lib/types";
 
 /** localStorage キー: 「もう表示しない」状態を保存 */
 const DISMISS_FOREVER_KEY = "trailcast_og_backfill_dismissed_forever";
@@ -82,12 +83,8 @@ export async function backfillOneThread(
   // フィールドを列挙する書き方だと、あとから増えた tagGroups / tags / defaultTags
   // を落として消してしまう (実際に tagGroups が落ちていた) ので、meta を除いた
   // 残り全部をそのまま渡す。
-  const copy: Partial<ThreadWithMeta> = { ...thread };
-  delete copy.uri;
-  delete copy.cid;
-  delete copy.rkey;
   const record: ThreadRecord = {
-    ...(copy as ThreadRecord),
+    ...stripRecordMeta(thread),
     // OG 画像の補完は活動ではないので、一覧の並びを動かさない。
     // 未設定なら並び順の代用値である createdAt を入れて、updateThread の
     // 自動スタンプ (now) を避ける。

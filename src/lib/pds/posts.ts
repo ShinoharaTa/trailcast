@@ -2,6 +2,7 @@ import { getAgent, getMyDid } from "@/lib/atp-agent";
 import {
   NSID_POST,
   buildAtUri,
+  stripRecordMeta,
   type PostRecord,
   type PostWithMeta,
 } from "@/lib/types";
@@ -100,20 +101,14 @@ export async function refreshFromSource(
   const { fetchBskyPost } = await import("@/lib/bsky-helpers");
   const bskyData = await fetchBskyPost(post.sourceRef);
 
+  // タグは取り込み後にユーザーが編集しうるので、元投稿では上書きしない。
+  // 本文と画像 URL 以外は既存 record をそのまま引き継ぐ。
   const updated: PostRecord = {
-    thread: post.thread,
+    ...stripRecordMeta(post),
     text: bskyData.text || post.text,
-    images: post.images,
     imageUrls: bskyData.viewImageUrls.length > 0
       ? bskyData.viewImageUrls.slice(0, 4)
       : post.imageUrls,
-    location: post.location,
-    // タグは取り込み後にユーザーが編集しうるので、元投稿では上書きしない
-    tags: post.tags,
-    checkpointAt: post.checkpointAt,
-    exif: post.exif,
-    sourceRef: post.sourceRef,
-    createdAt: post.createdAt,
   };
 
   return updatePost(post.rkey, updated);
