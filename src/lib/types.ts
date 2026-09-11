@@ -53,6 +53,21 @@ export interface ThreadRecord {
    * 一覧の並び順に使う。無ければ createdAt で代用。optional。
    */
   updatedAt?: string;
+  /**
+   * 所有者が「終了」にした時刻。進行中は未設定。
+   * 終了すると既定の並び順が古い順になり、参加者の投稿を受け付けなくなる。
+   */
+  endedAt?: string;
+}
+
+/**
+ * 実際に表示に使う並び順。`sortOrder` を明示していればそれ、無ければ
+ * 進行中は新しい順 (フィード)、終了後は古い順 (最初から読む物語)。
+ */
+export function effectiveSortOrder(
+  thread: Pick<ThreadRecord, "sortOrder" | "endedAt">,
+): ThreadSortOrder {
+  return thread.sortOrder ?? (thread.endedAt ? "asc" : "desc");
 }
 
 export interface Location {

@@ -88,6 +88,11 @@
             "type": "string",
             "format": "datetime",
             "description": "Last activity by the thread owner (checkpoint created/edited/deleted, thread edited). Used to order thread lists; falls back to createdAt when absent."
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Set when the owner marks the thread as finished. Ended threads default to ascending checkpoint order (read as a story) and stop accepting participant posts. Absent while ongoing."
           }
         }
       }

@@ -82,13 +82,17 @@ export async function listThreads(
       const { rkey } = parseAtUri(r.uri);
       return { ...r.value, uri: r.uri, cid: r.cid, rkey };
     })
-    // 最終活動が新しい順。updatedAt が無い古いレコードは createdAt で代用する
-    // ので、活動が無い限り従来どおり作成順に並ぶ。
-    .sort(
-      (a, b) =>
+    // 進行中を先、終了したものを後ろに。各グループ内は最終活動が新しい順。
+    // updatedAt が無い古いレコードは createdAt で代用するので、活動が無い限り
+    // 従来どおり作成順に並ぶ。
+    .sort((a, b) => {
+      const endedDiff = Number(Boolean(a.endedAt)) - Number(Boolean(b.endedAt));
+      if (endedDiff !== 0) return endedDiff;
+      return (
         Date.parse(b.updatedAt ?? b.createdAt) -
-        Date.parse(a.updatedAt ?? a.createdAt),
-    );
+        Date.parse(a.updatedAt ?? a.createdAt)
+      );
+    });
 }
 
 export async function getThread(

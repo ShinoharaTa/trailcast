@@ -7,11 +7,19 @@ import { updateThread } from "@/lib/pds/threads";
 import { uploadImage } from "@/lib/pds/posts";
 import { processCoverImage } from "@/lib/image-processing";
 import {
+  effectiveSortOrder,
   parseAtUri,
   stripRecordMeta,
   type ThreadSortOrder,
   type ThreadWithMeta,
 } from "@/lib/types";
+
+function formatEndedAt(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" });
+}
 import { useBlobUrl } from "@/components/ui/blob-image";
 import { TagInput } from "@/components/ui/tag-input";
 import {
@@ -61,9 +69,11 @@ export function ThreadEditScreen({
   const [visibility, setVisibility] = useState<"private" | "public">(
     thread.visibility,
   );
-  // 既存レコードに sortOrder が無い場合は "desc" (既定) として扱う。
-  const [sortOrder, setSortOrder] = useState<ThreadSortOrder>(
-    thread.sortOrder === "asc" ? "asc" : "desc",
+  // 終了 (endedAt) の有無。終了すると既定の並び順が古い順になる。
+  const [ended, setEnded] = useState<boolean>(Boolean(thread.endedAt));
+  // 既存レコードに sortOrder が無い場合は状態に応じた既定として扱う。
+  const [sortOrder, setSortOrder] = useState<ThreadSortOrder>(() =>
+    effectiveSortOrder(thread),
   );
 
   // スレッド自体の分類タグ / 新規投稿の既定タグ (#36 #38)
@@ -179,8 +189,10 @@ export function ThreadEditScreen({
           description: description.trim() || undefined,
           visibility,
           coverImage,
-          // 既定 (desc) のときは値を書かず、asc を選んだときだけ残す。
-          sortOrder: sortOrder === "asc" ? "asc" : undefined,
+          // 終了状態ごとの既定と同じなら値を書かず、違うときだけ残す。
+          sortOrder: sortOrder === defaultSortOrder ? undefined : sortOrder,
+          // 終了時刻は最初に終了した時刻を保つ。再開したら消す。
+          endedAt: ended ? (thread.endedAt ?? new Date().toISOString()) : undefined,
           tagGroups: sanitizedTagGroups,
           tags: sanitizedThreadTags,
           defaultTags: sanitizedDefaultTags,
@@ -196,8 +208,10 @@ export function ThreadEditScreen({
     }
   };
 
-  const initialSortOrder: ThreadSortOrder =
-    thread.sortOrder === "asc" ? "asc" : "desc";
+  const initialSortOrder: ThreadSortOrder = effectiveSortOrder(thread);
+  // 今の終了状態での既定の並び順 (トグルの「(デフォルト)」表記と保存判定に使う)
+  const defaultSortOrder: ThreadSortOrder = ended ? "asc" : "desc";
+  const endedDirty = ended !== Boolean(thread.endedAt);
   // 保存されるのはサニタイズ後の形なので、dirty 判定もその形で比較する
   // (見出しだけ・タグだけの書きかけグループは保存対象にならない)
   const sanitizedTagGroups = sanitizeTagGroupsForRecord(tagGroups);
@@ -224,6 +238,7 @@ export function ThreadEditScreen({
     (description.trim() || undefined) !== thread.description ||
     visibility !== thread.visibility ||
     sortOrder !== initialSortOrder ||
+    endedDirty ||
     coverFile !== null ||
     coverRemoved ||
     tagGroupsDirty ||
@@ -312,6 +327,33 @@ export function ThreadEditScreen({
           hint="このスレッドの新しいチェックポイントに最初から入ります。投稿ごとに外せます"
         />
 
+        <div className="flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-sm text-white/70">このスレッドを終了する</div>
+            <div className="mt-0.5 text-[11px] leading-relaxed text-white/40">
+              終了すると、チェックポイントが古い順 (最初から読む順) で表示され、
+              参加者の投稿を受け付けなくなります。あとで再開できます。
+              {thread.endedAt && ` 終了日時: ${formatEndedAt(thread.endedAt)}`}
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={ended}
+            onClick={() => setEnded((v) => !v)}
+            disabled={submitting}
+            className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition ${
+              ended ? "bg-amber-500" : "bg-surface-700"
+            }`}
+          >
+            <span
+              className={`absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow transition ${
+                ended ? "translate-x-5" : ""
+              }`}
+            />
+          </button>
+        </div>
+
         <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
             <div>
@@ -320,8 +362,9 @@ export function ThreadEditScreen({
               </div>
               <div className="text-[11px] text-white/40">
                 {sortOrder === "desc"
-                  ? "新しいものが上に表示されます (デフォルト)"
+                  ? "新しいものが上に表示されます"
                   : "古いものが上に表示されます"}
+                {sortOrder === defaultSortOrder && " (デフォルト)"}
               </div>
             </div>
           </div>
