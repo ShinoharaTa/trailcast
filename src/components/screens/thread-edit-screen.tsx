@@ -60,9 +60,9 @@ export function ThreadEditScreen({
   const [visibility, setVisibility] = useState<"private" | "public">(
     thread.visibility,
   );
-  // 既存レコードに sortOrder が無い場合は "asc" として扱う。
+  // 既存レコードに sortOrder が無い場合は "desc" (既定) として扱う。
   const [sortOrder, setSortOrder] = useState<ThreadSortOrder>(
-    thread.sortOrder === "desc" ? "desc" : "asc",
+    thread.sortOrder === "asc" ? "asc" : "desc",
   );
 
   // スレッド自体の分類タグ / 新規投稿の既定タグ (#36 #38)
@@ -177,8 +177,8 @@ export function ThreadEditScreen({
           visibility,
           coverImage,
           createdAt: thread.createdAt,
-          // デフォルト (asc) のときはあえて値を残し、明示しなくても正しく動作させる。
-          sortOrder: sortOrder === "desc" ? "desc" : undefined,
+          // 既定 (desc) のときは値を書かず、asc を選んだときだけ残す。
+          sortOrder: sortOrder === "asc" ? "asc" : undefined,
           tagGroups: sanitizedTagGroups,
           tags: sanitizedThreadTags,
           defaultTags: sanitizedDefaultTags,
@@ -193,7 +193,7 @@ export function ThreadEditScreen({
   };
 
   const initialSortOrder: ThreadSortOrder =
-    thread.sortOrder === "desc" ? "desc" : "asc";
+    thread.sortOrder === "asc" ? "asc" : "desc";
   // 保存されるのはサニタイズ後の形なので、dirty 判定もその形で比較する
   // (見出しだけ・タグだけの書きかけグループは保存対象にならない)
   const sanitizedTagGroups = sanitizeTagGroupsForRecord(tagGroups);
@@ -316,8 +316,8 @@ export function ThreadEditScreen({
               </div>
               <div className="text-[11px] text-white/40">
                 {sortOrder === "desc"
-                  ? "新しいものが上に表示されます"
-                  : "古いものが上に表示されます (デフォルト)"}
+                  ? "新しいものが上に表示されます (デフォルト)"
+                  : "古いものが上に表示されます"}
               </div>
             </div>
           </div>

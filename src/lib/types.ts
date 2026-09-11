@@ -29,7 +29,7 @@ export interface ThreadRecord {
   ogImage?: BlobRef;
   createdAt: string;
   /**
-   * Checkpoint の表示順。`asc` (省略時のデフォルト) は古い順、`desc` は新しい順。
+   * Checkpoint の表示順。`desc` (省略時のデフォルト) は新しい順、`asc` は古い順。
    * 既存レコードとの後方互換のため optional で扱う。
    */
   sortOrder?: ThreadSortOrder;
