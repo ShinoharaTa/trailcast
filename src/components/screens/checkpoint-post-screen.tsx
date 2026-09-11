@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { PlusIcon, PinIcon, CloseIcon } from "@/components/ui/icons";
+import { PlusIcon, PinIcon, CloseIcon, HashIcon } from "@/components/ui/icons";
 import { createPost, uploadImage } from "@/lib/pds/posts";
 import { getAgent } from "@/lib/atp-agent";
 import { processSelectedImage, type PreparedImage } from "@/lib/image-process";
@@ -78,6 +78,9 @@ export function CheckpointPostScreen({
   const handle = useAuthStore((s) => s.handle);
   const [text, setText] = useState("");
   const [tags, setTags] = useState<string[]>(() => [...(defaultTags ?? [])]);
+  // タグ欄は既定で畳む (#35)。「とにかく記録する」ときに邪魔にならないように。
+  // 既定タグがあれば触らなくても付くので、開くのは足したい/外したいときだけ。
+  const [tagsOpen, setTagsOpen] = useState(false);
   // 画像は選択直後に「縮小 + 圧縮 + EXIF 抽出」まで完了させた状態で保持する。
   // 元 File への参照は保持しない (iOS Safari での NotReadableError 回避のため)。
   // previewUrl は画像追加時に 1 回だけ作り、削除時 / アンマウント時に revoke する。
@@ -327,19 +330,51 @@ export function CheckpointPostScreen({
           </span>
         </div>
 
-        <TagInput
-          value={tags}
-          onChange={setTags}
-          threadTags={threadTags}
-          tagGroups={tagGroups}
-          disabled={submitting}
-          hint={
-            (defaultTags?.length ? "スレッドの既定タグが入っています。" : "") +
-            (crosspostToBsky
-              ? "スレッド内の絞り込みに使えます。Bluesky にはハッシュタグとして付きます"
-              : "スレッド内の絞り込みに使えます")
-          }
-        />
+        {tagsOpen ? (
+          <TagInput
+            value={tags}
+            onChange={setTags}
+            threadTags={threadTags}
+            tagGroups={tagGroups}
+            disabled={submitting}
+            hint={
+              (defaultTags?.length ? "スレッドの既定タグが入っています。" : "") +
+              (crosspostToBsky
+                ? "スレッド内の絞り込みに使えます。Bluesky にはハッシュタグとして付きます"
+                : "スレッド内の絞り込みに使えます")
+            }
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setTagsOpen(true)}
+            disabled={submitting}
+            aria-expanded={false}
+            aria-label={tags.length > 0 ? "タグを編集" : "タグを追加"}
+            className="flex w-full items-center gap-2 rounded-xl border border-dashed border-white/10 px-4 py-2.5 text-left transition hover:border-white/20 hover:bg-white/[0.03] disabled:opacity-50"
+          >
+            <HashIcon className="size-3.5 shrink-0 text-white/40" />
+            {tags.length > 0 ? (
+              <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+                {tags.map((t) => (
+                  <span
+                    key={t}
+                    className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-[11px] font-medium text-indigo-200"
+                  >
+                    #{t}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              <span className="flex-1 text-xs text-white/40">
+                タグを追加（任意）
+              </span>
+            )}
+            <span className="shrink-0 text-xs font-medium text-indigo-300">
+              {tags.length > 0 ? "編集" : "追加"}
+            </span>
+          </button>
+        )}
 
         <div>
           <label className="mb-2 block text-xs font-medium text-white/50">
