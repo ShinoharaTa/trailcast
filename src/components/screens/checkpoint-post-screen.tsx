@@ -12,8 +12,8 @@ import { FieldInputs } from "@/components/ui/field-inputs";
 import { recordTagUsage } from "@/lib/pds/tags";
 import { sanitizeTagsForRecord, type TagCount } from "@/lib/tags";
 import {
+  buildNewPostFields,
   crosspostTagsFor,
-  sanitizePostFieldsForRecord,
   stripSelectedOptionTags,
 } from "@/lib/fields";
 import type { FieldDef, FieldValue, Location, TagGroup } from "@/lib/types";
@@ -253,15 +253,14 @@ export function CheckpointPostScreen({
     setLocationError(null);
   };
 
+  // 記録項目のあるスレッドでは未入力でも `fields: []` を書く (タグ fallback を止める)
+  const recordFields = buildNewPostFields(fields ?? [], fieldValues);
+
   const handleSubmit = async () => {
     if (!threadUri) return;
     setSubmitting(true);
     setError(null);
     try {
-      const recordFields = sanitizePostFieldsForRecord(
-        fieldValues,
-        fields ?? [],
-      );
       // 選択した option の label は tags に書かない (fields 側が正)
       const recordTags = sanitizeTagsForRecord(
         stripSelectedOptionTags(tags, recordFields, fields ?? []),
@@ -333,7 +332,11 @@ export function CheckpointPostScreen({
     }
   };
 
-  const hasContent = text.trim().length > 0 || images.length > 0;
+  // 本文・画像が無くても、記録項目の値が 1 つでもあれば投稿できる
+  const hasContent =
+    text.trim().length > 0 ||
+    images.length > 0 ||
+    (recordFields?.length ?? 0) > 0;
 
   return (
     <>

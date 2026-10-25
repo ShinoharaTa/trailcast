@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   FIELD_UNSET,
   buildEditedPostFields,
+  buildNewPostFields,
   convertTagGroupsToFields,
   copyFieldDefs,
+  fieldDefErrors,
   fieldDefsDirty,
   isBlankOptionLabel,
   optionLabelTaken,
@@ -23,6 +25,8 @@ import {
   stripSelectedOptionTags,
   summarizeDuration,
   summarizeNumber,
+  toggleSelectOption,
+  type EditableField,
 } from "@/lib/fields";
 import { countTags, filterPostsByTags, groupTagCounts, tagKey } from "@/lib/tags";
 import type { FieldDef, FieldValue, TagGroup } from "@/lib/types";
@@ -198,6 +202,26 @@ describe("copyFieldDefs", () => {
     expect(out).toHaveLength(30);
     expect(out.at(-1)?.label).toBe("項目29");
   });
+
+  it("結果を sanitizeFieldsForRecord に通しても項目・選択肢が落ちない", () => {
+    const many: FieldDef[] = Array.from({ length: 31 }, (_, i) => ({
+      id: `f${i}`,
+      label: `項目${i}`,
+      type: "select",
+      multiple: i % 2 === 0,
+      options: Array.from({ length: 50 }, (_, j) => ({ id: `o${j}`, label: `選択肢${j}` })),
+    }));
+    for (const input of [src, many]) {
+      const out = copyFieldDefs(input);
+      const sanitized = sanitizeFieldsForRecord(out);
+      expect(sanitized).toHaveLength(out.length);
+      expect(sanitized?.map((d) => d.options?.length)).toEqual(
+        out.map((d) => d.options?.length),
+      );
+      const ids = out.flatMap((d) => [d.id, ...(d.options ?? []).map((o) => o.id)]);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+  });
 });
 
 describe("定義エディタの state 変換", () => {
@@ -236,6 +260,136 @@ describe("定義エディタの state 変換", () => {
     expect(fieldDefsDirty([], undefined)).toBe(false);
     const renamed = editing.map((f) => (f.id === "w" ? { ...f, label: "重さ" } : f));
     expect(fieldDefsDirty(renamed, saved)).toBe(true);
+  });
+
+  const editKind = (patch: (f: EditableField) => Partial<EditableField>) =>
+    saved
+      .map((d) => toEditableField(d, true))
+      .map((f) => (f.id === "kind" ? { ...f, ...patch(f) } : f));
+
+  it("選択肢の並べ替え・非表示の切り替え・multiple の変更・選択肢の追加で dirty になる", () => {
+    expect(
+      fieldDefsDirty(editKind((f) => ({ options: [...f.options].reverse() })), saved),
+    ).toBe(true);
+    expect(
+      fieldDefsDirty(
+        editKind((f) => ({
+          options: f.options.map((o) => (o.id === "b" ? { ...o, archived: false } : o)),
+        })),
+        saved,
+      ),
+    ).toBe(true);
+    expect(fieldDefsDirty(editKind(() => ({ archived: true })), saved)).toBe(true);
+    expect(fieldDefsDirty(editKind(() => ({ multiple: true })), saved)).toBe(true);
+    expect(
+      fieldDefsDirty(
+        editKind((f) => ({
+          options: [...f.options, { id: "c", label: "新", archived: false, saved: false }],
+        })),
+        saved,
+      ),
+    ).toBe(true);
+  });
+
+  it("option のキー順が違うだけでは dirty にならない", () => {
+    const editing = saved.map((d) => toEditableField(d, true));
+    const reordered = saved.map((d) =>
+      d.options
+        ? {
+            ...d,
+            options: d.options.map((o) =>
+              o.archived
+                ? { archived: o.archived, label: o.label, id: o.id }
+                : { label: o.label, id: o.id },
+            ),
+          }
+        : d,
+    );
+    expect(fieldDefsDirty(editing, reordered)).toBe(false);
+  });
+});
+
+describe("fieldDefErrors", () => {
+  const editable = (def: FieldDef, saved = false) => toEditableField(def, saved);
+
+  it("名前のある項目・有効な選択肢のある選択項目はエラーにしない", () => {
+    expect(fieldDefErrors([editable(kind), editable(weight), editable(memo)]).size).toBe(0);
+    expect(fieldDefErrors([]).size).toBe(0);
+  });
+
+  it("項目名が空 (空白だけ) なら label", () => {
+    const errors = fieldDefErrors([
+      editable({ ...weight, label: "  " }),
+      editable({ ...kind, label: "" }),
+    ]);
+    expect([...errors]).toEqual([
+      ["weight", "label"],
+      ["kind", "label"],
+    ]);
+  });
+
+  it("名前のある選択肢が 0 件の選択項目は options", () => {
+    const errors = fieldDefErrors([
+      editable({ ...kind, id: "none", options: [] }),
+      editable({ ...kind, id: "blank", options: [{ id: "a", label: "#" }] }),
+      editable({ ...kind, id: "ok", options: [{ id: "a", label: "#" }, { id: "b", label: "y" }] }),
+    ]);
+    expect([...errors]).toEqual([
+      ["none", "options"],
+      ["blank", "options"],
+    ]);
+  });
+
+  it("選択肢がすべて非表示でも名前があればエラーにしない (sanitize で項目は落ちない)", () => {
+    const hidden = editable(
+      { ...kind, id: "hidden", options: [{ id: "a", label: "x", archived: true }] },
+      true,
+    );
+    expect(fieldDefErrors([hidden]).size).toBe(0);
+    expect(sanitizeFieldsForRecord([toFieldDef(hidden)])).toHaveLength(1);
+  });
+
+  it("非表示の項目は対象外", () => {
+    expect(
+      fieldDefErrors([editable({ ...kind, label: "", options: [], archived: true }, true)]).size,
+    ).toBe(0);
+  });
+});
+
+describe("toggleSelectOption", () => {
+  it("multiple はトグルし、追加は末尾", () => {
+    expect(toggleSelectOption(["a"], "b", true)).toEqual(["a", "b"]);
+    expect(toggleSelectOption(["a", "b"], "a", true)).toEqual(["b"]);
+  });
+
+  it("1 つだけ: 未選択を押すとそれだけになる", () => {
+    expect(toggleSelectOption([], "a", false)).toEqual(["a"]);
+    expect(toggleSelectOption(["b"], "a", false)).toEqual(["a"]);
+  });
+
+  it("1 つだけ: 唯一の選択を押すと解除", () => {
+    expect(toggleSelectOption(["a"], "a", false)).toEqual([]);
+  });
+
+  it("1 つだけ: 複数選ばれているときに選択済みを押すとそれ 1 つに絞る", () => {
+    expect(toggleSelectOption(["a", "b"], "b", false)).toEqual(["b"]);
+  });
+});
+
+describe("buildNewPostFields", () => {
+  it("入力できる項目があり未入力なら []", () => {
+    expect(buildNewPostFields([kind, weight], [])).toEqual([]);
+  });
+
+  it("値は sanitize して返す", () => {
+    expect(
+      buildNewPostFields([kind, weight], [num("weight", "60"), select("kind", ["x"])]),
+    ).toEqual([num("weight", "60")]);
+  });
+
+  it("項目が無い・archived の項目だけなら undefined", () => {
+    expect(buildNewPostFields([], [])).toBeUndefined();
+    expect(buildNewPostFields([{ ...kind, archived: true }], [])).toBeUndefined();
   });
 });
 
@@ -635,25 +789,51 @@ describe("buildEditedPostFields", () => {
     });
   });
 
-  it("1 つだけの項目で sanitize に落とされた選択肢のタグは tags に残す", () => {
-    const single: FieldDef = {
-      id: "kind",
-      label: "種類",
-      type: "select",
-      multiple: false,
-      options: [
-        { id: "hall", label: "ホール" },
-        { id: "room", label: "ルーム" },
-      ],
-    };
+  const single: FieldDef = {
+    id: "kind",
+    label: "種類",
+    type: "select",
+    multiple: false,
+    options: [
+      { id: "hall", label: "ホール" },
+      { id: "room", label: "ルーム" },
+      { id: "walk", label: "周遊" },
+    ],
+  };
+
+  it("1 つだけの項目に旧タグが 2 つ一致し、選択を変えていなければ両方 fields に書きタグから外す", () => {
     const post: Post = { tags: ["ホール", "ルーム", "東京"] };
     const values = fieldValuesFromResolved(resolveFieldValues(post, [single]));
-    const expected = { fields: [select("kind", ["hall"])], tags: ["ルーム", "東京"] };
+    const expected = { fields: [select("kind", ["hall", "room"])], tags: ["東京"] };
     // タグ欄の値が元の tags でも、初期表示で外した後でも同じ結果になる
     expect(buildEditedPostFields(post, [single], values, post.tags ?? [])).toEqual(expected);
     expect(
       buildEditedPostFields(post, [single], values, initialFreeTagsForEdit(post, [single])),
     ).toEqual(expected);
+  });
+
+  it("1 つだけの項目でタグ 2 つ一致から片方を押して 1 値に絞ると、外した側のタグも tags から消える", () => {
+    const post: Post = { tags: ["ホール", "ルーム", "東京"] };
+    const initial = fieldValuesFromResolved(resolveFieldValues(post, [single]));
+    expect(initial).toEqual([select("kind", ["hall", "room"])]);
+    // UI でルームを押す: 2 値 → ルームだけ
+    const values = [select("kind", toggleSelectOption(["hall", "room"], "room", false))];
+    const expected = { fields: [select("kind", ["room"])], tags: ["東京"] };
+    expect(buildEditedPostFields(post, [single], values, post.tags ?? [])).toEqual(expected);
+    expect(
+      buildEditedPostFields(post, [single], values, initialFreeTagsForEdit(post, [single])),
+    ).toEqual(expected);
+  });
+
+  it("fields に 1 つだけの項目の 2 値がある post: 変えていなければ元の順で保ち、絞れば 1 値", () => {
+    const post: Post = { fields: [select("kind", ["room", "hall"])], tags: ["東京"] };
+    // UI 側の順序が違っても同じ集合なら変更なし扱い
+    expect(
+      buildEditedPostFields(post, [single], [select("kind", ["hall", "room"])], ["東京"]),
+    ).toEqual({ fields: [select("kind", ["room", "hall"])], tags: ["東京"] });
+    expect(
+      buildEditedPostFields(post, [single], [select("kind", ["hall"])], ["東京"]),
+    ).toEqual({ fields: [select("kind", ["hall"])], tags: ["東京"] });
   });
 
   it("大文字小文字違いのタグも外す。選択を外した選択肢のタグも外す", () => {
