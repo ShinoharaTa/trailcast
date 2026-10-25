@@ -46,6 +46,7 @@ import {
   convertTagGroupsToFields,
   copyFieldDefs,
   generateFieldId,
+  restoreBlankLabel,
   sanitizeFieldsForRecord,
 } from "@/lib/fields";
 
@@ -63,6 +64,8 @@ interface EditableFieldOption {
   archived: boolean;
   /** 保存済みの選択肢か。保存済みは削除せず非表示 (archived) にする */
   saved: boolean;
+  /** 保存済みの名前。空のまま入力欄を離れたら戻す。未保存は undefined */
+  savedLabel?: string;
 }
 
 /** 編集中の記録項目。型ごとに使わない値も持っておき、保存時に sanitize で落とす */
@@ -79,6 +82,8 @@ interface EditableField {
   saved: boolean;
   /** 保存時点の multiple。複数 → 1 つだけ に変えたときの注記に使う */
   savedMultiple: boolean;
+  /** 保存済みの名前。空のまま入力欄を離れたら戻す。未保存は undefined */
+  savedLabel?: string;
 }
 
 const FIELD_TYPE_LABELS: Record<FieldType, string> = {
@@ -100,12 +105,14 @@ function toEditableField(def: FieldDef, saved: boolean): EditableField {
       label: o.label,
       archived: Boolean(o.archived),
       saved,
+      savedLabel: saved ? o.label : undefined,
     })),
     unit: def.unit ?? "",
     scale: def.scale ?? 0,
     archived: Boolean(def.archived),
     saved,
     savedMultiple: saved && Boolean(def.multiple),
+    savedLabel: saved ? def.label : undefined,
   };
 }
 
@@ -1125,6 +1132,11 @@ function FieldCard({
           type="text"
           value={field.label}
           onChange={(e) => onChange({ label: e.target.value })}
+          onBlur={() =>
+            onChange({
+              label: restoreBlankLabel(field.label, field.savedLabel),
+            })
+          }
           placeholder="項目名 (例: 種類)"
           maxLength={MAX_FIELD_LABEL_LENGTH}
           aria-label="項目名"
@@ -1227,6 +1239,11 @@ function FieldCard({
                     value={o.label}
                     onChange={(e) =>
                       updateOption(o.id, { label: e.target.value })
+                    }
+                    onBlur={() =>
+                      updateOption(o.id, {
+                        label: restoreBlankLabel(o.label, o.savedLabel),
+                      })
                     }
                     maxLength={MAX_TAG_LENGTH}
                     aria-label="選択肢の名前"

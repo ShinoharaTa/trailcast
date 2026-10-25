@@ -321,6 +321,15 @@ export function copyFieldDefs(defs: FieldDef[]): FieldDef[] {
     });
 }
 
+/**
+ * 名前の入力欄を離れたときの値。保存済みの項目・選択肢の名前が空 (trim 後) なら
+ * 保存済みの名前に戻す (空のまま保存すると sanitize で落ちて実質削除になるため)。
+ * 未保存 (`saved` が undefined) はそのまま返す。
+ */
+export function restoreBlankLabel(label: string, saved?: string): string {
+  return saved !== undefined && !label.trim() ? saved : label;
+}
+
 // ─── 絞り込み / 集計 ──────────────────────────────────────────
 
 /**

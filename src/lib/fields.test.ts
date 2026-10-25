@@ -8,6 +8,7 @@ import {
   filterPostsByFields,
   generateFieldId,
   resolveFieldValues,
+  restoreBlankLabel,
   sanitizeFieldsForRecord,
   sanitizePostFieldsForRecord,
   summarizeDuration,
@@ -158,6 +159,15 @@ describe("copyFieldDefs", () => {
     const before = JSON.stringify(src);
     copyFieldDefs(src);
     expect(JSON.stringify(src)).toBe(before);
+  });
+});
+
+describe("restoreBlankLabel", () => {
+  it("保存済みで空 (trim 後) なら保存済みの名前に戻し、それ以外はそのまま", () => {
+    expect(restoreBlankLabel("  ", "種類")).toBe("種類");
+    expect(restoreBlankLabel("", "種類")).toBe("種類");
+    expect(restoreBlankLabel("場所", "種類")).toBe("場所");
+    expect(restoreBlankLabel("  ", undefined)).toBe("  ");
   });
 });
 
