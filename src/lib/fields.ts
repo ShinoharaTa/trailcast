@@ -51,7 +51,7 @@ const VALUE_TYPES = {
 const FIELD_TYPES = new Set<string>(Object.keys(VALUE_TYPES));
 
 /** 指数表記や先頭の `+` は受けない。lexicon の値をそのまま読める形に限る */
-const DECIMAL_PATTERN = /^-?\d+(\.\d+)?$/;
+export const DECIMAL_PATTERN = /^-?\d+(\.\d+)?$/;
 
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 
@@ -347,8 +347,8 @@ function tagKeysMovedToFields(
 
 /**
  * 編集画面のタグ欄の初期値。項目があるスレッドでは、tags から読み取った
- * 選択肢のタグを外す (項目のチップ側にだけ出す)。保存時の
- * buildEditedPostFields と同じ条件で外す。
+ * 選択肢のタグを外す (項目のチップ側にだけ出す)。
+ * タイムラインでも、項目のチップと重複するタグを隠すのに使う。
  */
 export function initialFreeTagsForEdit(
   post: HasFieldValues,
@@ -366,9 +366,12 @@ export function initialFreeTagsForEdit(
  * スレッドに入力できる項目 (archived 以外) が 1 件以上あるとき:
  * - fields は sanitize 結果。空なら `[]` を書く (プロパティを消すと tags からの
  *   読み取りが復活し、未設定に戻せなくなるため)
- * - tags から読み取っていた選択肢は fields に移るので、その label と tagKey が
- *   一致するタグを tags から外す。それ以外の自由タグは残す
+ * - tags から読み取っていた選択肢のうち、fields に残ったもの・UI で選択を
+ *   外したものは、その label と tagKey が一致するタグを tags から外す
+ * - UI では選ばれたままなのに sanitize で落ちたもの (1 つだけの項目に旧タグが
+ *   2 つ以上一致していた場合など) は、元のタグを tags に戻す。データを消さないため
  *
+ * `tags` はタグ欄の値 (initialFreeTagsForEdit で外した後でも、元の post.tags でもよい)。
  * 項目が無いスレッドでは fields は元の投稿のまま触らない。
  * tags は sanitizeTagsForRecord 済みで返す。
  */
@@ -382,12 +385,60 @@ export function buildEditedPostFields(
     return { fields: post.fields, tags: sanitizeTagsForRecord(tags) };
   }
 
-  const movedKeys = tagKeysMovedToFields(post, defs);
-
-  return {
-    fields: sanitizePostFieldsForRecord(values, defs) ?? [],
-    tags: sanitizeTagsForRecord(tags.filter((t) => !movedKeys.has(tagKey(t)))),
+  const fields = sanitizePostFieldsForRecord(values, defs) ?? [];
+  const optionIdsOf = (list: FieldValue[], fieldId: string): Set<string> => {
+    const v = list.find((x) => x.field === fieldId);
+    return new Set(v?.$type === VALUE_TYPES.select ? v.options : []);
   };
+
+  const removeKeys = new Set<string>();
+  const restoreKeys = new Set<string>();
+  for (const r of resolveFieldValues(post, defs)) {
+    if (r.source !== "tags" || !r.optionIds) continue;
+    const kept = optionIdsOf(fields, r.field.id);
+    const selected = optionIdsOf(values, r.field.id);
+    const ids = new Set(r.optionIds);
+    for (const opt of r.field.options ?? []) {
+      if (!ids.has(opt.id)) continue;
+      const key = tagKey(opt.label);
+      if (kept.has(opt.id) || !selected.has(opt.id)) removeKeys.add(key);
+      else restoreKeys.add(key);
+    }
+  }
+
+  const current = new Set(tags.map(tagKey));
+  // 戻すタグは元の post.tags の順で先頭に置く
+  const restored = (post.tags ?? []).filter(
+    (t) => restoreKeys.has(tagKey(t)) && !current.has(tagKey(t)),
+  );
+  return {
+    fields,
+    tags: sanitizeTagsForRecord([
+      ...restored,
+      ...tags.filter((t) => !removeKeys.has(tagKey(t))),
+    ]),
+  };
+}
+
+/**
+ * 新規投稿の tags から、選んだ選択肢の label と tagKey が一致するタグを外す。
+ * 選択の値は fields 側にだけ書く (tags との二重書きを避ける)。
+ * `fields` は sanitizePostFieldsForRecord 済みのものを渡す。
+ */
+export function stripSelectedOptionTags(
+  tags: string[],
+  fields: FieldValue[] | undefined,
+  defs: FieldDef[],
+): string[] {
+  const keys = new Set<string>();
+  for (const r of resolveFieldValues({ fields: fields ?? [] }, defs)) {
+    if (!r.optionIds) continue;
+    const ids = new Set(r.optionIds);
+    for (const opt of r.field.options ?? []) {
+      if (ids.has(opt.id)) keys.add(tagKey(opt.label));
+    }
+  }
+  return tags.filter((t) => !keys.has(tagKey(t)));
 }
 
 // ─── 移行 ────────────────────────────────────────────────────

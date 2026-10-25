@@ -69,6 +69,7 @@ export function CheckpointEditScreen({
     fieldValuesFromResolved(resolveFieldValues(post, fields ?? [])),
   );
   const inputDefs = (fields ?? []).filter((d) => !d.archived);
+  const [fieldsValid, setFieldsValid] = useState(true);
   const [checkpointAt, setCheckpointAt] = useState(post.checkpointAt);
   const [location, setLocation] = useState<Location | null>(post.location ?? null);
   const [saving, setSaving] = useState(false);
@@ -145,6 +146,7 @@ export function CheckpointEditScreen({
           defs={inputDefs}
           values={fieldValues}
           onChange={setFieldValues}
+          onValidityChange={setFieldsValid}
           disabled={saving}
         />
 
@@ -202,7 +204,7 @@ export function CheckpointEditScreen({
         <div className="flex gap-3">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !fieldsValid}
             className="flex-1 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 disabled:opacity-50"
           >
             {saving ? "保存中..." : "保存"}

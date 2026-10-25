@@ -47,3 +47,32 @@ export function formatResolvedValue(resolved: ResolvedValue): string {
   }
   return "";
 }
+
+/** 時間の入力欄 (時・分・秒) ごとの文字列。入力途中の空欄を保つため数値にしない */
+export interface DurationParts {
+  h: string;
+  m: string;
+  s: string;
+}
+
+/** 秒を時・分・秒の入力欄の文字列に分ける */
+export function splitSeconds(seconds: number): DurationParts {
+  return {
+    h: String(Math.floor(seconds / 3600)),
+    m: String(Math.floor((seconds % 3600) / 60)),
+    s: String(seconds % 60),
+  };
+}
+
+/**
+ * 時・分・秒の入力を合計秒にする。
+ * 全部空なら null (値なし)、分・秒が 59 を超えたら "invalid"。
+ */
+export function joinSeconds(parts: DurationParts): number | null | "invalid" {
+  if (!parts.h && !parts.m && !parts.s) return null;
+  const h = Number(parts.h || "0");
+  const m = Number(parts.m || "0");
+  const s = Number(parts.s || "0");
+  if (m > 59 || s > 59) return "invalid";
+  return h * 3600 + m * 60 + s;
+}

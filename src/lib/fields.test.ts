@@ -12,6 +12,7 @@ import {
   resolveFieldValues,
   sanitizeFieldsForRecord,
   sanitizePostFieldsForRecord,
+  stripSelectedOptionTags,
   summarizeDuration,
   summarizeNumber,
 } from "@/lib/fields";
@@ -484,6 +485,27 @@ describe("buildEditedPostFields", () => {
     });
   });
 
+  it("1 つだけの項目で sanitize に落とされた選択肢のタグは tags に残す", () => {
+    const single: FieldDef = {
+      id: "kind",
+      label: "種類",
+      type: "select",
+      multiple: false,
+      options: [
+        { id: "hall", label: "ホール" },
+        { id: "room", label: "ルーム" },
+      ],
+    };
+    const post: Post = { tags: ["ホール", "ルーム", "東京"] };
+    const values = fieldValuesFromResolved(resolveFieldValues(post, [single]));
+    const expected = { fields: [select("kind", ["hall"])], tags: ["ルーム", "東京"] };
+    // タグ欄の値が元の tags でも、初期表示で外した後でも同じ結果になる
+    expect(buildEditedPostFields(post, [single], values, post.tags ?? [])).toEqual(expected);
+    expect(
+      buildEditedPostFields(post, [single], values, initialFreeTagsForEdit(post, [single])),
+    ).toEqual(expected);
+  });
+
   it("大文字小文字違いのタグも外す。選択を外した選択肢のタグも外す", () => {
     const def: FieldDef = {
       id: "area",
@@ -549,5 +571,23 @@ describe("initialFreeTagsForEdit", () => {
     expect(
       initialFreeTagsForEdit({ tags: ["ホール"] }, [{ ...kind, archived: true }]),
     ).toEqual(["ホール"]);
+  });
+});
+
+describe("stripSelectedOptionTags", () => {
+  it("選んだ選択肢の label と一致するタグだけ外す (大文字小文字は区別しない)", () => {
+    const area: FieldDef = {
+      id: "area",
+      label: "地域",
+      type: "select",
+      options: [
+        { id: "tky", label: "Tokyo" },
+        { id: "osk", label: "Osaka" },
+      ],
+    };
+    expect(
+      stripSelectedOptionTags(["TOKYO", "Osaka", "雨"], [select("area", ["tky"])], [area]),
+    ).toEqual(["Osaka", "雨"]);
+    expect(stripSelectedOptionTags(["Tokyo"], undefined, [area])).toEqual(["Tokyo"]);
   });
 });

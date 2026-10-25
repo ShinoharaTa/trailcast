@@ -39,7 +39,7 @@ import {
   tagKey,
   type TagCount,
 } from "@/lib/tags";
-import { resolveFieldValues } from "@/lib/fields";
+import { initialFreeTagsForEdit, resolveFieldValues } from "@/lib/fields";
 import { formatResolvedValue } from "@/lib/fields-format";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -1395,7 +1395,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               <PostFieldValues post={cp} defs={thread.fields ?? []} />
 
               <PostTags
-                tags={cp.tags ?? []}
+                // 項目のチップに出したタグ由来の選択肢は、タグ側では出さない
+                tags={initialFreeTagsForEdit(cp, thread.fields ?? [])}
                 selectedKeys={selectedTagKeys}
                 onToggle={toggleTagKey}
               />

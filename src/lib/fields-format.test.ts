@@ -4,6 +4,8 @@ import {
   UNKNOWN_OPTION_LABEL,
   formatDuration,
   formatResolvedValue,
+  joinSeconds,
+  splitSeconds,
 } from "@/lib/fields-format";
 import type { FieldDef } from "@/lib/types";
 
@@ -70,5 +72,23 @@ describe("formatDuration", () => {
     expect(formatDuration(3600)).toBe("1:00:00");
     expect(formatDuration(3661)).toBe("1:01:01");
     expect(formatDuration(36000 + 59)).toBe("10:00:59");
+  });
+});
+
+describe("splitSeconds / joinSeconds", () => {
+  it("往復できる", () => {
+    expect(splitSeconds(3661)).toEqual({ h: "1", m: "1", s: "1" });
+    expect(joinSeconds(splitSeconds(3661))).toBe(3661);
+    expect(joinSeconds({ h: "", m: "1", s: "" })).toBe(60);
+  });
+
+  it("全部空なら null", () => {
+    expect(joinSeconds({ h: "", m: "", s: "" })).toBeNull();
+  });
+
+  it("分・秒が 59 を超えたら invalid", () => {
+    expect(joinSeconds({ h: "0", m: "59", s: "59" })).toBe(3599);
+    expect(joinSeconds({ h: "", m: "60", s: "" })).toBe("invalid");
+    expect(joinSeconds({ h: "", m: "", s: "60" })).toBe("invalid");
   });
 });

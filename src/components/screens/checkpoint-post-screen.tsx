@@ -11,7 +11,11 @@ import { TagInput } from "@/components/ui/tag-input";
 import { FieldInputs } from "@/components/ui/field-inputs";
 import { recordTagUsage } from "@/lib/pds/tags";
 import { sanitizeTagsForRecord, type TagCount } from "@/lib/tags";
-import { crosspostTagsFor, sanitizePostFieldsForRecord } from "@/lib/fields";
+import {
+  crosspostTagsFor,
+  sanitizePostFieldsForRecord,
+  stripSelectedOptionTags,
+} from "@/lib/fields";
 import type { FieldDef, FieldValue, Location, TagGroup } from "@/lib/types";
 
 const MAX_IMAGES = 4;
@@ -84,6 +88,7 @@ export function CheckpointPostScreen({
   const [text, setText] = useState("");
   const [tags, setTags] = useState<string[]>(() => [...(defaultTags ?? [])]);
   const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
+  const [fieldsValid, setFieldsValid] = useState(true);
   const inputDefs = (fields ?? []).filter((d) => !d.archived);
   // タグ欄は既定で畳む (#35)。「とにかく記録する」ときに邪魔にならないように。
   // 既定タグがあれば触らなくても付くので、開くのは足したい/外したいときだけ。
@@ -253,11 +258,13 @@ export function CheckpointPostScreen({
     setSubmitting(true);
     setError(null);
     try {
-      const recordTags = sanitizeTagsForRecord(tags);
-      // 選択した option の label は tags に書かない (fields 側が正)
       const recordFields = sanitizePostFieldsForRecord(
         fieldValues,
         fields ?? [],
+      );
+      // 選択した option の label は tags に書かない (fields 側が正)
+      const recordTags = sanitizeTagsForRecord(
+        stripSelectedOptionTags(tags, recordFields, fields ?? []),
       );
 
       // 画像はすでに縮小 + 圧縮済みの Blob を保持しているのでそのままアップロード。
@@ -351,6 +358,7 @@ export function CheckpointPostScreen({
           defs={inputDefs}
           values={fieldValues}
           onChange={setFieldValues}
+          onValidityChange={setFieldsValid}
           disabled={submitting}
         />
 
@@ -607,7 +615,7 @@ export function CheckpointPostScreen({
 
         <button
           onClick={handleSubmit}
-          disabled={submitting || processing || !hasContent}
+          disabled={submitting || processing || !hasContent || !fieldsValid}
           className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:opacity-50 disabled:pointer-events-none"
         >
           {submitting ? (

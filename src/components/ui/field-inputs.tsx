@@ -1,36 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { MAX_TEXT_VALUE_LENGTH } from "@/lib/fields";
+import { useEffect, useState } from "react";
+import { DECIMAL_PATTERN, MAX_TEXT_VALUE_LENGTH } from "@/lib/fields";
+import {
+  joinSeconds,
+  splitSeconds,
+  type DurationParts,
+} from "@/lib/fields-format";
 import type { FieldDef, FieldValue } from "@/lib/types";
-
-/** 入力中の数値の判定。保存時の検証 (sanitizePostFieldsForRecord) と同じ形 */
-const DECIMAL_PATTERN = /^-?\d+(\.\d+)?$/;
-
-/** 時間の入力欄ごとの文字列。入力途中の空欄を保つため数値にしない */
-interface DurationParts {
-  h: string;
-  m: string;
-  s: string;
-}
-
-function splitSeconds(seconds: number): DurationParts {
-  return {
-    h: String(Math.floor(seconds / 3600)),
-    m: String(Math.floor((seconds % 3600) / 60)),
-    s: String(seconds % 60),
-  };
-}
-
-/** 全部空なら null (値なし)。分・秒が 59 を超えたら "invalid" */
-function joinSeconds(parts: DurationParts): number | null | "invalid" {
-  if (!parts.h && !parts.m && !parts.s) return null;
-  const h = Number(parts.h || "0");
-  const m = Number(parts.m || "0");
-  const s = Number(parts.s || "0");
-  if (m > 59 || s > 59) return "invalid";
-  return h * 3600 + m * 60 + s;
-}
 
 const inputClass =
   "rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50";
@@ -41,6 +18,11 @@ export interface FieldInputsProps {
   values: FieldValue[];
   onChange: (values: FieldValue[]) => void;
   disabled?: boolean;
+  /**
+   * 不正な入力 (decimal に合わない数値、59 を超える分・秒) の有無が変わったときに呼ぶ。
+   * 呼び出し側は false の間、送信ボタンを無効にする
+   */
+  onValidityChange?: (valid: boolean) => void;
 }
 
 /**
@@ -53,6 +35,7 @@ export function FieldInputs({
   values,
   onChange,
   disabled,
+  onValidityChange,
 }: FieldInputsProps) {
   // 時間は「時・分・秒」の文字列で持つ。初期値は values から作る
   const [durations, setDurations] = useState<Record<string, DurationParts>>(
@@ -66,6 +49,24 @@ export function FieldInputs({
       return out;
     },
   );
+
+  const valid = defs.every((def) => {
+    if (def.type === "number") {
+      const v = values.find((x) => x.field === def.id);
+      return (
+        v?.$type !== "net.shino3.trailcast.post#numberValue" ||
+        DECIMAL_PATTERN.test(v.value)
+      );
+    }
+    if (def.type === "duration") {
+      const parts = durations[def.id];
+      return !parts || joinSeconds(parts) !== "invalid";
+    }
+    return true;
+  });
+  useEffect(() => {
+    onValidityChange?.(valid);
+  }, [valid, onValidityChange]);
 
   if (defs.length === 0) return null;
 
