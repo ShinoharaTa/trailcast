@@ -16,7 +16,8 @@
     "og:test": "tsx scripts/og-test.ts",
     "og:build": "tsx scripts/og-default-build.ts",
     "lint": "next lint",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest run"
   },
   "dependencies": {
     "@atproto/api": "^0.19.6",
@@ -43,6 +44,7 @@
     "tailwindcss": "^4.2.2",
     "tsx": "^4.21.0",
     "typescript": "5.9.3",
-    "typescript-eslint": "^8.58.1"
+    "typescript-eslint": "^8.58.1",
+    "vitest": "^5.0.5"
   }
 }
