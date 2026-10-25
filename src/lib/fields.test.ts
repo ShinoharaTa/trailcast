@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   FIELD_UNSET,
+  buildEditedPostFields,
   convertTagGroupsToFields,
   countSelectOptions,
   crosspostTagsFor,
+  fieldValuesFromResolved,
   filterPostsByFields,
   generateFieldId,
   resolveFieldValues,
@@ -451,5 +453,83 @@ describe("レビュー対応で追加", () => {
         filterPostsByTags(posts, tags.map(tagKey)),
       );
     }
+  });
+});
+
+describe("fieldValuesFromResolved", () => {
+  it("fields と tags の両方から解決した値を FieldValue に戻す", () => {
+    const post: Post = {
+      fields: [num("weight", "12.5"), dur("time", 90), text("memo", "雨"), select("kind", ["room"])],
+    };
+    expect(fieldValuesFromResolved(resolveFieldValues(post, [kind, weight, time, memo]))).toEqual([
+      select("kind", ["room"]),
+      num("weight", "12.5"),
+      dur("time", 90),
+      text("memo", "雨"),
+    ]);
+    expect(
+      fieldValuesFromResolved(resolveFieldValues({ tags: ["ホール", "成功"] }, [kind, result])),
+    ).toEqual([select("kind", ["hall"]), select("result", ["ok"])]);
+  });
+});
+
+describe("buildEditedPostFields", () => {
+  it("tags から読み取っていた選択肢のタグを外し、fields に書く", () => {
+    const post: Post = { tags: ["ホール", "東京", "成功"] };
+    const values = fieldValuesFromResolved(resolveFieldValues(post, [kind, result]));
+    expect(buildEditedPostFields(post, [kind, result], values, post.tags ?? [])).toEqual({
+      fields: [select("kind", ["hall"]), select("result", ["ok"])],
+      tags: ["東京"],
+    });
+  });
+
+  it("大文字小文字違いのタグも外す。選択を外した選択肢のタグも外す", () => {
+    const def: FieldDef = {
+      id: "area",
+      label: "地域",
+      type: "select",
+      options: [{ id: "tky", label: "Tokyo" }],
+    };
+    const post: Post = { tags: ["TOKYO", "雨"] };
+    expect(buildEditedPostFields(post, [def], [], post.tags ?? [])).toEqual({
+      fields: [],
+      tags: ["雨"],
+    });
+  });
+
+  it("全項目が未入力なら fields は [] を書く", () => {
+    const post: Post = { fields: [num("weight", "10")], tags: ["東京"] };
+    expect(buildEditedPostFields(post, [weight], [], ["東京"])).toEqual({
+      fields: [],
+      tags: ["東京"],
+    });
+  });
+
+  it("fields を持つ post ではタグを外さない", () => {
+    const post: Post = { fields: [num("weight", "10")], tags: ["ホール"] };
+    expect(
+      buildEditedPostFields(post, [kind, weight], [num("weight", "11")], ["ホール"]),
+    ).toEqual({ fields: [num("weight", "11")], tags: ["ホール"] });
+  });
+
+  it("archived 項目の値は sanitize で残る", () => {
+    const old: FieldDef = { ...memo, archived: true };
+    const post: Post = { fields: [text("memo", "雨")] };
+    expect(
+      buildEditedPostFields(post, [old, weight], [text("memo", "雨"), num("weight", "1")], []),
+    ).toEqual({ fields: [text("memo", "雨"), num("weight", "1")], tags: undefined });
+  });
+
+  it("入力できる項目が無いスレッドでは fields を触らない", () => {
+    const post: Post = { fields: [num("x", "1")], tags: ["ホール"] };
+    expect(buildEditedPostFields(post, [], [], ["ホール", "ホール"])).toEqual({
+      fields: [num("x", "1")],
+      tags: ["ホール"],
+    });
+    const archivedOnly: FieldDef = { ...kind, archived: true };
+    expect(buildEditedPostFields({ tags: ["ホール"] }, [archivedOnly], [], ["ホール"])).toEqual({
+      fields: undefined,
+      tags: ["ホール"],
+    });
   });
 });

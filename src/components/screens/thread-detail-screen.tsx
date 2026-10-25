@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NavigationProps } from "@/lib/use-navigation";
 import type {
+  FieldDef,
   ThreadWithMeta,
   PostWithMeta,
   TagGroup,
@@ -38,6 +39,8 @@ import {
   tagKey,
   type TagCount,
 } from "@/lib/tags";
+import { resolveFieldValues } from "@/lib/fields";
+import { formatResolvedValue } from "@/lib/fields-format";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -617,6 +620,33 @@ function TagFilterBar({
           <span className="tabular-nums">{posts.length}</span> 件を表示中
         </p>
       )}
+    </div>
+  );
+}
+
+/** チェックポイント本文の下、タグの前に出す記録項目の値 (「項目名 値」) */
+function PostFieldValues({
+  post,
+  defs,
+}: {
+  post: PostWithMeta;
+  defs: FieldDef[];
+}) {
+  const items = resolveFieldValues(post, defs)
+    .map((r) => ({ field: r.field, text: formatResolvedValue(r) }))
+    .filter((item) => item.text);
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {items.map(({ field, text }) => (
+        <span
+          key={field.id}
+          className="flex max-w-full items-center gap-1 rounded-full bg-white/5 px-2.5 py-0.5 text-[11px]"
+        >
+          <span className="shrink-0 text-white/40">{field.label}</span>
+          <span className="min-w-0 truncate text-white/75">{text}</span>
+        </span>
+      ))}
     </div>
   );
 }
@@ -1362,6 +1392,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 </div>
               ) : null}
 
+              <PostFieldValues post={cp} defs={thread.fields ?? []} />
+
               <PostTags
                 tags={cp.tags ?? []}
                 selectedKeys={selectedTagKeys}
@@ -1479,6 +1511,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               threadTags={threadTagCounts}
               tagGroups={thread.tagGroups}
               defaultTags={thread.defaultTags}
+              fields={thread.fields}
               onSubmitted={onModalSubmitted}
             />
           )}
@@ -1487,6 +1520,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               post={editingPost}
               threadTags={threadTagCounts}
               tagGroups={thread.tagGroups}
+              fields={thread.fields}
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
             />

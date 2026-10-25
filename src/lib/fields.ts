@@ -15,7 +15,13 @@ import type {
   FieldValue,
   TagGroup,
 } from "@/lib/types";
-import { dedupeTags, normalizeTag, sliceGraphemes, tagKey } from "@/lib/tags";
+import {
+  dedupeTags,
+  normalizeTag,
+  sanitizeTagsForRecord,
+  sliceGraphemes,
+  tagKey,
+} from "@/lib/tags";
 
 /** 1 スレッドに定義できる項目数 (lexicon の maxLength と一致させる) */
 export const MAX_FIELDS = 30;
@@ -280,6 +286,79 @@ export function crosspostTagsFor(
     }
   }
   return dedupeTags([...(post.tags ?? []), ...labels]);
+}
+
+/**
+ * 解決済みの値を入力 UI の初期値 (FieldValue[]) に戻す。定義の順のまま返す。
+ * tags から読み取った選択も、選択済みの値として含める。
+ */
+export function fieldValuesFromResolved(
+  resolved: ResolvedValue[],
+): FieldValue[] {
+  const out: FieldValue[] = [];
+  for (const r of resolved) {
+    const field = r.field.id;
+    switch (r.field.type) {
+      case "select":
+        if (r.optionIds) {
+          out.push({ $type: VALUE_TYPES.select, field, options: r.optionIds });
+        }
+        break;
+      case "number":
+        if (r.value !== undefined) {
+          out.push({ $type: VALUE_TYPES.number, field, value: r.value });
+        }
+        break;
+      case "duration":
+        if (r.seconds !== undefined) {
+          out.push({ $type: VALUE_TYPES.duration, field, seconds: r.seconds });
+        }
+        break;
+      case "text":
+        if (r.text !== undefined) {
+          out.push({ $type: VALUE_TYPES.text, field, text: r.text });
+        }
+        break;
+    }
+  }
+  return out;
+}
+
+/**
+ * 編集画面で保存する post.fields / post.tags を組み立てる。
+ *
+ * スレッドに入力できる項目 (archived 以外) が 1 件以上あるとき:
+ * - fields は sanitize 結果。空なら `[]` を書く (プロパティを消すと tags からの
+ *   読み取りが復活し、未設定に戻せなくなるため)
+ * - tags から読み取っていた選択肢は fields に移るので、その label と tagKey が
+ *   一致するタグを tags から外す。それ以外の自由タグは残す
+ *
+ * 項目が無いスレッドでは fields は元の投稿のまま触らない。
+ * tags は sanitizeTagsForRecord 済みで返す。
+ */
+export function buildEditedPostFields(
+  post: HasFieldValues,
+  defs: FieldDef[],
+  values: FieldValue[],
+  tags: string[],
+): { fields: FieldValue[] | undefined; tags: string[] | undefined } {
+  if (!defs.some((d) => !d.archived)) {
+    return { fields: post.fields, tags: sanitizeTagsForRecord(tags) };
+  }
+
+  const movedKeys = new Set<string>();
+  for (const r of resolveFieldValues(post, defs)) {
+    if (r.source !== "tags" || !r.optionIds) continue;
+    const ids = new Set(r.optionIds);
+    for (const opt of r.field.options ?? []) {
+      if (ids.has(opt.id)) movedKeys.add(tagKey(opt.label));
+    }
+  }
+
+  return {
+    fields: sanitizePostFieldsForRecord(values, defs) ?? [],
+    tags: sanitizeTagsForRecord(tags.filter((t) => !movedKeys.has(tagKey(t)))),
+  };
 }
 
 // ─── 移行 ────────────────────────────────────────────────────
