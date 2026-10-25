@@ -9,7 +9,6 @@ import { processCoverImage } from "@/lib/image-processing";
 import {
   effectiveSortOrder,
   parseAtUri,
-  type FieldDef,
   type FieldType,
   stripRecordMeta,
   type ThreadSortOrder,
@@ -45,9 +44,17 @@ import {
   MAX_FIELD_UNIT_LENGTH,
   convertTagGroupsToFields,
   copyFieldDefs,
+  fieldDefsDirty,
   generateFieldId,
+  isBlankOptionLabel,
+  optionLabelTaken,
+  orderFields,
   restoreBlankLabel,
   sanitizeFieldsForRecord,
+  toEditableField,
+  toFieldDef,
+  type EditableField,
+  type EditableFieldOption,
 } from "@/lib/fields";
 
 /** 編集中のグループ。並べ替え・削除しても TagInput の内部状態が壊れないよう id を持つ */
@@ -57,35 +64,6 @@ interface EditableTagGroup {
   tags: string[];
 }
 
-/** 編集中の選択肢。並べ替えても入力が壊れないよう id を key にする */
-interface EditableFieldOption {
-  id: string;
-  label: string;
-  archived: boolean;
-  /** 保存済みの選択肢か。保存済みは削除せず非表示 (archived) にする */
-  saved: boolean;
-  /** 保存済みの名前。空のまま入力欄を離れたら戻す。未保存は undefined */
-  savedLabel?: string;
-}
-
-/** 編集中の記録項目。型ごとに使わない値も持っておき、保存時に sanitize で落とす */
-interface EditableField {
-  id: string;
-  label: string;
-  type: FieldType;
-  multiple: boolean;
-  options: EditableFieldOption[];
-  unit: string;
-  scale: number;
-  archived: boolean;
-  /** 保存済みの項目か。保存済みは種類を変えられず、削除せず非表示にする */
-  saved: boolean;
-  /** 保存時点の multiple。複数 → 1 つだけ に変えたときの注記に使う */
-  savedMultiple: boolean;
-  /** 保存済みの名前。空のまま入力欄を離れたら戻す。未保存は undefined */
-  savedLabel?: string;
-}
-
 const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   select: "選択",
   number: "数値",
@@ -93,54 +71,6 @@ const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   text: "テキスト",
 };
 const FIELD_TYPES: FieldType[] = ["select", "number", "duration", "text"];
-
-function toEditableField(def: FieldDef, saved: boolean): EditableField {
-  return {
-    id: def.id,
-    label: def.label,
-    type: def.type,
-    multiple: Boolean(def.multiple),
-    options: (def.options ?? []).map((o) => ({
-      id: o.id,
-      label: o.label,
-      archived: Boolean(o.archived),
-      saved,
-      savedLabel: saved ? o.label : undefined,
-    })),
-    unit: def.unit ?? "",
-    scale: def.scale ?? 0,
-    archived: Boolean(def.archived),
-    saved,
-    savedMultiple: saved && Boolean(def.multiple),
-    savedLabel: saved ? def.label : undefined,
-  };
-}
-
-function toFieldDef(f: EditableField): FieldDef {
-  return {
-    id: f.id,
-    label: f.label,
-    type: f.type,
-    multiple: f.multiple,
-    options: f.options.map((o) => ({
-      id: o.id,
-      label: o.label,
-      archived: o.archived || undefined,
-    })),
-    unit: f.unit,
-    // 0 は既定値なので書かない (省略 = 0 桁)
-    scale: f.scale === 0 ? undefined : f.scale,
-    archived: f.archived || undefined,
-  };
-}
-
-/** 表示・保存の順。非表示の項目は最後にまとめる */
-function orderFields(fields: EditableField[]): EditableField[] {
-  return [
-    ...fields.filter((f) => !f.archived),
-    ...fields.filter((f) => f.archived),
-  ];
-}
 
 export interface ThreadEditScreenProps {
   thread: ThreadWithMeta;
@@ -249,7 +179,6 @@ export function ThreadEditScreen({
               multiple: false,
               options: [],
               unit: "",
-              scale: 0,
               archived: false,
               saved: false,
               savedMultiple: false,
@@ -300,9 +229,10 @@ export function ThreadEditScreen({
 
   // 他のスレッドからコピー。候補は開いたときに読み込む
   const [copyOpen, setCopyOpen] = useState(false);
-  const [copyCandidates, setCopyCandidates] = useState<ThreadWithMeta[] | null>(
-    null,
-  );
+  // count はコピーで実際に入る項目数 (archived や選択肢の無い select を除く)
+  const [copyCandidates, setCopyCandidates] = useState<
+    { thread: ThreadWithMeta; count: number }[] | null
+  >(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [copySource, setCopySource] = useState("");
 
@@ -312,12 +242,15 @@ export function ThreadEditScreen({
     setCopyError(null);
     try {
       const threads = await listThreads();
-      const candidates = threads.filter(
-        (t) =>
-          t.rkey !== thread.rkey && (t.fields ?? []).some((f) => !f.archived),
-      );
+      const candidates = threads
+        .filter((t) => t.rkey !== thread.rkey)
+        .map((t) => ({
+          thread: t,
+          count: copyFieldDefs(t.fields ?? []).length,
+        }))
+        .filter((c) => c.count > 0);
       setCopyCandidates(candidates);
-      setCopySource(candidates[0]?.rkey ?? "");
+      setCopySource(candidates[0]?.thread.rkey ?? "");
     } catch (e) {
       setCopyError(
         e instanceof Error ? e.message : "スレッドの読み込みに失敗しました",
@@ -326,7 +259,9 @@ export function ThreadEditScreen({
   };
 
   const copyFromThread = () => {
-    const source = copyCandidates?.find((t) => t.rkey === copySource);
+    const source = copyCandidates?.find(
+      (c) => c.thread.rkey === copySource,
+    )?.thread;
     if (!source) return;
     setFields((fs) => [
       ...fs,
@@ -426,15 +361,15 @@ export function ThreadEditScreen({
   // 保存されるのはサニタイズ後の形なので、dirty 判定もその形で比較する
   // (見出しだけ・タグだけの書きかけグループは保存対象にならない)
   const sanitizedTagGroups = sanitizeTagGroupsForRecord(tagGroups);
+  // PDS は record を DAG-CBOR の正準キー順で返すので、右辺も sanitize を通して
+  // キー順を揃えてから比べる
   const tagGroupsDirty =
     JSON.stringify(sanitizedTagGroups ?? []) !==
-    JSON.stringify(thread.tagGroups ?? []);
+    JSON.stringify(sanitizeTagGroupsForRecord(thread.tagGroups ?? []) ?? []);
   const sanitizedFields = sanitizeFieldsForRecord(
     orderedFields.map(toFieldDef),
   );
-  const fieldsDirty =
-    JSON.stringify(sanitizedFields ?? []) !==
-    JSON.stringify(thread.fields ?? []);
+  const fieldsDirty = fieldDefsDirty(fields, thread.fields);
   // タググループの変換は、記録項目がまだ 1 件も無い (非表示も含め) ときだけ出す
   const canConvertTagGroups =
     !fieldsLocked &&
@@ -782,10 +717,9 @@ export function ThreadEditScreen({
                   aria-label="コピー元のスレッド"
                   className="w-full rounded-lg border border-white/10 bg-surface-900 px-3 py-2 text-base text-white outline-none focus:border-indigo-400 md:text-sm"
                 >
-                  {copyCandidates.map((t) => (
+                  {copyCandidates.map(({ thread: t, count }) => (
                     <option key={t.rkey} value={t.rkey}>
-                      {t.title}（
-                      {(t.fields ?? []).filter((f) => !f.archived).length} 項目）
+                      {t.title}（{count} 項目）
                     </option>
                   ))}
                 </select>
@@ -1070,6 +1004,12 @@ function FieldCard({
   onRestore: () => void;
 }) {
   const [optionDraft, setOptionDraft] = useState("");
+  // 「同じ名前の選択肢があります」を出す選択肢の id (追加欄は "new")
+  const [duplicateOptionId, setDuplicateOptionId] = useState<string | null>(
+    null,
+  );
+  // 改名を始めたときの名前。同名にされたら blur でここに戻す
+  const editingOptionLabel = useRef<string | null>(null);
 
   if (field.archived) {
     return (
@@ -1113,9 +1053,12 @@ function FieldCard({
   const addOption = () => {
     const label = normalizeTag(optionDraft);
     if (!label || field.options.length >= MAX_FIELD_OPTIONS) return;
-    // 同じ名前 (大文字小文字を区別しない) の選択肢は追加しない
-    const key = tagKey(label);
-    if (field.options.some((o) => tagKey(o.label) === key)) return;
+    // 同じ名前 (大文字小文字を区別しない、archived 含む) の選択肢は追加しない
+    if (optionLabelTaken(field.options, label)) {
+      setDuplicateOptionId("new");
+      return;
+    }
+    setDuplicateOptionId(null);
     onChange({
       options: [
         ...field.options,
@@ -1230,62 +1173,84 @@ function FieldCard({
           {field.options.length > 0 && (
             <div className="mb-2 space-y-1.5">
               {field.options.map((o, i) => (
-                <div
-                  key={o.id}
-                  className={`flex items-center gap-1 ${o.archived ? "opacity-50" : ""}`}
-                >
-                  <input
-                    type="text"
-                    value={o.label}
-                    onChange={(e) =>
-                      updateOption(o.id, { label: e.target.value })
-                    }
-                    onBlur={() =>
-                      updateOption(o.id, {
-                        label: restoreBlankLabel(o.label, o.savedLabel),
-                      })
-                    }
-                    maxLength={MAX_TAG_LENGTH}
-                    aria-label="選択肢の名前"
-                    className="mr-1 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-base text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => moveOption(o.id, -1)}
-                    disabled={i === 0}
-                    aria-label="上へ"
-                    className={moveButtonClass}
+                <div key={o.id}>
+                  <div
+                    className={`flex items-center gap-1 ${o.archived ? "opacity-50" : ""}`}
                   >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => moveOption(o.id, 1)}
-                    disabled={i === field.options.length - 1}
-                    aria-label="下へ"
-                    className={moveButtonClass}
-                  >
-                    ↓
-                  </button>
-                  {o.saved ? (
+                    <input
+                      type="text"
+                      value={o.label}
+                      onFocus={() => {
+                        editingOptionLabel.current = o.label;
+                      }}
+                      onChange={(e) => {
+                        if (duplicateOptionId === o.id) setDuplicateOptionId(null);
+                        updateOption(o.id, { label: e.target.value });
+                      }}
+                      onBlur={() => {
+                        const label = restoreBlankLabel(
+                          o.label,
+                          o.savedLabel,
+                          isBlankOptionLabel,
+                        );
+                        // 同じ項目内の他の選択肢と同名にはさせず、改名前に戻す
+                        if (optionLabelTaken(field.options, label, o.id)) {
+                          updateOption(o.id, {
+                            label: editingOptionLabel.current ?? label,
+                          });
+                          setDuplicateOptionId(o.id);
+                        } else {
+                          updateOption(o.id, { label });
+                        }
+                        editingOptionLabel.current = null;
+                      }}
+                      maxLength={MAX_TAG_LENGTH}
+                      aria-label="選択肢の名前"
+                      className="mr-1 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-base text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
+                    />
                     <button
                       type="button"
-                      onClick={() =>
-                        updateOption(o.id, { archived: !o.archived })
-                      }
-                      className="w-14 shrink-0 rounded-lg py-1.5 text-[11px] text-white/45 transition hover:bg-white/5 hover:text-white/80 disabled:opacity-50"
+                      onClick={() => moveOption(o.id, -1)}
+                      disabled={i === 0}
+                      aria-label="上へ"
+                      className={moveButtonClass}
                     >
-                      {o.archived ? "再表示" : "非表示"}
+                      ↑
                     </button>
-                  ) : (
                     <button
                       type="button"
-                      onClick={() => removeOption(o.id)}
-                      aria-label={`選択肢 ${o.label} を削除`}
-                      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/40 transition hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+                      onClick={() => moveOption(o.id, 1)}
+                      disabled={i === field.options.length - 1}
+                      aria-label="下へ"
+                      className={moveButtonClass}
                     >
-                      <TrashIcon className="size-3.5" />
+                      ↓
                     </button>
+                    {o.saved ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateOption(o.id, { archived: !o.archived })
+                        }
+                        className="w-14 shrink-0 rounded-lg py-1.5 text-[11px] text-white/45 transition hover:bg-white/5 hover:text-white/80 disabled:opacity-50"
+                      >
+                        {o.archived ? "再表示" : "非表示"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => removeOption(o.id)}
+                        aria-label={`選択肢 ${o.label} を削除`}
+                        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/40 transition hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+                      >
+                        <TrashIcon className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  {duplicateOptionId === o.id && (
+                    <p className="mt-1 text-[11px] text-amber-200/70">
+                      同じ名前の選択肢があります
+                    </p>
                   )}
                 </div>
               ))}
@@ -1294,7 +1259,10 @@ function FieldCard({
           <input
             type="text"
             value={optionDraft}
-            onChange={(e) => setOptionDraft(e.target.value)}
+            onChange={(e) => {
+              if (duplicateOptionId === "new") setDuplicateOptionId(null);
+              setOptionDraft(e.target.value);
+            }}
             onKeyDown={(e) => {
               // IME 変換中の Enter は変換確定なので無視する
               if (e.nativeEvent.isComposing || e.key !== "Enter") return;
@@ -1307,6 +1275,11 @@ function FieldCard({
             aria-label="選択肢を追加"
             className="w-full rounded-lg border border-dashed border-white/15 bg-transparent px-3 py-1.5 text-base text-white placeholder-white/30 outline-none focus:border-indigo-400 disabled:opacity-40 md:text-sm"
           />
+          {duplicateOptionId === "new" && (
+            <p className="mt-1 text-[11px] text-amber-200/70">
+              同じ名前の選択肢があります
+            </p>
+          )}
         </div>
       )}
 
@@ -1322,8 +1295,12 @@ function FieldCard({
             className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
           />
           <select
-            value={field.scale}
-            onChange={(e) => onChange({ scale: Number(e.target.value) })}
+            value={field.scale ?? 0}
+            onChange={(e) => {
+              // 0 は既定値なので未設定に戻す (保存済みの 0 は触らない限り保たれる)
+              const scale = Number(e.target.value);
+              onChange({ scale: scale === 0 ? undefined : scale });
+            }}
             aria-label="小数桁"
             className="shrink-0 rounded-lg border border-white/10 bg-surface-900 px-2 py-1.5 text-base text-white outline-none focus:border-indigo-400 md:text-sm"
           >

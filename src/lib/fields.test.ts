@@ -3,12 +3,18 @@ import {
   FIELD_UNSET,
   convertTagGroupsToFields,
   copyFieldDefs,
+  fieldDefsDirty,
+  isBlankOptionLabel,
+  optionLabelTaken,
+  orderFields,
   countSelectOptions,
   crosspostTagsFor,
   filterPostsByFields,
   generateFieldId,
   resolveFieldValues,
   restoreBlankLabel,
+  toEditableField,
+  toFieldDef,
   sanitizeFieldsForRecord,
   sanitizePostFieldsForRecord,
   summarizeDuration,
@@ -160,6 +166,91 @@ describe("copyFieldDefs", () => {
     copyFieldDefs(src);
     expect(JSON.stringify(src)).toBe(before);
   });
+
+  it("multiple: false / true をそのまま保つ", () => {
+    const out = copyFieldDefs([
+      { id: "s", label: "単", type: "select", multiple: false, options: [{ id: "a", label: "x" }] },
+      { id: "m", label: "複", type: "select", multiple: true, options: [{ id: "b", label: "y" }] },
+    ]);
+    expect(out.map((d) => d.multiple)).toEqual([false, true]);
+  });
+
+  it("選択肢がすべて archived の select は落とす", () => {
+    const out = copyFieldDefs([
+      { id: "s", label: "旧", type: "select", options: [{ id: "a", label: "x", archived: true }] },
+      { id: "e", label: "空", type: "select" },
+      { id: "t", label: "メモ", type: "text" },
+    ]);
+    expect(out.map((d) => d.label)).toEqual(["メモ"]);
+  });
+
+  it("30 件で打ち切る", () => {
+    const many: FieldDef[] = Array.from({ length: 31 }, (_, i) => ({
+      id: `f${i}`,
+      label: `項目${i}`,
+      type: "text",
+    }));
+    const out = copyFieldDefs(many);
+    expect(out).toHaveLength(30);
+    expect(out.at(-1)?.label).toBe("項目29");
+  });
+});
+
+describe("定義エディタの state 変換", () => {
+  // PDS が返す DAG-CBOR の正準キー順 (キー長 → バイト順) で書いた保存済み定義。
+  // scale: 0 / multiple: false を明示し、archived の項目が途中にある並び
+  const saved = [
+    {
+      id: "kind",
+      type: "select",
+      label: "種類",
+      options: [
+        { id: "a", label: "ホール" },
+        { id: "b", label: "旧", archived: true },
+      ],
+      multiple: false,
+    },
+    { id: "old", type: "text", label: "旧項目", archived: true },
+    { id: "w", type: "number", unit: "kg", label: "重量", scale: 0 },
+    { id: "part", type: "select", label: "部位", options: [{ id: "x", label: "脚" }], multiple: true },
+    { id: "t", type: "duration", label: "タイム" },
+  ] as FieldDef[];
+
+  it("保存済み def → 編集 state → def → sanitize が元の sanitize 結果と一致する", () => {
+    const editing = saved.map((d) => toEditableField(d, true));
+    const roundTrip = sanitizeFieldsForRecord(orderFields(editing).map(toFieldDef));
+    const original = sanitizeFieldsForRecord(orderFields(saved));
+    expect(JSON.stringify(roundTrip)).toBe(JSON.stringify(original));
+    // archived は末尾、scale: 0 は保たれる
+    expect(roundTrip?.map((d) => d.id)).toEqual(["kind", "w", "part", "t", "old"]);
+    expect(roundTrip?.find((d) => d.id === "w")?.scale).toBe(0);
+  });
+
+  it("開いただけでは dirty にならず、変更すると dirty になる", () => {
+    const editing = saved.map((d) => toEditableField(d, true));
+    expect(fieldDefsDirty(editing, saved)).toBe(false);
+    expect(fieldDefsDirty([], undefined)).toBe(false);
+    const renamed = editing.map((f) => (f.id === "w" ? { ...f, label: "重さ" } : f));
+    expect(fieldDefsDirty(renamed, saved)).toBe(true);
+  });
+});
+
+describe("optionLabelTaken", () => {
+  const options = [
+    { id: "a", label: "ホール" },
+    { id: "b", label: "Room" },
+  ];
+
+  it("normalizeTag 後に tagKey が一致する他の選択肢があれば true", () => {
+    expect(optionLabelTaken(options, "#room")).toBe(true);
+    expect(optionLabelTaken(options, " ホール ")).toBe(true);
+    expect(optionLabelTaken(options, "周遊")).toBe(false);
+  });
+
+  it("exceptId の選択肢自身は除く。空になる名前は重複扱いしない", () => {
+    expect(optionLabelTaken(options, "ROOM", "b")).toBe(false);
+    expect(optionLabelTaken(options, "#")).toBe(false);
+  });
 });
 
 describe("restoreBlankLabel", () => {
@@ -168,6 +259,14 @@ describe("restoreBlankLabel", () => {
     expect(restoreBlankLabel("", "種類")).toBe("種類");
     expect(restoreBlankLabel("場所", "種類")).toBe("場所");
     expect(restoreBlankLabel("  ", undefined)).toBe("  ");
+  });
+
+  it("選択肢は normalizeTag で消える名前 (# や ， だけ) も空とみなす", () => {
+    expect(restoreBlankLabel("#", "ホール", isBlankOptionLabel)).toBe("ホール");
+    expect(restoreBlankLabel(" ，", "ホール", isBlankOptionLabel)).toBe("ホール");
+    expect(restoreBlankLabel("#ルーム", "ホール", isBlankOptionLabel)).toBe("#ルーム");
+    // 項目名は trim 判定のまま
+    expect(restoreBlankLabel("#", "種類")).toBe("#");
   });
 });
 

@@ -305,29 +305,158 @@ export function convertTagGroupsToFields(
 /**
  * 他のスレッドの定義を複製する。archived の項目・選択肢は持ち込まず、
  * 項目と選択肢の id はすべて振り直す (コピー後は元のスレッドと独立させる)。
+ * archived を除くと選択肢が無くなる select は落とす。MAX_FIELDS 件で打ち切る。
  * 戻り値は未サニタイズ。保存前に必ず sanitizeFieldsForRecord を通すこと。
  */
 export function copyFieldDefs(defs: FieldDef[]): FieldDef[] {
-  return defs
-    .filter((def) => !def.archived)
-    .map((def) => {
-      const next: FieldDef = { ...def, id: generateFieldId() };
-      if (def.options) {
-        next.options = def.options
-          .filter((o) => !o.archived)
-          .map((o) => ({ id: generateFieldId(), label: o.label }));
-      }
-      return next;
-    });
+  const out: FieldDef[] = [];
+  for (const def of defs) {
+    if (out.length >= MAX_FIELDS) break;
+    if (def.archived) continue;
+    const next: FieldDef = { ...def, id: generateFieldId() };
+    if (def.type === "select") {
+      next.options = (def.options ?? [])
+        .filter((o) => !o.archived)
+        .map((o) => ({ id: generateFieldId(), label: o.label }));
+      if (next.options.length === 0) continue;
+    }
+    out.push(next);
+  }
+  return out;
+}
+
+// ─── 定義エディタ (スレッド編集画面) ───────────────────────────
+
+/** 編集中の選択肢。並べ替えても入力が壊れないよう id を key にする */
+export interface EditableFieldOption {
+  id: string;
+  label: string;
+  archived: boolean;
+  /** 保存済みの選択肢か。保存済みは削除せず非表示 (archived) にする */
+  saved: boolean;
+  /** 保存済みの名前。空のまま入力欄を離れたら戻す。未保存は undefined */
+  savedLabel?: string;
+}
+
+/** 編集中の記録項目。型ごとに使わない値も持っておき、保存時に sanitize で落とす */
+export interface EditableField {
+  id: string;
+  label: string;
+  type: FieldType;
+  multiple: boolean;
+  options: EditableFieldOption[];
+  unit: string;
+  /** 未設定 (= 0 桁) は undefined。保存済みの値は 0 も含めてそのまま保つ */
+  scale?: number;
+  archived: boolean;
+  /** 保存済みの項目か。保存済みは種類を変えられず、削除せず非表示にする */
+  saved: boolean;
+  /** 保存時点の multiple。複数 → 1 つだけ に変えたときの注記に使う */
+  savedMultiple: boolean;
+  /** 保存済みの名前。空のまま入力欄を離れたら戻す。未保存は undefined */
+  savedLabel?: string;
+}
+
+export function toEditableField(def: FieldDef, saved: boolean): EditableField {
+  return {
+    id: def.id,
+    label: def.label,
+    type: def.type,
+    multiple: Boolean(def.multiple),
+    options: (def.options ?? []).map((o) => ({
+      id: o.id,
+      label: o.label,
+      archived: Boolean(o.archived),
+      saved,
+      savedLabel: saved ? o.label : undefined,
+    })),
+    unit: def.unit ?? "",
+    scale: def.scale,
+    archived: Boolean(def.archived),
+    saved,
+    savedMultiple: saved && Boolean(def.multiple),
+    savedLabel: saved ? def.label : undefined,
+  };
+}
+
+export function toFieldDef(f: EditableField): FieldDef {
+  return {
+    id: f.id,
+    label: f.label,
+    type: f.type,
+    multiple: f.multiple,
+    options: f.options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      archived: o.archived || undefined,
+    })),
+    unit: f.unit,
+    scale: f.scale,
+    archived: f.archived || undefined,
+  };
+}
+
+/** 表示・保存の順。非表示の項目は最後にまとめる (それぞれの中の順は保つ) */
+export function orderFields<T extends { archived?: boolean }>(fields: T[]): T[] {
+  return [
+    ...fields.filter((f) => !f.archived),
+    ...fields.filter((f) => f.archived),
+  ];
 }
 
 /**
- * 名前の入力欄を離れたときの値。保存済みの項目・選択肢の名前が空 (trim 後) なら
- * 保存済みの名前に戻す (空のまま保存すると sanitize で落ちて実質削除になるため)。
- * 未保存 (`saved` が undefined) はそのまま返す。
+ * 編集中の定義が保存済みの定義から変わったか。両辺を同じ順序規則と
+ * sanitize に通してから比べる (PDS は record を DAG-CBOR の正準キー順で返すので、
+ * 生の record と JSON で比べるとキー順の違いだけで常に差分になる)。
  */
-export function restoreBlankLabel(label: string, saved?: string): string {
-  return saved !== undefined && !label.trim() ? saved : label;
+export function fieldDefsDirty(
+  editing: EditableField[],
+  saved: FieldDef[] | undefined,
+): boolean {
+  const next = sanitizeFieldsForRecord(orderFields(editing).map(toFieldDef));
+  const prev = sanitizeFieldsForRecord(orderFields(saved ?? []));
+  return JSON.stringify(next ?? []) !== JSON.stringify(prev ?? []);
+}
+
+/** 選択肢名の比較キー。保存時と同じ normalizeTag を通してから tagKey を取る */
+function optionLabelKey(label: string): string | null {
+  const normalized = normalizeTag(label);
+  return normalized === null ? null : tagKey(normalized);
+}
+
+/**
+ * 同じ項目内に同じ名前 (normalizeTag 後に tagKey 一致) の選択肢があるか。
+ * archived の選択肢も対象。`exceptId` はその選択肢自身を除くため (改名時)。
+ */
+export function optionLabelTaken(
+  options: { id: string; label: string }[],
+  label: string,
+  exceptId?: string,
+): boolean {
+  const key = optionLabelKey(label);
+  if (key === null) return false;
+  return options.some(
+    (o) => o.id !== exceptId && optionLabelKey(o.label) === key,
+  );
+}
+
+/** 項目名の空判定。trim して空なら空 */
+export const isBlankFieldLabel = (label: string): boolean => !label.trim();
+/** 選択肢名の空判定。保存時の normalizeTag で消える (`#` や `，` だけ等) なら空 */
+export const isBlankOptionLabel = (label: string): boolean =>
+  normalizeTag(label) === null;
+
+/**
+ * 名前の入力欄を離れたときの値。保存済みの項目・選択肢の名前が空なら
+ * 保存済みの名前に戻す (空のまま保存すると sanitize で落ちて実質削除になるため)。
+ * 未保存 (`saved` が undefined) はそのまま返す。空判定は既定で trim。
+ */
+export function restoreBlankLabel(
+  label: string,
+  saved?: string,
+  isBlank: (label: string) => boolean = isBlankFieldLabel,
+): string {
+  return saved !== undefined && isBlank(label) ? saved : label;
 }
 
 // ─── 絞り込み / 集計 ──────────────────────────────────────────
