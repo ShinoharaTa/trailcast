@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { BlobRef } from "@atproto/api";
 import { PhotoIcon, TrashIcon } from "@/components/ui/icons";
-import { updateThread } from "@/lib/pds/threads";
+import { listThreads, updateThread } from "@/lib/pds/threads";
 import { uploadImage } from "@/lib/pds/posts";
 import { processCoverImage } from "@/lib/image-processing";
 import {
   effectiveSortOrder,
   parseAtUri,
+  type FieldDef,
+  type FieldType,
   stripRecordMeta,
   type ThreadSortOrder,
   type ThreadWithMeta,
@@ -24,6 +26,7 @@ import { useBlobUrl } from "@/components/ui/blob-image";
 import { TagInput } from "@/components/ui/tag-input";
 import {
   MAX_TAG_GROUPS,
+  MAX_TAG_LENGTH,
   MAX_TAG_GROUP_LABEL_LENGTH,
   MAX_TAGS_PER_GROUP,
   MAX_DEFAULT_TAGS,
@@ -32,14 +35,104 @@ import {
   sanitizeTagGroupsForRecord,
   sanitizeThreadTagsForRecord,
   tagKey,
+  normalizeTag,
   type TagCount,
 } from "@/lib/tags";
+import {
+  MAX_FIELDS,
+  MAX_FIELD_LABEL_LENGTH,
+  MAX_FIELD_OPTIONS,
+  MAX_FIELD_UNIT_LENGTH,
+  convertTagGroupsToFields,
+  copyFieldDefs,
+  generateFieldId,
+  sanitizeFieldsForRecord,
+} from "@/lib/fields";
 
 /** 編集中のグループ。並べ替え・削除しても TagInput の内部状態が壊れないよう id を持つ */
 interface EditableTagGroup {
   id: number;
   label: string;
   tags: string[];
+}
+
+/** 編集中の選択肢。並べ替えても入力が壊れないよう id を key にする */
+interface EditableFieldOption {
+  id: string;
+  label: string;
+  archived: boolean;
+  /** 保存済みの選択肢か。保存済みは削除せず非表示 (archived) にする */
+  saved: boolean;
+}
+
+/** 編集中の記録項目。型ごとに使わない値も持っておき、保存時に sanitize で落とす */
+interface EditableField {
+  id: string;
+  label: string;
+  type: FieldType;
+  multiple: boolean;
+  options: EditableFieldOption[];
+  unit: string;
+  scale: number;
+  archived: boolean;
+  /** 保存済みの項目か。保存済みは種類を変えられず、削除せず非表示にする */
+  saved: boolean;
+  /** 保存時点の multiple。複数 → 1 つだけ に変えたときの注記に使う */
+  savedMultiple: boolean;
+}
+
+const FIELD_TYPE_LABELS: Record<FieldType, string> = {
+  select: "選択",
+  number: "数値",
+  duration: "時間",
+  text: "テキスト",
+};
+const FIELD_TYPES: FieldType[] = ["select", "number", "duration", "text"];
+
+function toEditableField(def: FieldDef, saved: boolean): EditableField {
+  return {
+    id: def.id,
+    label: def.label,
+    type: def.type,
+    multiple: Boolean(def.multiple),
+    options: (def.options ?? []).map((o) => ({
+      id: o.id,
+      label: o.label,
+      archived: Boolean(o.archived),
+      saved,
+    })),
+    unit: def.unit ?? "",
+    scale: def.scale ?? 0,
+    archived: Boolean(def.archived),
+    saved,
+    savedMultiple: saved && Boolean(def.multiple),
+  };
+}
+
+function toFieldDef(f: EditableField): FieldDef {
+  return {
+    id: f.id,
+    label: f.label,
+    type: f.type,
+    multiple: f.multiple,
+    options: f.options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      archived: o.archived || undefined,
+    })),
+    unit: f.unit,
+    // 0 は既定値なので書かない (省略 = 0 桁)
+    scale: f.scale === 0 ? undefined : f.scale,
+    archived: f.archived || undefined,
+  };
+}
+
+/** 表示・保存の順。非表示の項目は最後にまとめる */
+function orderFields(fields: EditableField[]): EditableField[] {
+  return [
+    ...fields.filter((f) => !f.archived),
+    ...fields.filter((f) => f.archived),
+  ];
 }
 
 export interface ThreadEditScreenProps {
@@ -128,6 +221,115 @@ export function ThreadEditScreen({
     setTagGroups((gs) => gs.filter((g) => g.id !== id));
   };
 
+  // 記録項目 (#58)。保存済みかどうかで種類の変更・削除の扱いが変わる
+  const [fields, setFields] = useState<EditableField[]>(() =>
+    (thread.fields ?? []).map((d) => toEditableField(d, true)),
+  );
+  // 終了したスレッドの定義は編集させない (再開スイッチを入れれば編集できる)
+  const fieldsLocked = Boolean(thread.endedAt) && ended;
+  const orderedFields = orderFields(fields);
+
+  const addField = (type: FieldType) => {
+    setFields((fs) =>
+      fs.length >= MAX_FIELDS
+        ? fs
+        : [
+            ...fs,
+            {
+              id: generateFieldId(),
+              label: "",
+              type,
+              multiple: false,
+              options: [],
+              unit: "",
+              scale: 0,
+              archived: false,
+              saved: false,
+              savedMultiple: false,
+            },
+          ],
+    );
+  };
+
+  const updateField = (id: string, patch: Partial<EditableField>) => {
+    setFields((fs) => fs.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  };
+
+  // 並べ替えは表示中 (非表示でない) の項目の中だけで行う
+  const moveField = (id: string, dir: -1 | 1) => {
+    setFields((fs) => {
+      const active = fs.filter((f) => !f.archived);
+      const i = active.findIndex((f) => f.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= active.length) return fs;
+      [active[i], active[j]] = [active[j], active[i]];
+      return [...active, ...fs.filter((f) => f.archived)];
+    });
+  };
+
+  // 未保存の項目はそのまま消し、保存済みの項目は非表示 (archived) にする。
+  // 非表示 / 再表示のどちらも末尾に移す (非表示は最後にまとまり、
+  // 再表示した項目は表示中の項目の最後に来る)
+  const removeField = (id: string) => {
+    setFields((fs) => {
+      const target = fs.find((f) => f.id === id);
+      if (!target) return fs;
+      const rest = fs.filter((f) => f.id !== id);
+      return target.saved ? [...rest, { ...target, archived: true }] : rest;
+    });
+  };
+
+  const restoreField = (id: string) => {
+    setFields((fs) => {
+      const target = fs.find((f) => f.id === id);
+      if (!target) return fs;
+      return [...fs.filter((f) => f.id !== id), { ...target, archived: false }];
+    });
+  };
+
+  // タググループ → 記録項目の変換パネル。グループごとの「複数」(既定 true)
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [convertMultiple, setConvertMultiple] = useState<boolean[]>([]);
+
+  // 他のスレッドからコピー。候補は開いたときに読み込む
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyCandidates, setCopyCandidates] = useState<ThreadWithMeta[] | null>(
+    null,
+  );
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [copySource, setCopySource] = useState("");
+
+  const openCopy = async () => {
+    setCopyOpen(true);
+    if (copyCandidates) return;
+    setCopyError(null);
+    try {
+      const threads = await listThreads();
+      const candidates = threads.filter(
+        (t) =>
+          t.rkey !== thread.rkey && (t.fields ?? []).some((f) => !f.archived),
+      );
+      setCopyCandidates(candidates);
+      setCopySource(candidates[0]?.rkey ?? "");
+    } catch (e) {
+      setCopyError(
+        e instanceof Error ? e.message : "スレッドの読み込みに失敗しました",
+      );
+    }
+  };
+
+  const copyFromThread = () => {
+    const source = copyCandidates?.find((t) => t.rkey === copySource);
+    if (!source) return;
+    setFields((fs) => [
+      ...fs,
+      ...copyFieldDefs(source.fields ?? [])
+        .slice(0, Math.max(0, MAX_FIELDS - fs.length))
+        .map((d) => toEditableField(d, false)),
+    ]);
+    setCopyOpen(false);
+  };
+
   // カバー画像の状態: 既存維持 / 新規選択 / 削除
   const threadDid = parseAtUri(thread.uri).repo;
   const initialCoverUrl = useBlobUrl(threadDid, thread.coverImage);
@@ -193,7 +395,9 @@ export function ThreadEditScreen({
           sortOrder: sortOrder === defaultSortOrder ? undefined : sortOrder,
           // 終了時刻は最初に終了した時刻を保つ。再開したら消す。
           endedAt: ended ? (thread.endedAt ?? new Date().toISOString()) : undefined,
+          // 変換した場合は編集中の tagGroups が空なので undefined になる
           tagGroups: sanitizedTagGroups,
+          fields: sanitizedFields,
           tags: sanitizedThreadTags,
           defaultTags: sanitizedDefaultTags,
           // 編集は活動なので一覧の並びを進める (spread で古い値が入るため明示)
@@ -218,6 +422,32 @@ export function ThreadEditScreen({
   const tagGroupsDirty =
     JSON.stringify(sanitizedTagGroups ?? []) !==
     JSON.stringify(thread.tagGroups ?? []);
+  const sanitizedFields = sanitizeFieldsForRecord(
+    orderedFields.map(toFieldDef),
+  );
+  const fieldsDirty =
+    JSON.stringify(sanitizedFields ?? []) !==
+    JSON.stringify(thread.fields ?? []);
+  // タググループの変換は、記録項目がまだ 1 件も無い (非表示も含め) ときだけ出す
+  const canConvertTagGroups =
+    !fieldsLocked &&
+    fields.length === 0 &&
+    (sanitizedTagGroups?.length ?? 0) > 0;
+  const openConvert = () => {
+    setConvertMultiple((sanitizedTagGroups ?? []).map(() => true));
+    setConvertOpen(true);
+  };
+  const convertTagGroups = () => {
+    const groups = sanitizedTagGroups ?? [];
+    setFields(
+      convertTagGroupsToFields(groups, {
+        multiple: (g) => convertMultiple[groups.indexOf(g)] ?? true,
+      }).map((d) => toEditableField(d, false)),
+    );
+    // 保存で確定する。保存せずにキャンセルすれば元のグループが残る
+    setTagGroups([]);
+    setConvertOpen(false);
+  };
   const sanitizedThreadTags = sanitizeThreadTagsForRecord(threadTagList);
   const sanitizedDefaultTags = sanitizeDefaultTagsForRecord(defaultTags);
   const threadTagsDirty =
@@ -242,6 +472,7 @@ export function ThreadEditScreen({
     coverFile !== null ||
     coverRemoved ||
     tagGroupsDirty ||
+    fieldsDirty ||
     threadTagsDirty;
 
   return (
@@ -396,6 +627,185 @@ export function ThreadEditScreen({
               新しい順 (降順)
             </button>
           </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+          <div className="text-sm text-white/70">記録項目</div>
+          <p className="mb-3 mt-0.5 text-[11px] leading-relaxed text-white/40">
+            投稿で記録する項目を決めます。選択肢・数値・時間・テキストから選べます。名前や選択肢はあとから変えても、過去の記録はそのまま残ります。
+          </p>
+          {fieldsLocked && (
+            <p className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200/80">
+              終了したスレッドの記録項目は編集できません。再開すると編集できます。
+            </p>
+          )}
+
+          {canConvertTagGroups && !convertOpen && (
+            <button
+              type="button"
+              onClick={openConvert}
+              disabled={submitting}
+              className="mb-3 w-full rounded-lg border border-indigo-400/30 bg-indigo-500/10 py-2.5 text-xs font-medium text-indigo-200 transition hover:bg-indigo-500/20 disabled:opacity-50"
+            >
+              タググループを記録項目に変換
+            </button>
+          )}
+          {canConvertTagGroups && convertOpen && (
+            <div className="mb-3 rounded-lg border border-indigo-400/30 bg-indigo-500/[0.06] p-3">
+              <div className="text-xs font-medium text-white/70">
+                タググループを記録項目に変換
+              </div>
+              <p className="mb-2.5 mt-0.5 text-[11px] text-white/40">
+                過去の投稿は書き換えません。タグから自動で読み取ります。
+              </p>
+              <div className="space-y-2">
+                {(sanitizedTagGroups ?? []).map((g, i) => (
+                  <div
+                    key={`${i}-${g.label}`}
+                    className="flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0 truncate text-xs text-white/70">
+                      {g.label}
+                      <span className="ml-1.5 text-white/30">
+                        {g.tags.length} 件
+                      </span>
+                    </div>
+                    <SegmentedToggle
+                      label={`${g.label} の選び方`}
+                      value={convertMultiple[i] ?? true}
+                      onChange={(multiple) =>
+                        setConvertMultiple((ms) =>
+                          ms.map((m, j) => (j === i ? multiple : m)),
+                        )
+                      }
+                      disabled={submitting}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConvertOpen(false)}
+                  disabled={submitting}
+                  className="flex-1 rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-medium text-white/70 transition hover:bg-white/10 disabled:opacity-50"
+                >
+                  やめる
+                </button>
+                <button
+                  type="button"
+                  onClick={convertTagGroups}
+                  disabled={submitting}
+                  className="flex-1 rounded-lg bg-indigo-500/80 py-2 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  変換する
+                </button>
+              </div>
+            </div>
+          )}
+
+          <fieldset disabled={fieldsLocked || submitting} className="min-w-0">
+            {orderedFields.length > 0 && (
+              <div className="space-y-3">
+                {orderedFields.map((f, i) => (
+                  <FieldCard
+                    key={f.id}
+                    field={f}
+                    canMoveUp={!f.archived && i > 0}
+                    canMoveDown={
+                      !f.archived &&
+                      i + 1 < orderedFields.length &&
+                      !orderedFields[i + 1].archived
+                    }
+                    onChange={(patch) => updateField(f.id, patch)}
+                    onMove={(dir) => moveField(f.id, dir)}
+                    onRemove={() => removeField(f.id)}
+                    onRestore={() => restoreField(f.id)}
+                  />
+                ))}
+              </div>
+            )}
+            <div
+              className={`grid grid-cols-4 gap-2 ${
+                orderedFields.length > 0 ? "mt-3" : ""
+              }`}
+            >
+              {FIELD_TYPES.map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => addField(type)}
+                  disabled={fields.length >= MAX_FIELDS}
+                  className="rounded-lg border border-dashed border-white/15 py-2.5 text-xs font-medium text-white/50 transition hover:border-indigo-400/40 hover:text-white/80 disabled:opacity-40"
+                >
+                  ＋ {FIELD_TYPE_LABELS[type]}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
+          {!fieldsLocked && !copyOpen && (
+            <button
+              type="button"
+              onClick={openCopy}
+              disabled={submitting || fields.length >= MAX_FIELDS}
+              className="mt-2 w-full rounded-lg py-2 text-[11px] text-white/45 transition hover:bg-white/5 hover:text-white/70 disabled:opacity-40"
+            >
+              他のスレッドからコピー
+            </button>
+          )}
+          {!fieldsLocked && copyOpen && (
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <div className="mb-2 text-xs font-medium text-white/70">
+                他のスレッドからコピー
+              </div>
+              {copyError ? (
+                <p className="text-[11px] text-red-400">{copyError}</p>
+              ) : !copyCandidates ? (
+                <p className="text-[11px] text-white/40">読み込み中...</p>
+              ) : copyCandidates.length === 0 ? (
+                <p className="text-[11px] text-white/40">
+                  コピーできるスレッドがありません
+                </p>
+              ) : (
+                <select
+                  value={copySource}
+                  onChange={(e) => setCopySource(e.target.value)}
+                  disabled={submitting}
+                  aria-label="コピー元のスレッド"
+                  className="w-full rounded-lg border border-white/10 bg-surface-900 px-3 py-2 text-base text-white outline-none focus:border-indigo-400 md:text-sm"
+                >
+                  {copyCandidates.map((t) => (
+                    <option key={t.rkey} value={t.rkey}>
+                      {t.title}（
+                      {(t.fields ?? []).filter((f) => !f.archived).length} 項目）
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="mt-2.5 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCopyOpen(false)}
+                  className="flex-1 rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-medium text-white/70 transition hover:bg-white/10"
+                >
+                  閉じる
+                </button>
+                {copyCandidates && copyCandidates.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={copyFromThread}
+                    disabled={
+                      submitting || !copySource || fields.length >= MAX_FIELDS
+                    }
+                    className="flex-1 rounded-lg bg-indigo-500/80 py-2 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    コピー
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div
@@ -588,6 +998,326 @@ export function ThreadEditScreen({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** 「1 つだけ / 複数」の切り替え。value は multiple */
+function SegmentedToggle({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (multiple: boolean) => void;
+  disabled?: boolean;
+}) {
+  const item = (multiple: boolean, text: string) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={value === multiple}
+      onClick={() => onChange(multiple)}
+      disabled={disabled}
+      className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 ${
+        value === multiple
+          ? "bg-indigo-500/25 text-white"
+          : "text-white/45 hover:text-white/70"
+      }`}
+    >
+      {text}
+    </button>
+  );
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex shrink-0 gap-0.5 rounded-lg border border-white/10 bg-white/[0.03] p-0.5"
+    >
+      {item(false, "1 つだけ")}
+      {item(true, "複数")}
+    </div>
+  );
+}
+
+const moveButtonClass =
+  "flex size-8 shrink-0 items-center justify-center rounded-lg text-xs text-white/40 transition hover:bg-white/5 hover:text-white/80 disabled:opacity-30";
+
+function FieldCard({
+  field,
+  canMoveUp,
+  canMoveDown,
+  onChange,
+  onMove,
+  onRemove,
+  onRestore,
+}: {
+  field: EditableField;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onChange: (patch: Partial<EditableField>) => void;
+  onMove: (dir: -1 | 1) => void;
+  onRemove: () => void;
+  onRestore: () => void;
+}) {
+  const [optionDraft, setOptionDraft] = useState("");
+
+  if (field.archived) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5 opacity-60">
+        <div className="min-w-0 flex-1 truncate text-xs text-white/60">
+          {field.label || "(名前なし)"}
+          <span className="ml-1.5 text-white/30">
+            {FIELD_TYPE_LABELS[field.type]}・非表示
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onRestore}
+          className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-white/70 transition hover:bg-white/10 disabled:opacity-50"
+        >
+          再表示
+        </button>
+      </div>
+    );
+  }
+
+  const updateOption = (id: string, patch: Partial<EditableFieldOption>) => {
+    onChange({
+      options: field.options.map((o) => (o.id === id ? { ...o, ...patch } : o)),
+    });
+  };
+
+  const moveOption = (id: string, dir: -1 | 1) => {
+    const options = [...field.options];
+    const i = options.findIndex((o) => o.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= options.length) return;
+    [options[i], options[j]] = [options[j], options[i]];
+    onChange({ options });
+  };
+
+  const removeOption = (id: string) => {
+    onChange({ options: field.options.filter((o) => o.id !== id) });
+  };
+
+  const addOption = () => {
+    const label = normalizeTag(optionDraft);
+    if (!label || field.options.length >= MAX_FIELD_OPTIONS) return;
+    // 同じ名前 (大文字小文字を区別しない) の選択肢は追加しない
+    const key = tagKey(label);
+    if (field.options.some((o) => tagKey(o.label) === key)) return;
+    onChange({
+      options: [
+        ...field.options,
+        { id: generateFieldId(), label, archived: false, saved: false },
+      ],
+    });
+    setOptionDraft("");
+  };
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+      <div className="mb-2.5 flex items-center gap-1">
+        <input
+          type="text"
+          value={field.label}
+          onChange={(e) => onChange({ label: e.target.value })}
+          placeholder="項目名 (例: 種類)"
+          maxLength={MAX_FIELD_LABEL_LENGTH}
+          aria-label="項目名"
+          className="mr-1 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
+        />
+        <button
+          type="button"
+          onClick={() => onMove(-1)}
+          disabled={!canMoveUp}
+          aria-label="上へ"
+          className={moveButtonClass}
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          onClick={() => onMove(1)}
+          disabled={!canMoveDown}
+          aria-label="下へ"
+          className={moveButtonClass}
+        >
+          ↓
+        </button>
+        {field.saved ? (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="shrink-0 rounded-lg px-2 py-1.5 text-[11px] text-white/45 transition hover:bg-white/5 hover:text-white/80 disabled:opacity-50"
+          >
+            非表示にする
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`項目${field.label ? ` ${field.label}` : ""} を削除`}
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/40 transition hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+          >
+            <TrashIcon className="size-4" />
+          </button>
+        )}
+      </div>
+
+      {field.saved ? (
+        <div className="mb-2.5 text-[11px] text-white/45">
+          種類: {FIELD_TYPE_LABELS[field.type]}
+          <span className="ml-1.5 text-white/30">
+            保存済みの項目は種類を変えられません
+          </span>
+        </div>
+      ) : (
+        <div
+          role="radiogroup"
+          aria-label="種類"
+          className="mb-2.5 grid grid-cols-4 gap-1"
+        >
+          {FIELD_TYPES.map((type) => (
+            <button
+              key={type}
+              type="button"
+              role="radio"
+              aria-checked={field.type === type}
+              onClick={() => onChange({ type })}
+              className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition disabled:opacity-50 ${
+                field.type === type
+                  ? "border-indigo-400/60 bg-indigo-500/15 text-white"
+                  : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/5"
+              }`}
+            >
+              {FIELD_TYPE_LABELS[type]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {field.type === "select" && (
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-[11px] text-white/45">選び方</span>
+            <SegmentedToggle
+              label="選び方"
+              value={field.multiple}
+              onChange={(multiple) => onChange({ multiple })}
+            />
+          </div>
+          {field.savedMultiple && !field.multiple && (
+            <p className="mb-2 text-[11px] text-amber-200/70">
+              すでに複数選ばれている記録はそのまま残ります
+            </p>
+          )}
+          {field.options.length > 0 && (
+            <div className="mb-2 space-y-1.5">
+              {field.options.map((o, i) => (
+                <div
+                  key={o.id}
+                  className={`flex items-center gap-1 ${o.archived ? "opacity-50" : ""}`}
+                >
+                  <input
+                    type="text"
+                    value={o.label}
+                    onChange={(e) =>
+                      updateOption(o.id, { label: e.target.value })
+                    }
+                    maxLength={MAX_TAG_LENGTH}
+                    aria-label="選択肢の名前"
+                    className="mr-1 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-base text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => moveOption(o.id, -1)}
+                    disabled={i === 0}
+                    aria-label="上へ"
+                    className={moveButtonClass}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveOption(o.id, 1)}
+                    disabled={i === field.options.length - 1}
+                    aria-label="下へ"
+                    className={moveButtonClass}
+                  >
+                    ↓
+                  </button>
+                  {o.saved ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateOption(o.id, { archived: !o.archived })
+                      }
+                      className="w-14 shrink-0 rounded-lg py-1.5 text-[11px] text-white/45 transition hover:bg-white/5 hover:text-white/80 disabled:opacity-50"
+                    >
+                      {o.archived ? "再表示" : "非表示"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => removeOption(o.id)}
+                      aria-label={`選択肢 ${o.label} を削除`}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/40 transition hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+                    >
+                      <TrashIcon className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <input
+            type="text"
+            value={optionDraft}
+            onChange={(e) => setOptionDraft(e.target.value)}
+            onKeyDown={(e) => {
+              // IME 変換中の Enter は変換確定なので無視する
+              if (e.nativeEvent.isComposing || e.key !== "Enter") return;
+              e.preventDefault();
+              addOption();
+            }}
+            disabled={field.options.length >= MAX_FIELD_OPTIONS}
+            placeholder="＋ 選択肢を追加（Enter）"
+            maxLength={MAX_TAG_LENGTH}
+            aria-label="選択肢を追加"
+            className="w-full rounded-lg border border-dashed border-white/15 bg-transparent px-3 py-1.5 text-base text-white placeholder-white/30 outline-none focus:border-indigo-400 disabled:opacity-40 md:text-sm"
+          />
+        </div>
+      )}
+
+      {field.type === "number" && (
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={field.unit}
+            onChange={(e) => onChange({ unit: e.target.value })}
+            placeholder="単位 (例: kg / km / 回)"
+            maxLength={MAX_FIELD_UNIT_LENGTH}
+            aria-label="単位"
+            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
+          />
+          <select
+            value={field.scale}
+            onChange={(e) => onChange({ scale: Number(e.target.value) })}
+            aria-label="小数桁"
+            className="shrink-0 rounded-lg border border-white/10 bg-surface-900 px-2 py-1.5 text-base text-white outline-none focus:border-indigo-400 md:text-sm"
+          >
+            {[0, 1, 2, 3].map((n) => (
+              <option key={n} value={n}>
+                {n === 0 ? "整数" : `小数 ${n} 桁`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 }

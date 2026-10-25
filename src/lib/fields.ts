@@ -302,6 +302,25 @@ export function convertTagGroupsToFields(
   }));
 }
 
+/**
+ * 他のスレッドの定義を複製する。archived の項目・選択肢は持ち込まず、
+ * 項目と選択肢の id はすべて振り直す (コピー後は元のスレッドと独立させる)。
+ * 戻り値は未サニタイズ。保存前に必ず sanitizeFieldsForRecord を通すこと。
+ */
+export function copyFieldDefs(defs: FieldDef[]): FieldDef[] {
+  return defs
+    .filter((def) => !def.archived)
+    .map((def) => {
+      const next: FieldDef = { ...def, id: generateFieldId() };
+      if (def.options) {
+        next.options = def.options
+          .filter((o) => !o.archived)
+          .map((o) => ({ id: generateFieldId(), label: o.label }));
+      }
+      return next;
+    });
+}
+
 // ─── 絞り込み / 集計 ──────────────────────────────────────────
 
 /**

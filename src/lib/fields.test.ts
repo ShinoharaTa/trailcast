@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   FIELD_UNSET,
   convertTagGroupsToFields,
+  copyFieldDefs,
   countSelectOptions,
   crosspostTagsFor,
   filterPostsByFields,
@@ -117,6 +118,46 @@ describe("tagGroups からの変換", () => {
     const defs = convertTagGroupsToFields([{ label: "日", tags: ["Day1"] }]);
     const counts = countSelectOptions([{ tags: ["day1"] }, { tags: ["DAY1"] }], defs[0]);
     expect(counts[0].count).toBe(2);
+  });
+});
+
+describe("copyFieldDefs", () => {
+  const src: FieldDef[] = [
+    {
+      id: "kind",
+      label: "種類",
+      type: "select",
+      multiple: true,
+      options: [
+        { id: "a", label: "ホール" },
+        { id: "b", label: "旧", archived: true },
+        { id: "c", label: "ルーム" },
+      ],
+    },
+    { id: "old", label: "旧項目", type: "text", archived: true },
+    { id: "w", label: "重量", type: "number", unit: "kg", scale: 1 },
+  ];
+
+  it("archived の項目・選択肢を除き、設定はそのまま複製する", () => {
+    const out = copyFieldDefs(src);
+    expect(out.map((d) => d.label)).toEqual(["種類", "重量"]);
+    expect(out[0]).toMatchObject({ type: "select", multiple: true });
+    expect(out[0].options?.map((o) => o.label)).toEqual(["ホール", "ルーム"]);
+    expect(out[1]).toMatchObject({ type: "number", unit: "kg", scale: 1 });
+  });
+
+  it("項目と選択肢の id はすべて新しく振られる", () => {
+    const out = copyFieldDefs(src);
+    const oldIds = new Set(src.flatMap((d) => [d.id, ...(d.options ?? []).map((o) => o.id)]));
+    const ids = out.flatMap((d) => [d.id, ...(d.options ?? []).map((o) => o.id)]);
+    expect(ids.every((id) => /^[a-z2-7]{8}$/.test(id) && !oldIds.has(id))).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("元の定義を書き換えない", () => {
+    const before = JSON.stringify(src);
+    copyFieldDefs(src);
+    expect(JSON.stringify(src)).toBe(before);
   });
 });
 
