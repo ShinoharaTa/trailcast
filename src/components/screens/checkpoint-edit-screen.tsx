@@ -2,13 +2,28 @@
 
 import { useState } from "react";
 import { PinIcon, CloseIcon } from "@/components/ui/icons";
-import type { PostWithMeta, Location, TagGroup } from "@/lib/types";
-import { parseAtUri } from "@/lib/types";
+import type {
+  FieldDef,
+  FieldValue,
+  PostWithMeta,
+  Location,
+  TagGroup,
+} from "@/lib/types";
+import { parseAtUri,
+  stripRecordMeta,
+} from "@/lib/types";
 import { updatePost } from "@/lib/pds/posts";
 import { BlobImage } from "@/components/ui/blob-image";
 import { TagInput } from "@/components/ui/tag-input";
+import { FieldInputs } from "@/components/ui/field-inputs";
+import {
+  buildEditedPostFields,
+  fieldValuesFromResolved,
+  initialFreeTagsForEdit,
+  resolveFieldValues,
+} from "@/lib/fields";
 import { recordTagUsage } from "@/lib/pds/tags";
-import { sanitizeTagsForRecord, tagKey, type TagCount } from "@/lib/tags";
+import { tagKey, type TagCount } from "@/lib/tags";
 
 const MAX_TEXT = 200;
 
@@ -30,6 +45,8 @@ export interface CheckpointEditScreenProps {
   threadTags?: TagCount[];
   /** スレッドのタググループ。候補の最上段に見出し付きで出す */
   tagGroups?: TagGroup[];
+  /** スレッド (所有者) の記録項目の定義 */
+  fields?: FieldDef[];
   onSubmitted: () => void;
   onCancel: () => void;
 }
@@ -38,11 +55,21 @@ export function CheckpointEditScreen({
   post,
   threadTags,
   tagGroups,
+  fields,
   onSubmitted,
   onCancel,
 }: CheckpointEditScreenProps) {
   const [text, setText] = useState(post.text ?? "");
-  const [tags, setTags] = useState<string[]>(post.tags ?? []);
+  // タグから読み取った選択肢のタグはタグ欄に出さず、項目のチップ側にだけ出す
+  const [tags, setTags] = useState<string[]>(() =>
+    initialFreeTagsForEdit(post, fields ?? []),
+  );
+  // タグから読み取った選択も、選択済みとして出す
+  const [fieldValues, setFieldValues] = useState<FieldValue[]>(() =>
+    fieldValuesFromResolved(resolveFieldValues(post, fields ?? [])),
+  );
+  const inputDefs = (fields ?? []).filter((d) => !d.archived);
+  const [fieldsValid, setFieldsValid] = useState(true);
   const [checkpointAt, setCheckpointAt] = useState(post.checkpointAt);
   const [location, setLocation] = useState<Location | null>(post.location ?? null);
   const [saving, setSaving] = useState(false);
@@ -52,18 +79,22 @@ export function CheckpointEditScreen({
     setSaving(true);
     setError(null);
     try {
-      const recordTags = sanitizeTagsForRecord(tags);
+      // 項目があるスレッドでは、タグから読み取っていた選択を fields に移し、
+      // そのタグを tags から外す。項目が無ければ fields は元のまま
+      const { fields: recordFields, tags: recordTags } = buildEditedPostFields(
+        post,
+        fields ?? [],
+        fieldValues,
+        tags,
+      );
       await updatePost(post.rkey, {
-        thread: post.thread,
+        // 触っていないフィールド (images / exif / sourceRef など) を落とさない
+        ...stripRecordMeta(post),
         text: text.trim() || undefined,
-        images: post.images,
-        imageUrls: post.imageUrls,
         location: location ?? undefined,
         tags: recordTags,
+        fields: recordFields,
         checkpointAt: checkpointAt || post.checkpointAt,
-        exif: post.exif,
-        sourceRef: post.sourceRef,
-        createdAt: post.createdAt,
       });
       // 編集で新しく付いたタグだけを辞書に加算する (再保存で回数が膨らまないように)
       const before = new Set((post.tags ?? []).map(tagKey));
@@ -110,6 +141,14 @@ export function CheckpointEditScreen({
             {text.length}/{MAX_TEXT}
           </span>
         </div>
+
+        <FieldInputs
+          defs={inputDefs}
+          values={fieldValues}
+          onChange={setFieldValues}
+          onValidityChange={setFieldsValid}
+          disabled={saving}
+        />
 
         <TagInput
           value={tags}
@@ -165,7 +204,7 @@ export function CheckpointEditScreen({
         <div className="flex gap-3">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !fieldsValid}
             className="flex-1 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 disabled:opacity-50"
           >
             {saving ? "保存中..." : "保存"}

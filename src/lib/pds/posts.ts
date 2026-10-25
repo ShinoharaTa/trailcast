@@ -2,11 +2,13 @@ import { getAgent, getMyDid } from "@/lib/atp-agent";
 import {
   NSID_POST,
   buildAtUri,
+  stripRecordMeta,
   type PostRecord,
   type PostWithMeta,
 } from "@/lib/types";
 import { getRecordViaPds } from "@/lib/pds/repo-read";
 import { notifyPostIndexed } from "@/lib/index-api";
+import { touchThread } from "@/lib/pds/thread-activity";
 
 function generateTid(): string {
   const now = BigInt(Date.now()) * 1000n;
@@ -37,6 +39,8 @@ export async function createPost(
   // Public スレッドの集約インデックスに反映する (#14 方式 A)。
   // 失敗しても投稿自体は成功なので待たない・投げない。
   void notifyPostIndexed(res.data.uri);
+  // 一覧を最終活動順に並べるためスレッド側の updatedAt を進める (#47)
+  void touchThread(record.thread);
   return { ...record, uri: res.data.uri, cid: res.data.cid, rkey };
 }
 
@@ -60,10 +64,18 @@ export async function updatePost(
     record: record as unknown as Record<string, unknown>,
   });
   void notifyPostIndexed(res.data.uri);
+  void touchThread(record.thread);
   return { ...record, uri: res.data.uri, cid: res.data.cid, rkey };
 }
 
-export async function deletePost(rkey: string): Promise<void> {
+/**
+ * @param threadUri 削除する投稿が属していたスレッド。渡すとそのスレッドの
+ *   updatedAt を進める (削除後は投稿から辿れないため呼び出し側が渡す)。
+ */
+export async function deletePost(
+  rkey: string,
+  threadUri?: string,
+): Promise<void> {
   const agent = getAgent();
   const did = getMyDid();
   await agent.com.atproto.repo.deleteRecord({
@@ -74,6 +86,7 @@ export async function deletePost(rkey: string): Promise<void> {
   // サーバは PDS に getRecord して不在を確認したらインデックスから消すので、
   // 削除も作成と同じ入口でよい。
   void notifyPostIndexed(buildAtUri(did, NSID_POST, rkey));
+  if (threadUri) void touchThread(threadUri);
 }
 
 /**
@@ -88,20 +101,14 @@ export async function refreshFromSource(
   const { fetchBskyPost } = await import("@/lib/bsky-helpers");
   const bskyData = await fetchBskyPost(post.sourceRef);
 
+  // タグは取り込み後にユーザーが編集しうるので、元投稿では上書きしない。
+  // 本文と画像 URL 以外は既存 record をそのまま引き継ぐ。
   const updated: PostRecord = {
-    thread: post.thread,
+    ...stripRecordMeta(post),
     text: bskyData.text || post.text,
-    images: post.images,
     imageUrls: bskyData.viewImageUrls.length > 0
       ? bskyData.viewImageUrls.slice(0, 4)
       : post.imageUrls,
-    location: post.location,
-    // タグは取り込み後にユーザーが編集しうるので、元投稿では上書きしない
-    tags: post.tags,
-    checkpointAt: post.checkpointAt,
-    exif: post.exif,
-    sourceRef: post.sourceRef,
-    createdAt: post.createdAt,
   };
 
   return updatePost(post.rkey, updated);

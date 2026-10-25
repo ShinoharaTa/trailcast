@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NavigationProps } from "@/lib/use-navigation";
 import type {
+  FieldDef,
   ThreadWithMeta,
   PostWithMeta,
   TagGroup,
 } from "@/lib/types";
-import { parseAtUri, buildAtUri, NSID_THREAD } from "@/lib/types";
+import { parseAtUri, buildAtUri, NSID_THREAD,
+  effectiveSortOrder,
+} from "@/lib/types";
 import { getThread, deleteThread, listPostsForThread } from "@/lib/pds/threads";
 import { deletePost, refreshFromSource } from "@/lib/pds/posts";
 import {
@@ -36,6 +39,8 @@ import {
   tagKey,
   type TagCount,
 } from "@/lib/tags";
+import { initialFreeTagsForEdit, resolveFieldValues } from "@/lib/fields";
+import { formatResolvedValue } from "@/lib/fields-format";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -619,6 +624,33 @@ function TagFilterBar({
   );
 }
 
+/** チェックポイント本文の下、タグの前に出す記録項目の値 (「項目名 値」) */
+function PostFieldValues({
+  post,
+  defs,
+}: {
+  post: PostWithMeta;
+  defs: FieldDef[];
+}) {
+  const items = resolveFieldValues(post, defs)
+    .map((r) => ({ field: r.field, text: formatResolvedValue(r) }))
+    .filter((item) => item.text);
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {items.map(({ field, text }) => (
+        <span
+          key={field.id}
+          className="flex max-w-full items-center gap-1 rounded-full bg-white/5 px-2.5 py-0.5 text-[11px]"
+        >
+          <span className="shrink-0 text-white/40">{field.label}</span>
+          <span className="min-w-0 truncate text-white/75">{text}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** チェックポイント本文の下に出すタグ。クリックでその絞り込みをトグルする */
 function PostTags({
   tags,
@@ -659,10 +691,12 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const { did: myDid, isAuthenticated } = useAuthStore();
   const [thread, setThread] = useState<ThreadWithMeta | null>(null);
   // 内部状態は常に「昇順 (古い順)」で保持し、表示時に thread.sortOrder で反転する。
+  // 省略時の既定は desc (新しい順)。asc を明示したときだけ古い順のまま出す。
   const [posts, setPosts] = useState<PostWithMeta[]>([]);
   const orderedPosts = useMemo(() => {
-    return thread?.sortOrder === "desc" ? [...posts].reverse() : posts;
-  }, [posts, thread?.sortOrder]);
+    if (!thread) return posts;
+    return effectiveSortOrder(thread) === "asc" ? posts : [...posts].reverse();
+  }, [posts, thread]);
 
   // タグ絞り込み (AND)。比較用の tagKey で保持する
   const [selectedTagKeys, setSelectedTagKeys] = useState<string[]>([]);
@@ -901,7 +935,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const executeDeletePost = async (post: PostWithMeta) => {
     setConfirmTarget(null);
     try {
-      await deletePost(post.rkey);
+      await deletePost(post.rkey, post.thread);
       setPosts((prev) => prev.filter((p) => p.uri !== post.uri));
     } catch (e) {
       console.error("Failed to delete post:", e);
@@ -992,8 +1026,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const threadDid = parseAtUri(thread.uri).repo;
   const isOwner = myDid === threadDid;
   // Public スレッドはログインしていれば誰でも投稿できる (README の仕様)。
+  // 終了したスレッドは参加者の投稿を受け付けない (所有者は追記できる)。
   const canPost =
-    isOwner || (isAuthenticated && thread?.visibility === "public");
+    isOwner ||
+    (isAuthenticated && thread?.visibility === "public" && !thread?.endedAt);
   // 投稿の編集・削除・再取得は「その投稿が自分の repo にあるか」で決める。
   // updatePost / deletePost は自分の repo にしか書けないので、スレッド所有者で
   // あっても他人の投稿は操作できないし、参加者は自分の投稿を操作できる。
@@ -1075,6 +1111,14 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           >
             {thread.visibility === "public" ? "Public" : "Private"}
           </span>
+          {thread.endedAt && (
+            <span
+              className="rounded-full bg-amber-500/15 px-3 py-0.5 text-[11px] font-bold text-amber-300"
+              title={`${formatDateTime(thread.endedAt)} に終了`}
+            >
+              終了
+            </span>
+          )}
           <span className="text-xs text-white/40">
             {formatDateTime(thread.createdAt)}
           </span>
@@ -1098,12 +1142,17 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               className="rounded-lg bg-indigo-500/15 px-3.5 py-2 text-xs font-medium text-indigo-300 transition hover:bg-indigo-500/25"
             >
               {/* Private は投稿できないので、ログインの目的をぼかす */}
-              {thread.visibility === "public" ? "ログインして投稿する" : "ログイン"}
+              {thread.visibility === "public" && !thread.endedAt
+                ? "ログインして投稿する"
+                : "ログイン"}
             </button>
           </div>
         )}
 
-        {isAuthenticated && !isOwner && thread.visibility === "public" && (
+        {isAuthenticated &&
+          !isOwner &&
+          thread.visibility === "public" &&
+          !thread.endedAt && (
           <p className="mt-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3.5 py-2.5 text-xs leading-relaxed text-emerald-200/80">
             Public スレッドです。右下の「＋」からあなたもチェックポイントを投稿できます。
             投稿はあなたの PDS に保存され、このスレッドに紐づけて表示されます。
@@ -1343,8 +1392,11 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 </div>
               ) : null}
 
+              <PostFieldValues post={cp} defs={thread.fields ?? []} />
+
               <PostTags
-                tags={cp.tags ?? []}
+                // 項目のチップに出したタグ由来の選択肢は、タグ側では出さない
+                tags={initialFreeTagsForEdit(cp, thread.fields ?? [])}
                 selectedKeys={selectedTagKeys}
                 onToggle={toggleTagKey}
               />
@@ -1460,6 +1512,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               threadTags={threadTagCounts}
               tagGroups={thread.tagGroups}
               defaultTags={thread.defaultTags}
+              fields={thread.fields}
               onSubmitted={onModalSubmitted}
             />
           )}
@@ -1468,6 +1521,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               post={editingPost}
               threadTags={threadTagCounts}
               tagGroups={thread.tagGroups}
+              fields={thread.fields}
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
             />

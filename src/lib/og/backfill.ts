@@ -8,6 +8,7 @@
 
 import { updateThread } from "@/lib/pds/threads";
 import type { ThreadRecord, ThreadWithMeta } from "@/lib/types";
+import { stripRecordMeta } from "@/lib/types";
 
 /** localStorage キー: 「もう表示しない」状態を保存 */
 const DISMISS_FOREVER_KEY = "trailcast_og_backfill_dismissed_forever";
@@ -79,14 +80,15 @@ export async function backfillOneThread(
   thread: ThreadWithMeta,
 ): Promise<ThreadWithMeta> {
   // ThreadRecord 部分だけを putRecord に渡す。`uri/cid/rkey` は record schema 外。
+  // フィールドを列挙する書き方だと、あとから増えた tagGroups / tags / defaultTags
+  // を落として消してしまう (実際に tagGroups が落ちていた) ので、meta を除いた
+  // 残り全部をそのまま渡す。
   const record: ThreadRecord = {
-    title: thread.title,
-    description: thread.description,
-    visibility: thread.visibility,
-    coverImage: thread.coverImage,
-    ogImage: thread.ogImage,
-    createdAt: thread.createdAt,
-    sortOrder: thread.sortOrder,
+    ...stripRecordMeta(thread),
+    // OG 画像の補完は活動ではないので、一覧の並びを動かさない。
+    // 未設定なら並び順の代用値である createdAt を入れて、updateThread の
+    // 自動スタンプ (now) を避ける。
+    updatedAt: thread.updatedAt ?? thread.createdAt,
   };
   // coverBlob は持っていないが、record.coverImage があれば withOgImage 内で
   // PDS から URL を組み立てて使ってくれる。

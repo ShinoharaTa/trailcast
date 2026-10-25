@@ -17,7 +17,7 @@ import type { TagEntry, TagGroup } from "@/lib/types";
  */
 export const MAX_TAGS_PER_POST = 50;
 
-/** タグ 1 件の最大長 (grapheme 単位。lexicon 側はバイト長ではなく文字数上限) */
+/** タグ 1 件の最大長 (grapheme 単位)。lexicon の maxLength は UTF-8 バイト長。書記素数との乖離は #64 で対応 */
 export const MAX_TAG_LENGTH = 64;
 
 /** 個人辞書に保持するタグ件数の上限 (lexicon の maxLength と一致させる) */
@@ -372,7 +372,7 @@ export function buildTagSuggestions(
  * grapheme 単位で先頭 max 文字を取り出す。Intl.Segmenter が無い環境では
  * code point 単位で代替する。
  */
-function sliceGraphemes(input: string, max: number): string {
+export function sliceGraphemes(input: string, max: number): string {
   const SegmenterCtor = (Intl as unknown as { Segmenter?: typeof Intl.Segmenter })
     .Segmenter;
   if (SegmenterCtor) {

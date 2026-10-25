@@ -49,6 +49,15 @@
             },
             "description": "Tags for filtering and aggregation within a thread. Stored without the leading '#'; compared case-insensitively."
           },
+          "fields": {
+            "type": "array",
+            "maxLength": 30,
+            "description": "Values for the thread's custom fields. Each item references a thread.fields[].id. Posts without this property fall back to tags matching option labels (legacy).",
+            "items": {
+              "type": "union",
+              "refs": ["#selectValue", "#numberValue", "#durationValue", "#textValue"]
+            }
+          },
           "checkpointAt": {
             "type": "string",
             "format": "datetime",
@@ -75,6 +84,46 @@
             "description": "Record creation timestamp"
           }
         }
+      }
+    },
+    "selectValue": {
+      "type": "object",
+      "required": ["field", "options"],
+      "properties": {
+        "field": { "type": "string", "maxLength": 16 },
+        "options": {
+          "type": "array",
+          "maxLength": 50,
+          "items": { "type": "string", "maxLength": 16 }
+        }
+      }
+    },
+    "numberValue": {
+      "type": "object",
+      "required": ["field", "value"],
+      "properties": {
+        "field": { "type": "string", "maxLength": 16 },
+        "value": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Decimal string, e.g. \"12.5\". Lexicon has no float type; string keeps it lossless and readable by clients that do not have the thread definition"
+        }
+      }
+    },
+    "durationValue": {
+      "type": "object",
+      "required": ["field", "seconds"],
+      "properties": {
+        "field": { "type": "string", "maxLength": 16 },
+        "seconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "textValue": {
+      "type": "object",
+      "required": ["field", "text"],
+      "properties": {
+        "field": { "type": "string", "maxLength": 16 },
+        "text": { "type": "string", "maxLength": 200 }
       }
     }
   }
