@@ -95,9 +95,11 @@ export function FieldInputs({
 
   const toggleOption = (def: FieldDef, optionId: string) => {
     const current = valueOf(def.id);
+    // 定義に無い id は操作で残さない (archived の選択肢は定義にあるので残す)
+    const known = new Set((def.options ?? []).map((o) => o.id));
     const selected =
       current?.$type === "net.shino3.trailcast.post#selectValue"
-        ? current.options
+        ? current.options.filter((id) => known.has(id))
         : [];
     const options = toggleSelectOption(
       selected,

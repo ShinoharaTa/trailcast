@@ -328,18 +328,25 @@ describe("fieldDefErrors", () => {
     ]);
   });
 
-  it("非表示でない有効な選択肢が 0 件の選択項目は options", () => {
+  it("名前のある選択肢が 0 件の選択項目は options", () => {
     const errors = fieldDefErrors([
       editable({ ...kind, id: "none", options: [] }),
-      editable({ ...kind, id: "hidden", options: [{ id: "a", label: "x", archived: true }] }),
       editable({ ...kind, id: "blank", options: [{ id: "a", label: "#" }] }),
       editable({ ...kind, id: "ok", options: [{ id: "a", label: "#" }, { id: "b", label: "y" }] }),
     ]);
     expect([...errors]).toEqual([
       ["none", "options"],
-      ["hidden", "options"],
       ["blank", "options"],
     ]);
+  });
+
+  it("選択肢がすべて非表示でも名前があればエラーにしない (sanitize で項目は落ちない)", () => {
+    const hidden = editable(
+      { ...kind, id: "hidden", options: [{ id: "a", label: "x", archived: true }] },
+      true,
+    );
+    expect(fieldDefErrors([hidden]).size).toBe(0);
+    expect(sanitizeFieldsForRecord([toFieldDef(hidden)])).toHaveLength(1);
   });
 
   it("非表示の項目は対象外", () => {
@@ -805,11 +812,13 @@ describe("buildEditedPostFields", () => {
     ).toEqual(expected);
   });
 
-  it("1 つだけの項目で sanitize に落とされた選択肢のタグは tags に残す", () => {
-    // 選択を変えた (周遊を外した) ので 2 値は先頭 1 件に絞られる
-    const post: Post = { tags: ["ホール", "ルーム", "周遊", "東京"] };
-    const values = [select("kind", ["hall", "room"])];
-    const expected = { fields: [select("kind", ["hall"])], tags: ["ルーム", "東京"] };
+  it("1 つだけの項目でタグ 2 つ一致から片方を押して 1 値に絞ると、外した側のタグも tags から消える", () => {
+    const post: Post = { tags: ["ホール", "ルーム", "東京"] };
+    const initial = fieldValuesFromResolved(resolveFieldValues(post, [single]));
+    expect(initial).toEqual([select("kind", ["hall", "room"])]);
+    // UI でルームを押す: 2 値 → ルームだけ
+    const values = [select("kind", toggleSelectOption(["hall", "room"], "room", false))];
+    const expected = { fields: [select("kind", ["room"])], tags: ["東京"] };
     expect(buildEditedPostFields(post, [single], values, post.tags ?? [])).toEqual(expected);
     expect(
       buildEditedPostFields(post, [single], values, initialFreeTagsForEdit(post, [single])),

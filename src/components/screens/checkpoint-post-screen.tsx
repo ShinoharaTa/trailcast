@@ -253,13 +253,14 @@ export function CheckpointPostScreen({
     setLocationError(null);
   };
 
+  // 記録項目のあるスレッドでは未入力でも `fields: []` を書く (タグ fallback を止める)
+  const recordFields = buildNewPostFields(fields ?? [], fieldValues);
+
   const handleSubmit = async () => {
     if (!threadUri) return;
     setSubmitting(true);
     setError(null);
     try {
-      // 記録項目のあるスレッドでは未入力でも `fields: []` を書く (タグ fallback を止める)
-      const recordFields = buildNewPostFields(fields ?? [], fieldValues);
       // 選択した option の label は tags に書かない (fields 側が正)
       const recordTags = sanitizeTagsForRecord(
         stripSelectedOptionTags(tags, recordFields, fields ?? []),
@@ -335,7 +336,7 @@ export function CheckpointPostScreen({
   const hasContent =
     text.trim().length > 0 ||
     images.length > 0 ||
-    (buildNewPostFields(fields ?? [], fieldValues)?.length ?? 0) > 0;
+    (recordFields?.length ?? 0) > 0;
 
   return (
     <>

@@ -689,7 +689,8 @@ export const isBlankOptionLabel = (label: string): boolean =>
 /**
  * 保存を止める定義の不備。項目 id → 理由。archived の項目は対象外。
  * - "label": 項目名が空
- * - "options": select で、非表示でなく名前のある選択肢が 1 件も無い
+ * - "options": select で、名前のある選択肢が 1 件も無い (非表示の選択肢も数える。
+ *   sanitizeFieldsForRecord が項目ごと落とす条件と揃える)
  * 空のまま保存すると sanitize で項目ごと落ち、無警告で消えるため保存前に止める。
  */
 export function fieldDefErrors(
@@ -702,7 +703,7 @@ export function fieldDefErrors(
       errors.set(f.id, "label");
     } else if (
       f.type === "select" &&
-      !f.options.some((o) => !o.archived && !isBlankOptionLabel(o.label))
+      !f.options.some((o) => !isBlankOptionLabel(o.label))
     ) {
       errors.set(f.id, "options");
     }
