@@ -106,6 +106,9 @@
   fallback は **option.label 完全一致（tagKey）** のみ、曖昧マッチはしない。
 - タグからの読み替え（fallback）は post に `fields` プロパティが**存在しない**場合のみ。
   空配列 `[]` は「明示的に値なし」として扱い fallback しない。
+- 記録項目（archived 以外）のあるスレッドでは、新規投稿も編集保存も、項目が
+  未入力なら `fields: []` を書く（自由タグが選択肢扱いで読み替えられないように）。
+  項目の無いスレッドでは新規投稿は `fields` を書かない。
 - `tagGroups` は **deprecated**。変換後は thread から消す（§7）。lexicon の
   プロパティ自体は残す（既存 record が持っているため）。
 

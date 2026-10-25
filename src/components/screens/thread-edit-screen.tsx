@@ -44,6 +44,7 @@ import {
   MAX_FIELD_UNIT_LENGTH,
   convertTagGroupsToFields,
   copyFieldDefs,
+  fieldDefErrors,
   fieldDefsDirty,
   generateFieldId,
   isBlankOptionLabel,
@@ -310,6 +311,7 @@ export function ThreadEditScreen({
       setError("タイトルを入力してください");
       return;
     }
+    if (fieldErrors.size > 0) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -370,6 +372,11 @@ export function ThreadEditScreen({
     orderedFields.map(toFieldDef),
   );
   const fieldsDirty = fieldDefsDirty(fields, thread.fields);
+  // 名前の無い項目・選択肢の無い選択項目は保存させない (sanitize で無警告に消えるため)。
+  // 終了して編集できない間は直せないので止めない
+  const fieldErrors = fieldsLocked
+    ? new Map<string, "label" | "options">()
+    : fieldDefErrors(fields);
   // タググループの変換は、記録項目がまだ 1 件も無い (非表示も含め) ときだけ出す
   const canConvertTagGroups =
     !fieldsLocked &&
@@ -653,6 +660,7 @@ export function ThreadEditScreen({
                   <FieldCard
                     key={f.id}
                     field={f}
+                    error={fieldErrors.get(f.id)}
                     canMoveUp={!f.archived && i > 0}
                     canMoveDown={
                       !f.archived &&
@@ -912,6 +920,11 @@ export function ThreadEditScreen({
             {error}
           </div>
         )}
+        {fieldErrors.size > 0 && (
+          <div className="rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
+            記録項目に未入力があります
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button
@@ -925,7 +938,9 @@ export function ThreadEditScreen({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || !title.trim() || !dirty}
+            disabled={
+              submitting || !title.trim() || !dirty || fieldErrors.size > 0
+            }
             className="flex-1 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
           >
             {submitting ? (
@@ -988,6 +1003,7 @@ const moveButtonClass =
 
 function FieldCard({
   field,
+  error,
   canMoveUp,
   canMoveDown,
   onChange,
@@ -996,6 +1012,8 @@ function FieldCard({
   onRestore,
 }: {
   field: EditableField;
+  /** 保存を止める不備 (fieldDefErrors) */
+  error?: "label" | "options";
   canMoveUp: boolean;
   canMoveDown: boolean;
   onChange: (patch: Partial<EditableField>) => void;
@@ -1122,6 +1140,11 @@ function FieldCard({
           </button>
         )}
       </div>
+      {error === "label" && (
+        <p className="-mt-1.5 mb-2.5 text-[11px] text-red-400">
+          項目名を入力してください
+        </p>
+      )}
 
       {field.saved ? (
         <div className="mb-2.5 text-[11px] text-white/45">
@@ -1278,6 +1301,11 @@ function FieldCard({
           {duplicateOptionId === "new" && (
             <p className="mt-1 text-[11px] text-amber-200/70">
               同じ名前の選択肢があります
+            </p>
+          )}
+          {error === "options" && (
+            <p className="mt-1 text-[11px] text-red-400">
+              選択肢を1つ以上追加してください
             </p>
           )}
         </div>

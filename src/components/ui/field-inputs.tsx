@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DECIMAL_PATTERN, MAX_TEXT_VALUE_LENGTH } from "@/lib/fields";
+import {
+  DECIMAL_PATTERN,
+  MAX_NUMBER_VALUE_LENGTH,
+  MAX_TEXT_VALUE_LENGTH,
+  toggleSelectOption,
+} from "@/lib/fields";
 import {
   joinSeconds,
   splitSeconds,
@@ -19,7 +24,8 @@ export interface FieldInputsProps {
   onChange: (values: FieldValue[]) => void;
   disabled?: boolean;
   /**
-   * 不正な入力 (decimal に合わない数値、59 を超える分・秒) の有無が変わったときに呼ぶ。
+   * 不正な入力 (decimal に合わない・長すぎる数値、59 を超える分・秒) の有無が
+   * 変わったときに呼ぶ。
    * 呼び出し側は false の間、送信ボタンを無効にする
    */
   onValidityChange?: (valid: boolean) => void;
@@ -55,7 +61,8 @@ export function FieldInputs({
       const v = values.find((x) => x.field === def.id);
       return (
         v?.$type !== "net.shino3.trailcast.post#numberValue" ||
-        DECIMAL_PATTERN.test(v.value)
+        (DECIMAL_PATTERN.test(v.value) &&
+          v.value.length <= MAX_NUMBER_VALUE_LENGTH)
       );
     }
     if (def.type === "duration") {
@@ -92,15 +99,11 @@ export function FieldInputs({
       current?.$type === "net.shino3.trailcast.post#selectValue"
         ? current.options
         : [];
-    let options: string[];
-    if (def.multiple) {
-      options = selected.includes(optionId)
-        ? selected.filter((id) => id !== optionId)
-        : [...selected, optionId];
-    } else {
-      // 1 つだけの項目は、選択中をもう一度押すと解除
-      options = selected.includes(optionId) ? [] : [optionId];
-    }
+    const options = toggleSelectOption(
+      selected,
+      optionId,
+      Boolean(def.multiple),
+    );
     setValue(
       def.id,
       options.length > 0
@@ -190,6 +193,7 @@ export function FieldInputs({
                     ? current.value
                     : "";
                 const invalid = raw !== "" && !DECIMAL_PATTERN.test(raw);
+                const tooLong = raw.length > MAX_NUMBER_VALUE_LENGTH;
                 return (
                   <>
                     <div className="flex items-center gap-2">
@@ -197,6 +201,7 @@ export function FieldInputs({
                         type="text"
                         inputMode="decimal"
                         value={raw}
+                        maxLength={MAX_NUMBER_VALUE_LENGTH}
                         disabled={disabled}
                         // scale は表示のヒントだけ。丸めない
                         placeholder={
@@ -224,10 +229,16 @@ export function FieldInputs({
                         </span>
                       )}
                     </div>
-                    {invalid && (
+                    {invalid ? (
                       <p className="mt-1 text-[11px] text-red-400">
                         数字で入力してください
                       </p>
+                    ) : (
+                      tooLong && (
+                        <p className="mt-1 text-[11px] text-red-400">
+                          {MAX_NUMBER_VALUE_LENGTH} 文字以内で入力してください
+                        </p>
+                      )
                     )}
                   </>
                 );

@@ -147,18 +147,25 @@ function sanitizeOptions(options: FieldOption[]): FieldOption[] {
  * - 定義に無い field は落とす (archived でも定義にあれば残す)
  * - 同じ field が複数あれば後勝ちで 1 件にする (不正で落ちた値は勝たない)
  * - $type が定義の型と合わない値は落とす
+ * - 1 つだけの select は先頭 1 件に絞る。`keepMultiple` に含む項目 id は絞らない
+ *   (既に複数選ばれていて値を変えていない項目のデータを消さないため)
  * - 空になれば undefined
  */
 export function sanitizePostFieldsForRecord(
   values: FieldValue[],
   defs: FieldDef[],
+  opts?: { keepMultiple?: Set<string> },
 ): FieldValue[] | undefined {
   const defById = new Map(defs.map((d) => [d.id, d]));
   const byField = new Map<string, FieldValue>();
   for (const value of values) {
     const def = defById.get(value.field);
     if (!def) continue;
-    const next = sanitizeValue(value, def);
+    const next = sanitizeValue(
+      value,
+      def,
+      opts?.keepMultiple?.has(def.id) ?? false,
+    );
     if (!next) continue;
     // 有効な値どうしで後勝ち。位置も後ろに寄せる
     byField.delete(value.field);
@@ -168,15 +175,20 @@ export function sanitizePostFieldsForRecord(
   return out.length > 0 ? out : undefined;
 }
 
-function sanitizeValue(value: FieldValue, def: FieldDef): FieldValue | null {
+function sanitizeValue(
+  value: FieldValue,
+  def: FieldDef,
+  keepMultiple: boolean,
+): FieldValue | null {
   if (value.$type !== VALUE_TYPES[def.type]) return null;
   switch (value.$type) {
     case VALUE_TYPES.select: {
       const known = new Set((def.options ?? []).map((o) => o.id));
       const ids = [...new Set(value.options)].filter((id) => known.has(id));
-      const options = def.multiple
-        ? ids.slice(0, MAX_FIELD_OPTIONS)
-        : ids.slice(0, 1);
+      const options =
+        def.multiple || keepMultiple
+          ? ids.slice(0, MAX_FIELD_OPTIONS)
+          : ids.slice(0, 1);
       if (options.length === 0) return null;
       return { $type: value.$type, field: def.id, options };
     }
@@ -324,9 +336,55 @@ export function fieldValuesFromResolved(
   return out;
 }
 
-/** 入力できる項目 (archived 以外) があるか。編集で fields を書くかどうかの判定 */
+/** 入力できる項目 (archived 以外) があるか。投稿・編集で fields を書くかどうかの判定 */
 function hasInputFields(defs: FieldDef[]): boolean {
   return defs.some((d) => !d.archived);
+}
+
+/**
+ * 入力できる項目があるスレッドで書く post.fields。sanitize 結果が空でも `[]` を書く
+ * (プロパティが無いと tags からの読み取りが効き、自由タグが選択扱いになるため)。
+ */
+function postFieldsForInputThread(
+  defs: FieldDef[],
+  values: FieldValue[],
+  opts?: { keepMultiple?: Set<string> },
+): FieldValue[] {
+  return sanitizePostFieldsForRecord(values, defs, opts) ?? [];
+}
+
+/**
+ * 新規投稿で書く post.fields。入力できる項目 (archived 以外) があれば
+ * sanitize 結果 (未入力なら `[]`)、無ければ undefined (プロパティを書かない)。
+ */
+export function buildNewPostFields(
+  defs: FieldDef[],
+  values: FieldValue[],
+): FieldValue[] | undefined {
+  return hasInputFields(defs)
+    ? postFieldsForInputThread(defs, values)
+    : undefined;
+}
+
+/**
+ * select の選択肢を押したときの新しい選択。
+ * - multiple: あれば外し、無ければ末尾に足す
+ * - 1 つだけ: 未選択ならそれだけにする。選択済みで他に選択が無ければ解除。
+ *   他にも選択がある (旧データで複数選ばれている) ならそれ 1 つに絞る
+ */
+export function toggleSelectOption(
+  current: string[],
+  optionId: string,
+  multiple: boolean,
+): string[] {
+  const selected = current.includes(optionId);
+  if (multiple) {
+    return selected
+      ? current.filter((id) => id !== optionId)
+      : [...current, optionId];
+  }
+  if (!selected) return [optionId];
+  return current.length === 1 ? [] : [optionId];
 }
 
 /** tags から読み取った選択肢の label の tagKey。fields に移すときに tags から外す */
@@ -366,6 +424,8 @@ export function initialFreeTagsForEdit(
  * スレッドに入力できる項目 (archived 以外) が 1 件以上あるとき:
  * - fields は sanitize 結果。空なら `[]` を書く (プロパティを消すと tags からの
  *   読み取りが復活し、未設定に戻せなくなるため)
+ * - 1 つだけの select で、元の投稿の選択と UI の選択が同じ集合 (順序は問わない)
+ *   なら先頭に絞らず、元の選択を元の順のまま書く (値を変えていない項目を壊さない)
  * - tags から読み取っていた選択肢のうち、fields に残ったもの・UI で選択を
  *   外したものは、その label と tagKey が一致するタグを tags から外す
  * - UI では選ばれたままなのに sanitize で落ちたもの (1 つだけの項目に旧タグが
@@ -385,15 +445,36 @@ export function buildEditedPostFields(
     return { fields: post.fields, tags: sanitizeTagsForRecord(tags) };
   }
 
-  const fields = sanitizePostFieldsForRecord(values, defs) ?? [];
   const optionIdsOf = (list: FieldValue[], fieldId: string): Set<string> => {
     const v = list.find((x) => x.field === fieldId);
     return new Set(v?.$type === VALUE_TYPES.select ? v.options : []);
   };
+  const resolved = resolveFieldValues(post, defs);
+
+  // 値を変えていない 1 つだけの select は、元の選択を元の順で書く
+  const original = new Map<string, string[]>();
+  for (const r of resolved) {
+    if (r.field.type !== "select" || r.field.multiple || !r.optionIds) continue;
+    const before = new Set(r.optionIds);
+    const after = optionIdsOf(values, r.field.id);
+    const same =
+      before.size === after.size && [...before].every((id) => after.has(id));
+    if (same) {
+      original.set(r.field.id, r.optionIds);
+    }
+  }
+  const fields = postFieldsForInputThread(
+    defs,
+    values.map((v) => {
+      const options = original.get(v.field);
+      return options && v.$type === VALUE_TYPES.select ? { ...v, options } : v;
+    }),
+    { keepMultiple: new Set(original.keys()) },
+  );
 
   const removeKeys = new Set<string>();
   const restoreKeys = new Set<string>();
-  for (const r of resolveFieldValues(post, defs)) {
+  for (const r of resolved) {
     if (r.source !== "tags" || !r.optionIds) continue;
     const kept = optionIdsOf(fields, r.field.id);
     const selected = optionIdsOf(values, r.field.id);
@@ -604,6 +685,30 @@ export const isBlankFieldLabel = (label: string): boolean => !label.trim();
 /** 選択肢名の空判定。保存時の normalizeTag で消える (`#` や `，` だけ等) なら空 */
 export const isBlankOptionLabel = (label: string): boolean =>
   normalizeTag(label) === null;
+
+/**
+ * 保存を止める定義の不備。項目 id → 理由。archived の項目は対象外。
+ * - "label": 項目名が空
+ * - "options": select で、非表示でなく名前のある選択肢が 1 件も無い
+ * 空のまま保存すると sanitize で項目ごと落ち、無警告で消えるため保存前に止める。
+ */
+export function fieldDefErrors(
+  editing: EditableField[],
+): Map<string, "label" | "options"> {
+  const errors = new Map<string, "label" | "options">();
+  for (const f of editing) {
+    if (f.archived) continue;
+    if (isBlankFieldLabel(f.label)) {
+      errors.set(f.id, "label");
+    } else if (
+      f.type === "select" &&
+      !f.options.some((o) => !o.archived && !isBlankOptionLabel(o.label))
+    ) {
+      errors.set(f.id, "options");
+    }
+  }
+  return errors;
+}
 
 /**
  * 名前の入力欄を離れたときの値。保存済みの項目・選択肢の名前が空なら
