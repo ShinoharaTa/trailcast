@@ -324,6 +324,42 @@ export function fieldValuesFromResolved(
   return out;
 }
 
+/** 入力できる項目 (archived 以外) があるか。編集で fields を書くかどうかの判定 */
+function hasInputFields(defs: FieldDef[]): boolean {
+  return defs.some((d) => !d.archived);
+}
+
+/** tags から読み取った選択肢の label の tagKey。fields に移すときに tags から外す */
+function tagKeysMovedToFields(
+  post: HasFieldValues,
+  defs: FieldDef[],
+): Set<string> {
+  const keys = new Set<string>();
+  for (const r of resolveFieldValues(post, defs)) {
+    if (r.source !== "tags" || !r.optionIds) continue;
+    const ids = new Set(r.optionIds);
+    for (const opt of r.field.options ?? []) {
+      if (ids.has(opt.id)) keys.add(tagKey(opt.label));
+    }
+  }
+  return keys;
+}
+
+/**
+ * 編集画面のタグ欄の初期値。項目があるスレッドでは、tags から読み取った
+ * 選択肢のタグを外す (項目のチップ側にだけ出す)。保存時の
+ * buildEditedPostFields と同じ条件で外す。
+ */
+export function initialFreeTagsForEdit(
+  post: HasFieldValues,
+  defs: FieldDef[],
+): string[] {
+  const tags = post.tags ?? [];
+  if (!hasInputFields(defs)) return [...tags];
+  const moved = tagKeysMovedToFields(post, defs);
+  return tags.filter((t) => !moved.has(tagKey(t)));
+}
+
 /**
  * 編集画面で保存する post.fields / post.tags を組み立てる。
  *
@@ -342,18 +378,11 @@ export function buildEditedPostFields(
   values: FieldValue[],
   tags: string[],
 ): { fields: FieldValue[] | undefined; tags: string[] | undefined } {
-  if (!defs.some((d) => !d.archived)) {
+  if (!hasInputFields(defs)) {
     return { fields: post.fields, tags: sanitizeTagsForRecord(tags) };
   }
 
-  const movedKeys = new Set<string>();
-  for (const r of resolveFieldValues(post, defs)) {
-    if (r.source !== "tags" || !r.optionIds) continue;
-    const ids = new Set(r.optionIds);
-    for (const opt of r.field.options ?? []) {
-      if (ids.has(opt.id)) movedKeys.add(tagKey(opt.label));
-    }
-  }
+  const movedKeys = tagKeysMovedToFields(post, defs);
 
   return {
     fields: sanitizePostFieldsForRecord(values, defs) ?? [],

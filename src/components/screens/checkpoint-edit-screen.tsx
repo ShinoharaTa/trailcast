@@ -19,6 +19,7 @@ import { FieldInputs } from "@/components/ui/field-inputs";
 import {
   buildEditedPostFields,
   fieldValuesFromResolved,
+  initialFreeTagsForEdit,
   resolveFieldValues,
 } from "@/lib/fields";
 import { recordTagUsage } from "@/lib/pds/tags";
@@ -59,7 +60,10 @@ export function CheckpointEditScreen({
   onCancel,
 }: CheckpointEditScreenProps) {
   const [text, setText] = useState(post.text ?? "");
-  const [tags, setTags] = useState<string[]>(post.tags ?? []);
+  // タグから読み取った選択肢のタグはタグ欄に出さず、項目のチップ側にだけ出す
+  const [tags, setTags] = useState<string[]>(() =>
+    initialFreeTagsForEdit(post, fields ?? []),
+  );
   // タグから読み取った選択も、選択済みとして出す
   const [fieldValues, setFieldValues] = useState<FieldValue[]>(() =>
     fieldValuesFromResolved(resolveFieldValues(post, fields ?? [])),

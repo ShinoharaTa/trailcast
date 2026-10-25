@@ -8,6 +8,7 @@ import {
   fieldValuesFromResolved,
   filterPostsByFields,
   generateFieldId,
+  initialFreeTagsForEdit,
   resolveFieldValues,
   sanitizeFieldsForRecord,
   sanitizePostFieldsForRecord,
@@ -531,5 +532,22 @@ describe("buildEditedPostFields", () => {
       fields: undefined,
       tags: ["ホール"],
     });
+  });
+});
+
+describe("initialFreeTagsForEdit", () => {
+  it("tags から読み取った選択肢のタグを外し、自由タグだけ残す", () => {
+    expect(
+      initialFreeTagsForEdit({ tags: ["HALL", "東京", "ホール", "成功"] }, [kind, result]),
+    ).toEqual(["HALL", "東京"]);
+  });
+
+  it("fields を持つ post・入力できる項目が無いスレッドではタグをそのまま返す", () => {
+    expect(
+      initialFreeTagsForEdit({ tags: ["ホール"], fields: [] }, [kind]),
+    ).toEqual(["ホール"]);
+    expect(
+      initialFreeTagsForEdit({ tags: ["ホール"] }, [{ ...kind, archived: true }]),
+    ).toEqual(["ホール"]);
   });
 });
