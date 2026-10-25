@@ -100,7 +100,7 @@ export function sanitizeFieldsForRecord(
       next.options = options;
     }
     if (def.type === "number") {
-      const unit = def.unit?.trim().slice(0, MAX_FIELD_UNIT_LENGTH);
+      const unit = sliceGraphemes(def.unit?.trim() ?? "", MAX_FIELD_UNIT_LENGTH);
       if (unit) next.unit = unit;
       if (
         typeof def.scale === "number" &&
@@ -287,6 +287,7 @@ export function crosspostTagsFor(
 /**
  * tagGroups を select 項目に変換する。1 グループ → 1 項目、タグ → 選択肢。
  * single / multiple はタグからは判定できないので、既定は広い方の multiple。
+ * 戻り値は未サニタイズ。保存前に必ず sanitizeFieldsForRecord を通すこと。
  */
 export function convertTagGroupsToFields(
   groups: TagGroup[],
@@ -303,7 +304,10 @@ export function convertTagGroupsToFields(
 
 // ─── 絞り込み / 集計 ──────────────────────────────────────────
 
-/** 投稿が持つ、その select 項目の option id (定義にあるものだけ、重複なし) */
+/**
+ * 投稿が持つ、その select 項目の option id (定義にあるものだけ、重複なし)。
+ * single でも先頭に絞らず全値を返す (データを切り捨てない)。
+ */
 function selectedOptionIds(post: HasFieldValues, def: FieldDef): string[] {
   const resolved = resolveFieldValues(post, [def])[0];
   if (!resolved?.optionIds) return [];
@@ -313,7 +317,8 @@ function selectedOptionIds(post: HasFieldValues, def: FieldDef): string[] {
 
 /**
  * select 項目の選択肢ごとの件数。定義の options 順で返し、最後に FIELD_UNSET。
- * multiple は延べ数。どの選択肢も持たない投稿は FIELD_UNSET に数える。
+ * multiple は延べ数。single でも 2 値以上ある投稿は全値を数える。
+ * どの選択肢も持たない投稿は FIELD_UNSET に数える。
  */
 export function countSelectOptions(
   posts: HasFieldValues[],

@@ -104,6 +104,8 @@
 - 読み取りは `resolveFieldValues(post, thread.fields)`: `post.fields` が
   あればそれ、無い post（旧データ・他クライアント）は tags から fallback。
   fallback は **option.label 完全一致（tagKey）** のみ、曖昧マッチはしない。
+- タグからの読み替え（fallback）は post に `fields` プロパティが**存在しない**場合のみ。
+  空配列 `[]` は「明示的に値なし」として扱い fallback しない。
 - `tagGroups` は **deprecated**。変換後は thread から消す（§7）。lexicon の
   プロパティ自体は残す（既存 record が持っているため）。
 
@@ -218,7 +220,7 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
 | 選択肢削除 | **ソフト削除** `archived: true`。入力 UI から消え、既存値は「(旧) label」で表示・集計に残る | 保持 |
 | フィールド削除 | 同上 `archived: true`。ハード削除も許すが、値は post に残り UI では「未定義のフィールド」としてまとめて表示 | 保持 |
 | single → multiple | 許可（広げるだけ） | 無影響 |
-| multiple → single | UI で警告。値が 2 つ以上ある post は **先頭だけ採用して表示**、データは触らない | 保持 |
+| multiple → single | UI で警告。単一選択に 2 値以上ある post は、集計・絞り込みは全値を数え、表示も全値を出す（データを切り捨てない） | 保持 |
 | 型変更（select→number 等） | **禁止**。新しいフィールドを作って archived にしてもらう | — |
 | id 再利用 | 禁止（archived の id も予約済み扱い） | — |
 
@@ -243,9 +245,10 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
 ### 自動変換（tagGroups → select フィールド）
 - 所有者がスレッド編集画面で **「タググループをフィールドに変換」** を押す
   （黙って変換しない）。
-- 変換規則（純関数 `convertTagGroupsToFields(tagGroups): fieldDef[]`）:
-  - 1 group → 1 `select` field。`label` = group.label、`multiple: true`
-    （single か判定できないので広い方。所有者が後で single に変えられる）。
+- 変換規則（純関数 `convertTagGroupsToFields(groups, opts?): FieldDef[]`）:
+  - 1 group → 1 `select` field。`label` = group.label、`multiple` は
+    `opts.multiple(group)` の結果、省略時は `true`
+    （single か判定できないので既定は広い方。所有者が後で single に変えられる）。
   - group.tags[i] → option `{ id: gen(), label: tag }`。
   - 同じ putRecord で `fields` を書き `tagGroups` を削除する。
 - 76 件の post は書き換えない。読み取り fallback（§3）で option 扱いになる。
@@ -281,12 +284,17 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
 - PR 1 は UI を含まないので単独でマージ可。2 と 3 は並行可。
 - `implementer` に渡すときは PR 1 の関数シグネチャ一覧（下記）を仕様として添える。
 
+### PR 3 への申し送り
+- 旧投稿（`fields` を持たない post）を編集保存するときは、`resolveFieldValues` で
+  解決した select を `fields` に書き戻し、対応する tag を `tags` から外す。
+  全項目が未選択でも `fields` は空配列 `[]` で残す（以後 fallback させないため）。
+
 ### PR 1 で定義する関数（implementer 向け）
 - `generateFieldId(): string` — 8 文字 base32。
 - `sanitizeFieldsForRecord(defs: FieldDef[]): FieldDef[] | undefined` — label trim/上限、id 重複は後ろを落とす、options 無しの select を落とす、空なら undefined（`tagGroups` と同じ慣習）。
 - `sanitizePostFieldsForRecord(values: FieldValue[], defs: FieldDef[]): FieldValue[] | undefined` — 定義に無い field は落とす、同 field 重複は後勝ち、select は定義にある option id だけ残す、single なら先頭 1 件、number は decimal 文字列検証。
 - `resolveFieldValues(post: {tags?, fields?}, defs: FieldDef[]): ResolvedValue[]` — fields 優先、無ければ tags→option label の fallback。
-- `convertTagGroupsToFields(groups: TagGroup[]): FieldDef[]`。
+- `convertTagGroupsToFields(groups: TagGroup[], opts?: { multiple?: (group: TagGroup) => boolean }): FieldDef[]` — opts 省略時は `multiple: true`。戻り値は未サニタイズ。
 - `crosspostTagsFor(post, defs): string[]` — `dedupeTags([...tags, ...選択 option label])`。
 - `countSelectOptions(posts, def)`, `filterPostsByFields(posts, defs, selection)`, `summarizeNumber(posts, def) → {count,sum,avg,min,max}`, `summarizeDuration` 同様。
 

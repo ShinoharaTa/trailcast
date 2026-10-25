@@ -12,7 +12,7 @@ import {
   summarizeDuration,
   summarizeNumber,
 } from "@/lib/fields";
-import { countTags, groupTagCounts } from "@/lib/tags";
+import { countTags, filterPostsByTags, groupTagCounts, tagKey } from "@/lib/tags";
 import type { FieldDef, FieldValue, TagGroup } from "@/lib/types";
 
 type Post = { tags?: string[]; fields?: FieldValue[] };
@@ -349,5 +349,107 @@ describe("summarizeNumber / summarizeDuration", () => {
     const empty = { count: 0, sum: null, avg: null, min: null, max: null };
     expect(summarizeNumber([{}], weight)).toEqual(empty);
     expect(summarizeDuration([], time)).toEqual(empty);
+  });
+});
+
+describe("レビュー対応で追加", () => {
+  const defs = [kind, result, weight, time, memo];
+
+  it("後勝ちでも不正値は勝たない", () => {
+    expect(
+      sanitizePostFieldsForRecord([num("weight", "10"), num("weight", "abc")], defs),
+    ).toEqual([num("weight", "10")]);
+  });
+
+  it("fields は 30 件で打ち切る", () => {
+    const many: FieldDef[] = Array.from({ length: 31 }, (_, i) => ({
+      id: `f${i}`,
+      label: `項目${i}`,
+      type: "text",
+    }));
+    const out = sanitizeFieldsForRecord(many);
+    expect(out).toHaveLength(30);
+    expect(out?.at(-1)?.id).toBe("f29");
+  });
+
+  it("id が空・17 文字の def は落ち、16 文字は残る", () => {
+    const out = sanitizeFieldsForRecord([
+      { id: "", label: "空", type: "text" },
+      { id: "a".repeat(17), label: "長", type: "text" },
+      { id: "b".repeat(16), label: "可", type: "text" },
+    ]);
+    expect(out?.map((d) => d.id)).toEqual(["b".repeat(16)]);
+  });
+
+  it("scale は 0〜3 の整数以外を除去する", () => {
+    const out = sanitizeFieldsForRecord(
+      [-1, 0, 3, 4, 1.5].map((scale, i) => ({
+        id: `n${i}`,
+        label: "数",
+        type: "number" as const,
+        scale,
+      })),
+    );
+    expect(out?.map((d) => d.scale)).toEqual([undefined, 0, 3, undefined, undefined]);
+  });
+
+  it("unit は 8 書記素で切られる", () => {
+    // 結合文字を含む書記素 (👨‍👩‍👧) も 1 文字として数える
+    const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+    const out = sanitizeFieldsForRecord([
+      { id: "n", label: "数", type: "number", unit: `  ${family.repeat(10)} ` },
+    ]);
+    expect(out?.[0].unit).toBe(family.repeat(8));
+  });
+
+  it("変換結果を sanitizeFieldsForRecord に通すと label が trim され、空 group は落ちる", () => {
+    const converted = convertTagGroupsToFields([
+      { label: "  種類 ", tags: ["ホール"] },
+      { label: "空", tags: [] },
+    ]);
+    const out = sanitizeFieldsForRecord(converted);
+    expect(out).toHaveLength(1);
+    expect(out?.[0]).toMatchObject({ label: "種類", type: "select", multiple: true });
+  });
+
+  it("fields: [] の post は tags があっても fallback しない", () => {
+    expect(resolveFieldValues({ tags: ["ホール", "成功"], fields: [] }, [kind, result])).toEqual(
+      [],
+    );
+  });
+
+  it("変換前後で filterPostsByTags と filterPostsByFields の結果が一致する", () => {
+    const groups: TagGroup[] = [
+      { label: "種類", tags: ["ホール", "ルーム"] },
+      { label: "成否", tags: ["成功", "失敗"] },
+    ];
+    const posts: Post[] = [
+      { tags: ["ホール", "成功"] },
+      { tags: ["ルーム", "失敗", "東京"] },
+      { tags: ["ホール", "ルーム", "成功"] },
+      { tags: ["HALL"] },
+      { tags: ["東京"] },
+      {},
+    ];
+    const converted = convertTagGroupsToFields(groups);
+    const fieldOf = (tag: string) => {
+      for (const def of converted) {
+        const opt = def.options?.find((o) => tagKey(o.label) === tagKey(tag));
+        if (opt) return { fieldId: def.id, optionId: opt.id };
+      }
+      throw new Error(tag);
+    };
+    // 1 タグ、および別グループのタグ 2 つの AND
+    const cases = [["ホール"], ["ルーム"], ["失敗"], ["ホール", "成功"], ["ルーム", "失敗"]];
+    for (const tags of cases) {
+      const selection: Record<string, string[]> = {};
+      for (const t of tags) {
+        const { fieldId, optionId } = fieldOf(t);
+        selection[fieldId] = [...(selection[fieldId] ?? []), optionId];
+      }
+      expect(filterPostsByFields(posts, converted, selection)).toEqual(
+        filterPostsByTags(posts, tags.map(tagKey)),
+      );
+    }
   });
 });
