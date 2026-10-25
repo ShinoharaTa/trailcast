@@ -372,7 +372,7 @@ export function buildTagSuggestions(
  * grapheme 単位で先頭 max 文字を取り出す。Intl.Segmenter が無い環境では
  * code point 単位で代替する。
  */
-function sliceGraphemes(input: string, max: number): string {
+export function sliceGraphemes(input: string, max: number): string {
   const SegmenterCtor = (Intl as unknown as { Segmenter?: typeof Intl.Segmenter })
     .Segmenter;
   if (SegmenterCtor) {

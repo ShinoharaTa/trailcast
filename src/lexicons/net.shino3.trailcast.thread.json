@@ -50,7 +50,7 @@
           "tagGroups": {
             "type": "array",
             "maxLength": 50,
-            "description": "Custom tag filter groups for this thread. Display-level curation only; post.tags remains the source of truth.",
+            "description": "Deprecated: superseded by fields (select). Kept for records written before fields existed.",
             "items": {
               "type": "object",
               "required": ["label", "tags"],
@@ -71,6 +71,12 @@
                 }
               }
             }
+          },
+          "fields": {
+            "type": "array",
+            "maxLength": 30,
+            "description": "Custom input fields for checkpoints in this thread. Values live in post.fields and reference field/option by id, so labels can be renamed freely.",
+            "items": { "type": "ref", "ref": "#fieldDef" }
           },
           "tags": {
             "type": "array",
@@ -95,6 +101,61 @@
             "description": "Set when the owner marks the thread as finished. Ended threads default to ascending checkpoint order (read as a story) and stop accepting participant posts. Absent while ongoing."
           }
         }
+      }
+    },
+    "fieldDef": {
+      "type": "object",
+      "required": ["id", "label", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16,
+          "description": "Stable opaque id, unique within the thread. Never derived from label."
+        },
+        "label": { "type": "string", "maxLength": 20 },
+        "type": {
+          "type": "string",
+          "knownValues": ["select", "number", "duration", "text"]
+        },
+        "multiple": {
+          "type": "boolean",
+          "description": "select only. true = checkboxes, false/absent = radio"
+        },
+        "options": {
+          "type": "array",
+          "maxLength": 50,
+          "items": { "type": "ref", "ref": "#fieldOption" },
+          "description": "select only"
+        },
+        "unit": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "number only (kg, km, 回)"
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "number only. Decimal digits accepted in the input UI (display hint)"
+        },
+        "archived": {
+          "type": "boolean",
+          "description": "Hidden from the input UI; existing values still resolve"
+        }
+      }
+    },
+    "fieldOption": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "label": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Shown in UI and used as the hashtag on cross-post (normalized by normalizeTag)"
+        },
+        "archived": { "type": "boolean" }
       }
     }
   }

@@ -21,6 +21,68 @@ export interface TagGroup {
   tags: string[];
 }
 
+/** 記録項目 (カスタムフィールド) の選択肢。id で参照するので label は自由に変えられる。 */
+export interface FieldOption {
+  /** スレッド内で一意なランダム id。label からは作らない */
+  id: string;
+  /** 表示名。クロスポスト時はハッシュタグとして使う (normalizeTag 済み) */
+  label: string;
+  /** 入力 UI から隠す。既存の値は引き続き解決される */
+  archived?: boolean;
+}
+
+export type FieldType = "select" | "number" | "duration" | "text";
+
+/**
+ * スレッドに定義する記録項目。値は post.fields に field id で入る。
+ * 型ごとに使うプロパティが違う (options / multiple は select、unit / scale は number)。
+ */
+export interface FieldDef {
+  /** スレッド内で一意なランダム id。label からは作らない */
+  id: string;
+  label: string;
+  type: FieldType;
+  /** select のみ。true は複数選択、false / 省略は 1 つだけ */
+  multiple?: boolean;
+  /** select のみ */
+  options?: FieldOption[];
+  /** number のみ (kg, km, 回) */
+  unit?: string;
+  /** number のみ。入力 UI で受け付ける小数桁数 (表示用のヒント) */
+  scale?: number;
+  /** 入力 UI から隠す。既存の値は引き続き解決される */
+  archived?: boolean;
+}
+
+export interface SelectValue {
+  $type: "net.shino3.trailcast.post#selectValue";
+  field: string;
+  /** 選択した FieldOption.id */
+  options: string[];
+}
+
+export interface NumberValue {
+  $type: "net.shino3.trailcast.post#numberValue";
+  field: string;
+  /** 10 進文字列 (例: "12.5")。lexicon に浮動小数型が無いので文字列で持つ */
+  value: string;
+}
+
+export interface DurationValue {
+  $type: "net.shino3.trailcast.post#durationValue";
+  field: string;
+  /** 秒 (0 以上の整数) */
+  seconds: number;
+}
+
+export interface TextValue {
+  $type: "net.shino3.trailcast.post#textValue";
+  field: string;
+  text: string;
+}
+
+export type FieldValue = SelectValue | NumberValue | DurationValue | TextValue;
+
 export interface ThreadRecord {
   title: string;
   description?: string;
@@ -38,6 +100,11 @@ export interface ThreadRecord {
    * 既存レコードとの後方互換のため optional。
    */
   tagGroups?: TagGroup[];
+  /**
+   * 記録項目の定義。値は post.fields 側に id 参照で入る。
+   * tagGroups の後継。既存レコードとの後方互換のため optional。
+   */
+  fields?: FieldDef[];
   /**
    * スレッド自体の分類タグ (旅行 / オフ会 など)。投稿には伝播しない。
    * プロフィールやダッシュボードでスレッドを絞り込むためのもの。optional。
@@ -87,6 +154,11 @@ export interface PostRecord {
    * 大文字小文字を区別しない。既存レコードとの後方互換のため optional。
    */
   tags?: string[];
+  /**
+   * スレッドの記録項目に対する値。無い投稿 (旧データ・他クライアント) は
+   * tags から読み取り時に補う。optional。
+   */
+  fields?: FieldValue[];
   checkpointAt: string;
   exif?: Record<string, unknown>;
   sourceRef?: string; // at-uri

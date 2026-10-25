@@ -54,6 +54,8 @@ Tauri アプリ内から AT Protocol の OAuth (DPOP) フローを実行し、�
 
 ## カスタム Lexicon 設計 (`net.shino3.trailcast`)
 
+スレッドごとの記録項目（`thread.fields` / `post.fields`）の仕様は [custom-fields.md](./custom-fields.md) を参照。
+
 ### `net.shino3.trailcast.thread`
 
 スレッド（イベント）の親レコード。作成者の PDS に保存される。
