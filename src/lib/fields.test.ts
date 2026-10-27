@@ -1068,6 +1068,12 @@ describe("fieldFilterGroups", () => {
     { fields: [] },
   ];
   const defs = [kind2, weight, result];
+  const unusedSel: FieldDef = {
+    id: "u",
+    label: "未使用",
+    type: "select",
+    options: [{ id: "x", label: "x" }],
+  };
 
   it("select 以外を無視し、定義順・options 順 (archived は後ろ)・FIELD_UNSET 末尾", () => {
     const groups = fieldFilterGroups(posts, defs, {}, []);
@@ -1138,8 +1144,63 @@ describe("fieldFilterGroups", () => {
   });
 
   it("fields: [] の投稿は選択肢名と同じタグがあっても項目側に数えない", () => {
-    const groups = fieldFilterGroups([{ tags: ["ホール"], fields: [] }], [kind], {}, []);
+    const tagOnly: Post[] = [{ tags: ["ホール"], fields: [] }];
+    // 値が無いので項目ごと出ない
+    expect(fieldFilterGroups(tagOnly, [kind], {}, [])).toEqual([]);
+    const groups = fieldFilterGroups(tagOnly, [kind], { kind: [FIELD_UNSET] }, []);
     expect(groups[0].chips.map((c) => c.optionId)).toEqual([FIELD_UNSET]);
+  });
+
+  it("値の無い項目 (未設定だけ) は出ない", () => {
+    const groups = fieldFilterGroups(posts, [kind2, result, unusedSel], {}, []);
+    expect(groups.map((g) => g.field.id)).toEqual(["kind", "result"]);
+  });
+
+  it("値の無い項目でも未設定を選択中なら出る", () => {
+    const groups = fieldFilterGroups(
+      posts,
+      [kind2, result, unusedSel],
+      { u: [FIELD_UNSET] },
+      [],
+    );
+    expect(groups.map((g) => g.field.id)).toEqual(["kind", "result", "u"]);
+    expect(groups[2].chips).toEqual([
+      expect.objectContaining({ optionId: FIELD_UNSET, total: 5, active: true }),
+    ]);
+  });
+
+  it("archived 項目は出ない。選択中なら出る", () => {
+    const archivedResult: FieldDef = { ...result, archived: true };
+    expect(
+      fieldFilterGroups(posts, [kind2, archivedResult], {}, []).map((g) => g.field.id),
+    ).toEqual(["kind"]);
+    const groups = fieldFilterGroups(posts, [kind2, archivedResult], { result: ["ng"] }, []);
+    expect(groups.map((g) => g.field.id)).toEqual(["kind", "result"]);
+    expect(groups[1].chips.find((c) => c.optionId === "ng")).toMatchObject({
+      active: true,
+      total: 1,
+    });
+  });
+
+  it("他項目の絞り込みで 0 件になった項目は出る", () => {
+    // result=ng の投稿 (kind: hall + room) に絞ると、color の値はどれも 0 件になる
+    const color: FieldDef = {
+      id: "color",
+      label: "色",
+      type: "select",
+      options: [{ id: "red", label: "赤" }],
+    };
+    const withColor: Post[] = [
+      ...posts,
+      { fields: [select("color", ["red"]), select("result", ["ok"])] },
+    ];
+    const groups = fieldFilterGroups(withColor, [result, color], { result: ["ng"] }, []);
+    expect(groups.map((g) => g.field.id)).toEqual(["result", "color"]);
+    expect(groups[1].chips.find((c) => c.optionId === "red")).toMatchObject({
+      total: 1,
+      count: 0,
+      disabled: true,
+    });
   });
 });
 

@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/icons";
 import { countTags, tagKey } from "@/lib/tags";
 import {
+  countFreeTags,
   filterPostsByFieldsAndTags,
   initialFreeTagsForEdit,
   pruneFieldSelection,
@@ -624,6 +625,11 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const [fieldSelection, setFieldSelection] = useState<FieldSelection>({});
   const [selectedTagKeys, setSelectedTagKeys] = useState<string[]>([]);
   const threadTagCounts = useMemo(() => countTags(posts), [posts]);
+  // 絞り込みバーの自由タグ (freeTagChips) と同じ集合。選択の掃除に使う
+  const freeTagCounts = useMemo(
+    () => countFreeTags(posts, defs),
+    [posts, defs],
+  );
   const visiblePosts = useMemo(
     () =>
       filterPostsByFieldsAndTags(
@@ -652,15 +658,16 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     setSelectedTagKeys([]);
   }, []);
 
-  // スレッドの切り替えや投稿の削除・編集で消えたタグが選択に残り続けると
-  // 「絞り込んでいるのに 0 件」の状態から抜けられなくなるため、都度落とす。
+  // スレッドの切り替えや投稿の削除・編集で消えたタグ (選択肢扱いになったタグを含む)
+  // が選択に残り続けると「絞り込んでいるのに 0 件」の状態から抜けられなくなるため、
+  // 絞り込みバーに出ない自由タグは都度落とす。
   useEffect(() => {
-    const available = new Set(threadTagCounts.map((t) => t.key));
+    const available = new Set(freeTagCounts.map((t) => t.key));
     setSelectedTagKeys((prev) => {
       const next = prev.filter((k) => available.has(k));
       return next.length === prev.length ? prev : next;
     });
-  }, [threadTagCounts]);
+  }, [freeTagCounts]);
   // 項目の選択も同じ理由で、定義・投稿から消えた選択肢を落とす
   useEffect(() => {
     setFieldSelection((prev) => pruneFieldSelection(prev, defs, posts));

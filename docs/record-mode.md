@@ -169,6 +169,10 @@ export interface FieldFilterGroup { field: FieldDef; chips: FieldFilterChip[] }
  * - 対象は type === "select" の定義（archived 含む）。定義順
  * - chips は options 順で非 archived → archived、最後に FIELD_UNSET
  * - total === 0 かつ非選択のチップは含めない。chips が空になった項目は返さない
+ * - 項目が archived か、全投稿を通して値が 1 件も無い（未設定だけ）項目は、
+ *   その項目の選択肢（FIELD_UNSET 含む）が 1 つも選択されていなければ返さない。
+ *   値の有無は他条件を当てる前の total で判定する（他項目で絞って 0 件になっただけなら出す）。
+ *   選択中なら解除できるように出す。archived な選択肢の扱いは上のとおり
  * - count は filterPostsByTags(filterPostsByFields(posts, defs, selection から当該項目を除いたもの), tagKeys) に対する countSelectOptions
  */
 export function fieldFilterGroups(
@@ -264,7 +268,7 @@ export function filterPostsByFieldsAndTags<T extends HasFieldValues>(
 - `toggleFieldOption`: 追加 / 削除 / 空になったらキー削除 / 入力を変更しない。
 - `pruneFieldSelection`: 定義に無い id を落とす / total 0 を落とす / `FIELD_UNSET` は未設定 > 0 で残す / 変化なしなら同じ参照。
 - `countFreeTags`: 選択肢と一致するタグ（大小文字違い含む）を除く / `fields: []` の投稿のタグは残る / defs 空なら countTags と同じ。
-- `fieldFilterGroups`: 定義順・options 順 / archived が後ろ / total 0 は出ない（選択中は出る）/ count は他項目 + タグを当てた数で自項目は当てない / `FIELD_UNSET` 末尾 / select 以外の定義は無視 / chips 空の項目は返さない。
+- `fieldFilterGroups`: 定義順・options 順 / archived が後ろ / total 0 は出ない（選択中は出る）/ count は他項目 + タグを当てた数で自項目は当てない / `FIELD_UNSET` 末尾 / select 以外の定義は無視 / chips 空の項目は返さない / 値なし項目・archived 項目は出ない（選択中は出る）/ 他項目の絞り込みで 0 件になった項目は出る。
 - `freeTagChips`: facetCount が項目条件を反映 / 選択中は disabled にならない。
 - `filterPostsByFieldsAndTags`: 両方空なら同じ参照 / AND になる。
 - 既存の「変換後の件数一致」テストは `fieldFilterGroups` でも同じ数になることを 1 本追加。
@@ -641,6 +645,7 @@ export function heatLevel(count: number): 0 | 1 | 2 | 3;
 - **D-7** 日付はブラウザのローカル時刻。テストは TZ=Asia/Tokyo 固定。
 - **D-8** 既定表示 `defaultView` はスレッド record（所有者設定、全閲覧者に効く）。既定値なら書かない。
 - **D-9** select の割合の分母は期間内の投稿数（未設定を含む）。multiple は延べ数。
+- **D-10** 絞り込みバーに、archived な項目と値が 1 件も無い項目は出さない（その項目を選択中なら出す）。自由タグの選択は絞り込みバーに出るもの（`countFreeTags`）を基準に掃除する。
 
 ### 決定（ユーザー判断済み 2026-10-27、すべて推薦どおり）
 - **U-1** number / duration の範囲絞り込みは今回入れない。別 issue。

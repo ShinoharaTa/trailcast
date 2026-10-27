@@ -929,6 +929,9 @@ export interface FieldFilterGroup {
  * - 対象は type === "select" の定義 (archived 含む)。定義順
  * - chips は options 順で非 archived → archived、最後に FIELD_UNSET
  * - total === 0 かつ非選択のチップは含めない。chips が空になった項目は返さない
+ * - 項目が archived か、全投稿を通して値が 1 件も無い (未設定だけ) 項目は、
+ *   その項目の選択肢 (FIELD_UNSET 含む) が 1 つも選択されていなければ返さない。
+ *   値の有無は他条件を当てる前の total で判定する
  * - count は「当該項目以外の選択 + タグ」で絞った投稿での件数 (ファセット方式)。
  *   項目内は OR なので、この数がそのチップを足したときに増える件数になる
  */
@@ -954,6 +957,10 @@ export function fieldFilterGroups(
       countSelectOptions(base, def).map((c) => [c.optionId, c.count]),
     );
     const active = new Set(selection[def.id] ?? []);
+    const hasValue = [...totals].some(
+      ([optionId, total]) => optionId !== FIELD_UNSET && total > 0,
+    );
+    if ((def.archived || !hasValue) && active.size === 0) continue;
 
     const chip = (
       optionId: string,
