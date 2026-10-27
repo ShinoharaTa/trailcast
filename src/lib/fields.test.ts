@@ -5,6 +5,12 @@ import {
   buildNewPostFields,
   convertTagGroupsToFields,
   copyFieldDefs,
+  countFreeTags,
+  fieldFilterGroups,
+  filterPostsByFieldsAndTags,
+  freeTagChips,
+  pruneFieldSelection,
+  toggleFieldOption,
   fieldDefErrors,
   fieldDefsDirty,
   isBlankOptionLabel,
@@ -27,6 +33,7 @@ import {
   summarizeNumber,
   toggleSelectOption,
   type EditableField,
+  type FieldSelection,
 } from "@/lib/fields";
 import { countTags, filterPostsByTags, groupTagCounts, tagKey } from "@/lib/tags";
 import type { FieldDef, FieldValue, TagGroup } from "@/lib/types";
@@ -126,6 +133,30 @@ describe("tagGroups からの変換", () => {
       const counts = countSelectOptions(legacy, defs[i]);
       const byOption = counts.filter((c) => c.optionId !== FIELD_UNSET);
       expect(byOption.map((c) => c.count)).toEqual(g.items.map((t) => t.count));
+    });
+  });
+
+  it("変換後の絞り込みチップの件数がグループごとのタグ件数と一致する", () => {
+    const defs = convertTagGroupsToFields(groups);
+    const grouped = groupTagCounts(countTags(legacy), groups);
+    const chips = fieldFilterGroups(legacy, defs, {}, []);
+    grouped.groups.forEach((g, i) => {
+      const group = chips.find((c) => c.field.id === defs[i].id);
+      const byLabel = new Map(
+        (group?.chips ?? [])
+          .filter((c) => c.optionId !== FIELD_UNSET)
+          .map((c) => [c.label, c]),
+      );
+      // 0 件の選択肢はチップに出ない。出たものは total も count もグループの件数と同じ
+      for (const t of g.items) {
+        const chip = byLabel.get(t.tag);
+        if (t.count === 0) {
+          expect(chip).toBeUndefined();
+        } else {
+          expect(chip?.total).toBe(t.count);
+          expect(chip?.count).toBe(t.count);
+        }
+      }
     });
   });
 
@@ -919,5 +950,241 @@ describe("stripSelectedOptionTags", () => {
       stripSelectedOptionTags(["TOKYO", "Osaka", "雨"], [select("area", ["tky"])], [area]),
     ).toEqual(["Osaka", "雨"]);
     expect(stripSelectedOptionTags(["Tokyo"], undefined, [area])).toEqual(["Tokyo"]);
+  });
+});
+
+// ─── 絞り込みバー ────────────────────────────────────────────
+
+describe("toggleFieldOption", () => {
+  it("無ければ足し、あれば外す", () => {
+    expect(toggleFieldOption({}, "kind", "hall")).toEqual({ kind: ["hall"] });
+    expect(toggleFieldOption({ kind: ["hall"] }, "kind", "room")).toEqual({
+      kind: ["hall", "room"],
+    });
+    expect(toggleFieldOption({ kind: ["hall", "room"] }, "kind", "hall")).toEqual({
+      kind: ["room"],
+    });
+  });
+
+  it("空になったキーは削除する", () => {
+    const out = toggleFieldOption({ kind: ["hall"], result: ["ok"] }, "kind", "hall");
+    expect(out).toEqual({ result: ["ok"] });
+    expect("kind" in out).toBe(false);
+  });
+
+  it("入力を変更しない", () => {
+    const input: FieldSelection = { kind: ["hall"] };
+    toggleFieldOption(input, "kind", "room");
+    toggleFieldOption(input, "kind", "hall");
+    expect(input).toEqual({ kind: ["hall"] });
+  });
+});
+
+describe("pruneFieldSelection", () => {
+  const posts: Post[] = [
+    { fields: [select("kind", ["hall"])] },
+    { fields: [select("kind", ["room"]), select("result", ["ok"])] },
+  ];
+
+  it("定義に無い項目・選択肢を落とす", () => {
+    expect(
+      pruneFieldSelection({ gone: ["x"], kind: ["hall", "nope"] }, [kind, result], posts),
+    ).toEqual({ kind: ["hall"] });
+  });
+
+  it("select 以外の項目 id は落とす", () => {
+    expect(pruneFieldSelection({ weight: ["1"] }, [kind, weight], posts)).toEqual({});
+  });
+
+  it("全投稿で件数 0 の選択肢を落とす。空になった項目はキーごと消す", () => {
+    expect(
+      pruneFieldSelection({ kind: ["walk"], result: ["ng"] }, [kind, result], posts),
+    ).toEqual({});
+  });
+
+  it("FIELD_UNSET は未設定 > 0 のときだけ残す", () => {
+    expect(pruneFieldSelection({ result: [FIELD_UNSET] }, [kind, result], posts)).toEqual({
+      result: [FIELD_UNSET],
+    });
+    expect(pruneFieldSelection({ kind: [FIELD_UNSET] }, [kind, result], posts)).toEqual({});
+  });
+
+  it("変化が無ければ同じ参照を返す", () => {
+    const sel: FieldSelection = { kind: ["hall", "room"], result: [FIELD_UNSET] };
+    expect(pruneFieldSelection(sel, [kind, result], posts)).toBe(sel);
+    const empty: FieldSelection = {};
+    expect(pruneFieldSelection(empty, [kind], posts)).toBe(empty);
+  });
+
+  it("defs が空なら {}", () => {
+    expect(pruneFieldSelection({ kind: ["hall"] }, [], posts)).toEqual({});
+  });
+});
+
+describe("countFreeTags", () => {
+  it("選択肢と一致するタグ (大文字小文字違い含む) を除く", () => {
+    const area: FieldDef = {
+      id: "area",
+      label: "地域",
+      type: "select",
+      options: [{ id: "tky", label: "Tokyo" }],
+    };
+    const posts: Post[] = [{ tags: ["TOKYO", "雨"] }, { tags: ["tokyo"] }, { tags: ["雨"] }];
+    expect(countFreeTags(posts, [area])).toEqual([{ tag: "雨", key: "雨", count: 2 }]);
+  });
+
+  it("fields: [] の投稿のタグは残る", () => {
+    const posts: Post[] = [{ tags: ["ホール", "東京"], fields: [] }, { tags: ["ホール"] }];
+    expect(countFreeTags(posts, [kind])).toEqual([
+      { tag: "ホール", key: "ホール", count: 1 },
+      { tag: "東京", key: "東京", count: 1 },
+    ]);
+  });
+
+  it("defs が空なら countTags と同じ", () => {
+    const posts: Post[] = [{ tags: ["b", "a"] }, { tags: ["A"] }, {}];
+    expect(countFreeTags(posts, [])).toEqual(countTags(posts));
+  });
+});
+
+describe("fieldFilterGroups", () => {
+  const kind2: FieldDef = {
+    id: "kind",
+    label: "種類",
+    type: "select",
+    multiple: true,
+    options: [
+      { id: "old", label: "旧", archived: true },
+      { id: "hall", label: "ホール" },
+      { id: "room", label: "ルーム" },
+      { id: "none", label: "誰も使わない" },
+    ],
+  };
+  const posts: Post[] = [
+    { fields: [select("kind", ["hall"]), select("result", ["ok"])], tags: ["東京"] },
+    { fields: [select("kind", ["hall", "room"]), select("result", ["ng"])] },
+    { fields: [select("kind", ["old"]), select("result", ["ok"])], tags: ["東京"] },
+    { fields: [select("result", ["ok"])] },
+    { fields: [] },
+  ];
+  const defs = [kind2, weight, result];
+
+  it("select 以外を無視し、定義順・options 順 (archived は後ろ)・FIELD_UNSET 末尾", () => {
+    const groups = fieldFilterGroups(posts, defs, {}, []);
+    expect(groups.map((g) => g.field.id)).toEqual(["kind", "result"]);
+    expect(groups[0].chips.map((c) => c.optionId)).toEqual([
+      "hall",
+      "room",
+      "old",
+      FIELD_UNSET,
+    ]);
+    expect(groups[0].chips.find((c) => c.optionId === "old")?.archived).toBe(true);
+    expect(groups[0].chips.at(-1)).toMatchObject({ label: "未設定", total: 2 });
+    expect(groups[1].chips.map((c) => c.optionId)).toEqual(["ok", "ng", FIELD_UNSET]);
+  });
+
+  it("total 0 のチップは出ない。選択中なら出る", () => {
+    expect(
+      fieldFilterGroups(posts, defs, {}, [])[0].chips.some((c) => c.optionId === "none"),
+    ).toBe(false);
+    const chip = fieldFilterGroups(posts, defs, { kind: ["none"] }, [])[0].chips.find(
+      (c) => c.optionId === "none",
+    );
+    expect(chip).toMatchObject({ total: 0, count: 0, active: true, disabled: false });
+  });
+
+  it("count は他項目 + タグを当てた数で、自項目の選択は当てない", () => {
+    const groups = fieldFilterGroups(posts, defs, { kind: ["hall"], result: ["ok"] }, []);
+    const kindChips = new Map(groups[0].chips.map((c) => [c.optionId, c]));
+    // result=ok の 3 件 (hall / old / 未設定) に対する件数
+    expect(kindChips.get("hall")).toMatchObject({ total: 2, count: 1, active: true });
+    expect(kindChips.get("room")).toMatchObject({ total: 1, count: 0, disabled: true });
+    expect(kindChips.get("old")).toMatchObject({ count: 1, disabled: false });
+    expect(kindChips.get(FIELD_UNSET)).toMatchObject({ count: 1 });
+    // kind=hall の 2 件に対する件数
+    const resultChips = new Map(groups[1].chips.map((c) => [c.optionId, c]));
+    expect(resultChips.get("ok")?.count).toBe(1);
+    expect(resultChips.get("ng")?.count).toBe(1);
+
+    const withTag = fieldFilterGroups(posts, defs, {}, ["東京"]);
+    const tagged = new Map(withTag[0].chips.map((c) => [c.optionId, c.count]));
+    expect(tagged.get("hall")).toBe(1);
+    expect(tagged.get("room")).toBe(0);
+    expect(tagged.get("old")).toBe(1);
+  });
+
+  it("1 つだけの select で 2 値以上持つ旧投稿は全値を数える", () => {
+    const groups = fieldFilterGroups(
+      [{ fields: [select("kind", ["hall", "room"])] }],
+      [kind],
+      {},
+      [],
+    );
+    expect(groups[0].chips.map((c) => [c.optionId, c.total])).toEqual([
+      ["hall", 1],
+      ["room", 1],
+    ]);
+  });
+
+  it("chips が空の項目は返さない / defs 空なら []", () => {
+    const unused: FieldDef = {
+      id: "u",
+      label: "未使用",
+      type: "select",
+      options: [{ id: "x", label: "x" }],
+    };
+    expect(fieldFilterGroups([], [unused], {}, [])).toEqual([]);
+    expect(fieldFilterGroups(posts, [], {}, [])).toEqual([]);
+  });
+
+  it("fields: [] の投稿は選択肢名と同じタグがあっても項目側に数えない", () => {
+    const groups = fieldFilterGroups([{ tags: ["ホール"], fields: [] }], [kind], {}, []);
+    expect(groups[0].chips.map((c) => c.optionId)).toEqual([FIELD_UNSET]);
+  });
+});
+
+describe("freeTagChips", () => {
+  const posts: Post[] = [
+    { fields: [select("kind", ["hall"])], tags: ["東京", "雨"] },
+    { fields: [select("kind", ["room"])], tags: ["東京"] },
+    { fields: [], tags: ["大阪"] },
+  ];
+
+  it("facetCount が項目の選択を反映し、0 件なら disabled", () => {
+    const chips = freeTagChips(posts, [kind], { kind: ["hall"] }, []);
+    const byKey = new Map(chips.map((c) => [c.key, c]));
+    expect(chips.map((c) => c.key)).toEqual(["東京", "大阪", "雨"]);
+    expect(byKey.get("東京")).toMatchObject({ count: 2, facetCount: 1, disabled: false });
+    expect(byKey.get("大阪")).toMatchObject({ count: 1, facetCount: 0, disabled: true });
+  });
+
+  it("選択中は facetCount に関わらず disabled にならない", () => {
+    const chips = freeTagChips(posts, [kind], { kind: ["hall"] }, ["大阪"]);
+    expect(chips.find((c) => c.key === "大阪")).toMatchObject({
+      active: true,
+      disabled: false,
+      facetCount: 0,
+    });
+  });
+});
+
+describe("filterPostsByFieldsAndTags", () => {
+  const posts: Post[] = [
+    { fields: [select("kind", ["hall"])], tags: ["東京"] },
+    { fields: [select("kind", ["hall"])] },
+    { fields: [select("kind", ["room"])], tags: ["東京"] },
+  ];
+
+  it("両方空なら同じ参照", () => {
+    expect(filterPostsByFieldsAndTags(posts, [kind], {}, [])).toBe(posts);
+  });
+
+  it("項目とタグは AND", () => {
+    expect(
+      filterPostsByFieldsAndTags(posts, [kind], { kind: ["hall"] }, ["東京"]),
+    ).toEqual([posts[0]]);
+    expect(
+      filterPostsByFieldsAndTags(posts, [kind], { kind: ["hall", "room"] }, ["東京"]),
+    ).toEqual([posts[0], posts[2]]);
   });
 });

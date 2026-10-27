@@ -6,7 +6,6 @@ import type {
   FieldDef,
   ThreadWithMeta,
   PostWithMeta,
-  TagGroup,
 } from "@/lib/types";
 import { parseAtUri, buildAtUri, NSID_THREAD,
   effectiveSortOrder,
@@ -29,18 +28,18 @@ import {
   ShareIcon,
   PlusIcon,
   StarIcon,
-  HashIcon,
 } from "@/components/ui/icons";
+import { countTags, tagKey } from "@/lib/tags";
 import {
-  countTags,
-  countWithTagAdded,
-  filterPostsByTags,
-  groupTagCounts,
-  tagKey,
-  type TagCount,
-} from "@/lib/tags";
-import { initialFreeTagsForEdit, resolveFieldValues } from "@/lib/fields";
+  filterPostsByFieldsAndTags,
+  initialFreeTagsForEdit,
+  pruneFieldSelection,
+  resolveFieldValues,
+  toggleFieldOption,
+  type FieldSelection,
+} from "@/lib/fields";
 import { formatResolvedValue } from "@/lib/fields-format";
+import { FieldFilterBar } from "@/components/ui/field-filter-bar";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -68,12 +67,15 @@ type ModalKind =
   | "checkpoint-edit"
   | "bsky-import"
   | "thread-edit"
-  | "thread-edit-tags";
+  | "thread-edit-fields";
+
+/** thread.fields が無いときの defs。毎 render で新しい配列を作らず参照を固定する */
+const NO_FIELDS: FieldDef[] = [];
 
 function modalMaxWidth(kind: ModalKind): "lg" | "2xl" | "3xl" {
   switch (kind) {
     case "thread-edit":
-    case "thread-edit-tags":
+    case "thread-edit-fields":
     case "checkpoint-post":
     case "checkpoint-edit":
       return "2xl";
@@ -493,160 +495,77 @@ function YearDivider({ year }: { year: number }) {
 }
 
 /**
- * タイムライン上部に置くタグの絞り込み / 集計バー。
- *
- * - チップは「タグ + そのタグが付いた投稿数」。件数がそのまま集計になる
- * - 複数選択は AND (選んだタグをすべて含む投稿だけ残す)
- * - 選択済みチップをもう一度押すと解除
- * - そのタグを足すと 0 件になる組み合わせは、押せないようにして空振りを防ぐ
+ * チェックポイント本文の下、タグの前に出す記録項目の値 (「項目名 値」)。
+ * select の値はボタンで、押すとその選択肢の絞り込みをトグルする (#60)
  */
-function TagFilterBar({
-  posts,
-  tagGroups,
-  selectedKeys,
-  onToggle,
-  onClear,
-  matchedCount,
-  canEdit = false,
-  onEditGroups,
-}: {
-  /** 絞り込み前の全投稿。件数集計はこちらを基準にする */
-  posts: PostWithMeta[];
-  /** スレッドに定義されたカスタムグループ。未定義なら従来のフラット表示 */
-  tagGroups?: TagGroup[];
-  selectedKeys: string[];
-  onToggle: (key: string) => void;
-  onClear: () => void;
-  matchedCount: number;
-  /** スレッド所有者ならグループ編集への導線を出す (#37) */
-  canEdit?: boolean;
-  onEditGroups?: () => void;
-}) {
-  const counts = useMemo(() => countTags(posts), [posts]);
-  const grouped = useMemo(
-    () => groupTagCounts(counts, tagGroups),
-    [counts, tagGroups],
-  );
-  if (counts.length === 0) return null;
-
-  const filtering = selectedKeys.length > 0;
-
-  const renderChip = (t: TagCount) => {
-    const active = selectedKeys.includes(t.key);
-    // 選択に加えたときの該当件数。0 なら選んでも空になるので無効化する
-    const resulting = countWithTagAdded(posts, selectedKeys, t.key);
-    const disabled = !active && resulting === 0;
-    return (
-      <button
-        key={t.key}
-        type="button"
-        onClick={() => onToggle(t.key)}
-        disabled={disabled}
-        aria-pressed={active}
-        className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition md:px-3 md:py-1 md:text-xs ${
-          active
-            ? "bg-indigo-500 text-white shadow-sm shadow-indigo-900/40"
-            : disabled
-              ? "cursor-not-allowed bg-white/[0.03] text-white/20"
-              : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/90"
-        }`}
-      >
-        #{t.tag}
-        <span
-          className={`tabular-nums ${
-            active ? "text-white/70" : "text-white/30"
-          }`}
-        >
-          {t.count}
-        </span>
-      </button>
-    );
-  };
-
-  return (
-    <div className="mb-8 rounded-2xl border border-white/5 bg-white/[0.02] p-3.5">
-      <div className="mb-2.5 flex items-center gap-2">
-        <HashIcon className="size-3.5 text-white/30" />
-        <span className="text-xs font-medium text-white/50">タグで絞り込む</span>
-        <div className="ml-auto flex items-center gap-1.5">
-          {filtering && (
-            <button
-              type="button"
-              onClick={onClear}
-              className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:bg-white/10 hover:text-white/80 md:px-2.5 md:py-1 md:text-[11px]"
-            >
-              クリア
-            </button>
-          )}
-          {canEdit && onEditGroups && (
-            // グループの追加・編集はこれまでスレッド編集画面の奥にしか無く、
-            // ここから直接飛べなかった (#37)
-            <button
-              type="button"
-              onClick={onEditGroups}
-              className="rounded-full px-3 py-1.5 text-xs font-medium text-indigo-300 transition hover:bg-indigo-500/10 hover:text-indigo-200 md:px-2.5 md:py-1 md:text-[11px]"
-            >
-              グループを編集
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="space-y-2.5">
-        {grouped.groups.map((g, i) => (
-          <div key={`${g.label}-${i}`}>
-            <div className="mb-1.5 text-[11px] font-medium text-white/40">
-              {g.label}
-            </div>
-            <div className="flex flex-wrap gap-2 md:gap-1.5">
-              {g.items.map(renderChip)}
-            </div>
-          </div>
-        ))}
-        {grouped.rest.length > 0 && (
-          <div className="flex flex-wrap gap-2 md:gap-1.5">
-            {grouped.rest.map(renderChip)}
-          </div>
-        )}
-      </div>
-
-      {filtering && (
-        <p className="mt-2.5 text-[11px] text-white/40">
-          {selectedKeys.length > 1 && "すべてのタグを含む "}
-          <span className="font-bold tabular-nums text-indigo-300">
-            {matchedCount}
-          </span>
-          {" / "}
-          <span className="tabular-nums">{posts.length}</span> 件を表示中
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** チェックポイント本文の下、タグの前に出す記録項目の値 (「項目名 値」) */
 function PostFieldValues({
   post,
   defs,
+  selection,
+  onToggleOption,
 }: {
   post: PostWithMeta;
   defs: FieldDef[];
+  selection: FieldSelection;
+  onToggleOption: (fieldId: string, optionId: string) => void;
 }) {
   const items = resolveFieldValues(post, defs)
-    .map((r) => ({ field: r.field, text: formatResolvedValue(r) }))
+    .map((r) => ({ resolved: r, text: formatResolvedValue(r) }))
     .filter((item) => item.text);
   if (items.length === 0) return null;
   return (
     <div className="mt-3 flex flex-wrap gap-1.5">
-      {items.map(({ field, text }) => (
-        <span
-          key={field.id}
-          className="flex max-w-full items-center gap-1 rounded-full bg-white/5 px-2.5 py-0.5 text-[11px]"
-        >
-          <span className="shrink-0 text-white/40">{field.label}</span>
-          <span className="min-w-0 truncate text-white/75">{text}</span>
-        </span>
-      ))}
+      {items.map(({ resolved, text }) => {
+        const { field } = resolved;
+        if (field.type !== "select") {
+          return (
+            <span
+              key={field.id}
+              className="flex max-w-full items-center gap-1 rounded-full bg-white/5 px-2.5 py-0.5 text-[11px]"
+            >
+              <span className="shrink-0 text-white/40">{field.label}</span>
+              <span className="min-w-0 truncate text-white/75">{text}</span>
+            </span>
+          );
+        }
+        const byId = new Map((field.options ?? []).map((o) => [o.id, o]));
+        const selected = selection[field.id] ?? [];
+        return (
+          <span
+            key={field.id}
+            className="flex max-w-full items-center gap-0.5 rounded-full bg-white/5 py-0.5 pl-2.5 pr-1 text-[11px]"
+          >
+            <span className="mr-0.5 shrink-0 text-white/40">{field.label}</span>
+            {[...new Set(resolved.optionIds ?? [])].map((id) => {
+              const opt = byId.get(id);
+              // 定義から消えた選択肢は絞り込めないので文字だけ出す
+              if (!opt) {
+                return (
+                  <span key={id} className="min-w-0 truncate px-1.5 text-white/40">
+                    {formatResolvedValue({ ...resolved, optionIds: [id] })}
+                  </span>
+                );
+              }
+              const active = selected.includes(id);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onToggleOption(field.id, id)}
+                  aria-pressed={active}
+                  className={`min-w-0 truncate rounded-full px-1.5 transition ${
+                    active
+                      ? "bg-indigo-500/30 text-indigo-100"
+                      : "text-white/75 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -698,19 +617,40 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     return effectiveSortOrder(thread) === "asc" ? posts : [...posts].reverse();
   }, [posts, thread]);
 
-  // タグ絞り込み (AND)。比較用の tagKey で保持する
+  const defs = thread?.fields ?? NO_FIELDS;
+
+  // 絞り込み。select 項目 (項目内 OR / 項目間 AND) と自由タグ (AND) を AND で重ねる。
+  // タグは比較用の tagKey で保持する
+  const [fieldSelection, setFieldSelection] = useState<FieldSelection>({});
   const [selectedTagKeys, setSelectedTagKeys] = useState<string[]>([]);
   const threadTagCounts = useMemo(() => countTags(posts), [posts]);
   const visiblePosts = useMemo(
-    () => filterPostsByTags(orderedPosts, selectedTagKeys),
-    [orderedPosts, selectedTagKeys],
+    () =>
+      filterPostsByFieldsAndTags(
+        orderedPosts,
+        defs,
+        fieldSelection,
+        selectedTagKeys,
+      ),
+    [orderedPosts, defs, fieldSelection, selectedTagKeys],
   );
+  const filtering =
+    Object.keys(fieldSelection).length > 0 || selectedTagKeys.length > 0;
   const toggleTagKey = useCallback((key: string) => {
     setSelectedTagKeys((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
     );
   }, []);
-  const clearTagFilter = useCallback(() => setSelectedTagKeys([]), []);
+  const toggleFieldSelection = useCallback(
+    (fieldId: string, optionId: string) => {
+      setFieldSelection((prev) => toggleFieldOption(prev, fieldId, optionId));
+    },
+    [],
+  );
+  const clearFilter = useCallback(() => {
+    setFieldSelection({});
+    setSelectedTagKeys([]);
+  }, []);
 
   // スレッドの切り替えや投稿の削除・編集で消えたタグが選択に残り続けると
   // 「絞り込んでいるのに 0 件」の状態から抜けられなくなるため、都度落とす。
@@ -721,6 +661,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       return next.length === prev.length ? prev : next;
     });
   }, [threadTagCounts]);
+  // 項目の選択も同じ理由で、定義・投稿から消えた選択肢を落とす
+  useEffect(() => {
+    setFieldSelection((prev) => pruneFieldSelection(prev, defs, posts));
+  }, [posts, defs]);
 
   const [loading, setLoading] = useState(true);
   const [, setDeleting] = useState(false);
@@ -1255,24 +1199,27 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           </div>
         )}
 
-        <TagFilterBar
+        <FieldFilterBar
           posts={posts}
-          tagGroups={thread.tagGroups}
-          selectedKeys={selectedTagKeys}
-          onToggle={toggleTagKey}
-          onClear={clearTagFilter}
+          defs={defs}
+          selection={fieldSelection}
+          tagKeys={selectedTagKeys}
+          onToggleOption={toggleFieldSelection}
+          onToggleTag={toggleTagKey}
+          onClear={clearFilter}
           matchedCount={visiblePosts.length}
           canEdit={isOwner}
-          onEditGroups={() => setModal("thread-edit-tags")}
+          onEditFields={() => setModal("thread-edit-fields")}
+          hasLegacyTagGroups={(thread.tagGroups?.length ?? 0) > 0}
         />
 
         {posts.length > 0 && visiblePosts.length === 0 && (
           <div className="py-16 text-center">
             <p className="text-white/30">
-              選択したタグをすべて含むチェックポイントはありません
+              条件に合うチェックポイントはありません
             </p>
             <button
-              onClick={clearTagFilter}
+              onClick={clearFilter}
               className="mt-3 text-sm text-indigo-400 hover:underline"
             >
               絞り込みを解除
@@ -1392,11 +1339,16 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 </div>
               ) : null}
 
-              <PostFieldValues post={cp} defs={thread.fields ?? []} />
+              <PostFieldValues
+                post={cp}
+                defs={defs}
+                selection={fieldSelection}
+                onToggleOption={toggleFieldSelection}
+              />
 
               <PostTags
                 // 項目のチップに出したタグ由来の選択肢は、タグ側では出さない
-                tags={initialFreeTagsForEdit(cp, thread.fields ?? [])}
+                tags={initialFreeTagsForEdit(cp, defs)}
                 selectedKeys={selectedTagKeys}
                 onToggle={toggleTagKey}
               />
@@ -1412,7 +1364,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           <div className="flex items-center gap-3 pl-14 sm:pl-16">
             <div className="h-px flex-1 bg-gradient-to-r from-indigo-500/30 to-transparent" />
             <span className="text-xs text-white/30">
-              {selectedTagKeys.length > 0
+              {filtering
                 ? `${visiblePosts.length} / ${posts.length} チェックポイント`
                 : `${posts.length} チェックポイント`}
             </span>
@@ -1526,13 +1478,13 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               onCancel={closeModal}
             />
           )}
-          {(modal === "thread-edit" || modal === "thread-edit-tags") &&
+          {(modal === "thread-edit" || modal === "thread-edit-fields") &&
             thread && (
             <ThreadEditScreen
               thread={thread}
               threadTags={threadTagCounts}
               initialSection={
-                modal === "thread-edit-tags" ? "tagGroups" : undefined
+                modal === "thread-edit-fields" ? "fields" : undefined
               }
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}

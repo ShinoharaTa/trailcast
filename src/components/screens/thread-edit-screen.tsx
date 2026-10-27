@@ -82,9 +82,9 @@ export interface ThreadEditScreenProps {
   onRequestDelete?: () => void;
   /**
    * 開いた直後にスクロールして見せる節。スレッド詳細の絞り込みパネルから
-   * 「グループを編集」で来たときに使う (#37)。
+   * 「記録項目を編集」で来たときに使う (#37 #60)。
    */
-  initialSection?: "tagGroups";
+  initialSection?: "fields";
 }
 
 export function ThreadEditScreen({
@@ -125,18 +125,12 @@ export function ThreadEditScreen({
   );
   const nextGroupId = useRef((thread.tagGroups ?? []).length);
 
-  const tagGroupsSectionRef = useRef<HTMLDivElement | null>(null);
+  const fieldsSectionRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (initialSection !== "tagGroups") return;
-    // グループが 1 つも無ければ空のグループを用意して、すぐ入力できる状態にする
-    setTagGroups((gs) =>
-      gs.length > 0
-        ? gs
-        : [{ id: nextGroupId.current++, label: "", tags: [] }],
-    );
+    if (initialSection !== "fields") return;
     // モーダルの開くアニメーション後にスクロールしたいので 1 フレーム待つ
     const t = window.setTimeout(() => {
-      tagGroupsSectionRef.current?.scrollIntoView({
+      fieldsSectionRef.current?.scrollIntoView({
         block: "start",
         behavior: "smooth",
       });
@@ -578,7 +572,10 @@ export function ThreadEditScreen({
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+        <div
+          ref={fieldsSectionRef}
+          className="scroll-mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+        >
           <div className="text-sm text-white/70">記録項目</div>
           <p className="mb-3 mt-0.5 text-[11px] leading-relaxed text-white/40">
             投稿で記録する項目を決めます。選択肢・数値・時間・テキストから選べます。名前や選択肢はあとから変えても、過去の記録はそのまま残ります。
@@ -757,10 +754,7 @@ export function ThreadEditScreen({
           )}
         </div>
 
-        <div
-          ref={tagGroupsSectionRef}
-          className="scroll-mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3"
-        >
+        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
           <div className="text-sm text-white/70">タグ絞り込みのグループ</div>
           <p className="mb-3 mt-0.5 text-[11px] text-white/40">
             「場所」「食事」のような見出しでタグをまとめると、スレッド詳細の絞り込みが見出し付きで表示されます

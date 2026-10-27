@@ -226,6 +226,10 @@ export const MAX_TAGS_PER_GROUP = 50;
 /** グループ見出しの最大長 (grapheme 単位) */
 export const MAX_TAG_GROUP_LABEL_LENGTH = 20;
 
+/**
+ * @deprecated 絞り込み UI は記録項目 (fieldFilterGroups) に移った (#60)。
+ * tagGroups の撤去時に削除する。
+ */
 export interface GroupedTagCounts {
   groups: Array<{ label: string; items: TagCount[] }>;
   /** どのグループにも属さないタグ。countTags の並び (件数順) を保つ */
@@ -239,6 +243,9 @@ export interface GroupedTagCounts {
  * - グループに定義されているがスレッド内で未使用のタグは count 0 で返す
  *   (呼び出し側の「0 件チップは無効化」の仕組みでそのまま押せなくなる)
  * - グループ未定義なら全件を rest に返し、従来のフラット表示になる
+ *
+ * @deprecated UI からは使っていない (#60 で fieldFilterGroups に置き換え)。
+ * 変換の件数一致テストが参照しているため残す。tagGroups の撤去時に削除する。
  */
 export function groupTagCounts(
   counts: TagCount[],
