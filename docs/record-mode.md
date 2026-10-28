@@ -327,12 +327,13 @@ export function isPostUnrecorded(post: HasFieldValues, defs: FieldDef[]): boolea
 export function countUnrecorded(posts: HasFieldValues[], defs: FieldDef[]): number;
 
 /**
- * 検索語の正規化。trim → toLocaleLowerCase → 空白で分割（全角空白含む）。空なら []
+ * 検索語の正規化。normalize("NFKC") → trim → toLocaleLowerCase → 空白で分割（全角空白含む）。空なら []
+ * NFKC で全角英数は半角（ＮＡＮＩＣＡ → nanica）、半角カナは全角（ｶﾌｪ → カフェ）に揃う
  */
 export function parseQuery(query: string): string[];
 
 /**
- * 検索対象の文字列（小文字）。本文、自由タグ、解決済みの項目値の表示文字列
+ * 検索対象の文字列（normalize("NFKC") → 小文字。parseQuery と同じ正規化）。本文、自由タグ、解決済みの項目値の表示文字列
  * （formatResolvedValue）、項目名は含めない。
  */
 export function postSearchText(post: PostWithMetaLike, defs: FieldDef[]): string;
