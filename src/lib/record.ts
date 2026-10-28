@@ -23,8 +23,8 @@ export type { ThreadView };
 
 export const THREAD_VIEWS: readonly ThreadView[] = ["timeline", "log", "review"];
 export const DEFAULT_THREAD_VIEW: ThreadView = "timeline";
-/** いま UI がある表示。ふりかえり (review) は 5b で足す */
-export const AVAILABLE_THREAD_VIEWS: readonly ThreadView[] = ["timeline", "log"];
+/** いま UI がある表示 */
+export const AVAILABLE_THREAD_VIEWS: readonly ThreadView[] = THREAD_VIEWS;
 
 /**
  * 初期表示。未設定・未知の値は "timeline"。
