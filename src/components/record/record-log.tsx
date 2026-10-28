@@ -64,6 +64,8 @@ export function RecordLog({
   onOpenPost,
   canEdit = false,
   onEditFields,
+  migrateCount = 0,
+  onOpenMigrate,
 }: {
   /** 絞り込み前の全投稿 (並び順は問わない) */
   posts: PostWithMeta[];
@@ -74,6 +76,9 @@ export function RecordLog({
   onOpenPost: (uri: string) => void;
   canEdit?: boolean;
   onEditFields?: () => void;
+  /** タグから記録項目へ書き換えられる自分の投稿の件数 (#62) */
+  migrateCount?: number;
+  onOpenMigrate?: () => void;
 }) {
   const defs = thread.fields ?? NO_FIELDS;
   const [sortOrder, setSortOrder] = useState<ThreadSortOrder>(() =>
@@ -141,6 +146,8 @@ export function RecordLog({
   // 選択中なら件数 0 になっても解除できるように出す
   const showUnrecorded =
     defs.length > 0 && (unrecordedCount > 0 || filter.unrecorded);
+  // タグから記録項目への書き換えは所有者だけ (自分の投稿が対象のとき)
+  const showMigrate = defs.length > 0 && canEdit && migrateCount > 0;
 
   return (
     <div>
@@ -185,30 +192,46 @@ export function RecordLog({
           className=""
         />
 
-        {showUnrecorded && (
+        {(showUnrecorded || showMigrate) && (
           <div className="px-1">
             <div className="mb-1.5 text-[11px] font-medium text-white/40">
               整理
             </div>
-            <button
-              type="button"
-              onClick={() => update({ unrecorded: !filter.unrecorded })}
-              aria-pressed={filter.unrecorded}
-              className={`flex items-center gap-1.5 rounded-full border border-dashed px-3.5 py-2 text-sm font-medium transition md:px-3 md:py-1 md:text-xs ${
-                filter.unrecorded
-                  ? "border-amber-400 bg-amber-400 text-amber-950"
-                  : "border-amber-400/40 text-amber-300 hover:bg-amber-400/10"
-              }`}
-            >
-              未記録
-              <span
-                className={`tabular-nums ${
-                  filter.unrecorded ? "text-amber-950/70" : "text-amber-300/60"
-                }`}
-              >
-                {unrecordedCount}
-              </span>
-            </button>
+            <div className="flex flex-wrap gap-1.5">
+              {showUnrecorded && (
+                <button
+                  type="button"
+                  onClick={() => update({ unrecorded: !filter.unrecorded })}
+                  aria-pressed={filter.unrecorded}
+                  className={`flex items-center gap-1.5 rounded-full border border-dashed px-3.5 py-2 text-sm font-medium transition md:px-3 md:py-1 md:text-xs ${
+                    filter.unrecorded
+                      ? "border-amber-400 bg-amber-400 text-amber-950"
+                      : "border-amber-400/40 text-amber-300 hover:bg-amber-400/10"
+                  }`}
+                >
+                  未記録
+                  <span
+                    className={`tabular-nums ${
+                      filter.unrecorded ? "text-amber-950/70" : "text-amber-300/60"
+                    }`}
+                  >
+                    {unrecordedCount}
+                  </span>
+                </button>
+              )}
+              {showMigrate && (
+                <button
+                  type="button"
+                  onClick={onOpenMigrate}
+                  className="flex items-center gap-1.5 rounded-full border border-dashed border-indigo-400/40 px-3.5 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-500/10 md:px-3 md:py-1 md:text-xs"
+                >
+                  タグを記録項目に書き換え
+                  <span className="tabular-nums text-indigo-300/60">
+                    {migrateCount}
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

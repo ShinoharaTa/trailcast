@@ -69,6 +69,26 @@ export async function updatePost(
 }
 
 /**
+ * 投稿の整理用の書き戻し（記録項目への移行 #62 など）。
+ * updatePost と違い touchThread を呼ばない（整理は活動ではないので一覧の並びを動かさない）。
+ * cid が変わるのでインデックスへの通知はする。
+ */
+export async function rewritePost(
+  rkey: string,
+  record: PostRecord,
+): Promise<PostWithMeta> {
+  const agent = getAgent();
+  const res = await agent.com.atproto.repo.putRecord({
+    repo: getMyDid(),
+    collection: NSID_POST,
+    rkey,
+    record: record as unknown as Record<string, unknown>,
+  });
+  void notifyPostIndexed(res.data.uri);
+  return { ...record, uri: res.data.uri, cid: res.data.cid, rkey };
+}
+
+/**
  * @param threadUri 削除する投稿が属していたスレッド。渡すとそのスレッドの
  *   updatedAt を進める (削除後は投稿から辿れないため呼び出し側が渡す)。
  */
