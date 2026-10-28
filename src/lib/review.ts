@@ -332,8 +332,9 @@ export interface MonthlyPoint {
 }
 
 /**
- * 月別の系列。範囲は period が all なら 最初の投稿の月〜now の月、
- * それ以外は periodRange の月 (from の月〜to の直前の月)。期間内の投稿が 0 件なら []
+ * 月別の系列。始まりは periodRange の from の月 (all は最初の投稿の月)、
+ * 終わりは to の直前の月 (to が無ければ now と最後の投稿の遅い方の月)。
+ * 期間内の投稿が 0 件なら []
  */
 export function monthlySeries(
   posts: PostLike[],
@@ -347,21 +348,20 @@ export function monthlySeries(
   );
   if (inPeriod.length === 0) return [];
 
-  let from: Date;
-  let to: Date;
-  if (key === "all") {
-    let first = Infinity;
-    for (const p of inPeriod) {
-      first = Math.min(first, parseTime(p.checkpointAt)!.getTime());
-    }
-    from = new Date(first);
-    to = now;
-  } else {
-    const range = periodRange(key, now);
-    from = range.from!;
-    // to は排他なので 1ms 前の月まで
-    to = new Date(range.to!.getTime() - 1);
+  let first = Infinity;
+  let last = -Infinity;
+  for (const p of inPeriod) {
+    const t = parseTime(p.checkpointAt)!.getTime();
+    first = Math.min(first, t);
+    last = Math.max(last, t);
   }
+  const range = periodRange(key, now);
+  const from = range.from ?? new Date(first);
+  // to は排他なので 1ms 前の月まで。終わりが無い期間 (all / 3m / 1y) は
+  // now か期間内の最後の投稿の遅い方まで (未来日時の投稿も月別に入れる)
+  const to = range.to
+    ? new Date(range.to.getTime() - 1)
+    : new Date(Math.max(now.getTime(), last));
 
   const byMonth = new Map<string, PostLike[]>();
   for (const p of inPeriod) {
@@ -459,7 +459,7 @@ export function barLayout(
   };
 }
 
-/** 折れ線 (等間隔 x)。最新 limit 件。1 件なら点だけ */
+/** 折れ線 (等間隔 x)。有限でない値を除いた最新 limit 件。1 件なら点だけ */
 export interface SparklineLayout {
   d: string;
   area: string;
@@ -480,7 +480,7 @@ export function sparklineLayout(
   opts: { width: number; height: number; limit?: number },
 ): SparklineLayout {
   const { width, height, limit = 30 } = opts;
-  const vs = values.slice(-limit);
+  const vs = values.filter((v) => Number.isFinite(v)).slice(-limit);
   if (vs.length === 0) return { d: "", area: "", last: null, min: 0, max: 0 };
   const min = Math.min(...vs);
   const max = Math.max(...vs);

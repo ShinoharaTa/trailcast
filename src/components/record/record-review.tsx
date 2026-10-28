@@ -349,9 +349,16 @@ function NumericSection({
       {card.count === 0 ? (
         <p className="text-xs text-white/30">この期間の記録はありません</p>
       ) : (
-        <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:grid-cols-5">
-          {rows.map((r) => (
-            <div key={r.label} className="min-w-0 bg-surface-900 px-2 py-2.5">
+        // スマホ幅 (3 列) は 2 行目に空きマスが出るので、区切り線を容器の背景ではなく
+        // セルの枠線で引き、空きマスはセルと同じ背景にする。sm 以上は 1 行で従来どおり
+        <dl className="grid grid-cols-3 overflow-hidden rounded-xl border border-white/10 bg-surface-900 sm:grid-cols-5 sm:gap-px sm:bg-white/10">
+          {rows.map((r, i) => (
+            <div
+              key={r.label}
+              className={`min-w-0 border-white/10 bg-surface-900 px-2 py-2.5 sm:border-0 ${
+                i < 3 ? "border-b" : ""
+              } ${i % 3 !== 2 && i + 1 < rows.length ? "border-r" : ""}`}
+            >
               <dt className="text-[10.5px] text-white/40">{r.label}</dt>
               <dd
                 title={r.value}
@@ -492,6 +499,7 @@ function MonthlySection({
             return `${y}年${Number(m)}月 ${metricLabel} ${value}`;
           }}
           label={`月ごとの記録 (${metricLabel})`}
+          periodKey={periodKey}
         />
       )}
     </section>

@@ -18,6 +18,7 @@ export function MonthlyBars({
   formatTitle,
   label,
   padLeft,
+  periodKey,
 }: {
   layout: BarLayout;
   /** barLayout に渡した padLeft (目盛りのラベルを置く幅) */
@@ -27,13 +28,15 @@ export function MonthlyBars({
   /** 棒の <title> */
   formatTitle: (index: number) => string;
   label: string;
+  /** 期間のキー。変わったら (月数が同じでも) 右端へ戻す */
+  periodKey: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // 月数・期間が変わるたびに最新月が見える位置へ戻す
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollLeft = el.scrollWidth;
-  }, [layout.width]);
+  }, [layout.width, periodKey]);
 
   const { width, height } = layout;
   return (
@@ -165,6 +168,8 @@ const PITCH = 14;
 const HEAT_LEFT = 20;
 /** 月ラベルの高さ */
 const HEAT_TOP = 16;
+/** 最後の週の月ラベル ("12月" など) が右端で切れないよう空ける幅 */
+const HEAT_RIGHT = 12;
 const DOW_LABELS: [number, string][] = [
   [0, "日"],
   [2, "火"],
@@ -184,7 +189,7 @@ function slashDay(day: string): string {
   return `${y}/${Number(m)}/${Number(d)}`;
 }
 
-/** 活動した日のヒートマップ (列 = 週、行 = 曜日) */
+/** 活動した日のヒートマップ (列 = 週、行 = 曜日)。初期位置は右端 (今日) */
 export function Heatmap({
   cells,
   monthLabels,
@@ -194,10 +199,16 @@ export function Heatmap({
   monthLabels: { week: number; label: string }[];
   weeks: number;
 }) {
-  const width = HEAT_LEFT + weeks * PITCH;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [weeks]);
+
+  const width = HEAT_LEFT + weeks * PITCH + HEAT_RIGHT;
   const height = HEAT_TOP + 7 * PITCH;
   return (
-    <div className="overflow-x-auto">
+    <div ref={scrollRef} className="overflow-x-auto">
       <svg
         width={width}
         height={height}

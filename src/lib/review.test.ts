@@ -537,6 +537,36 @@ describe("monthlySeries", () => {
     ]);
   });
 
+  it("3m / 1y で未来日時の投稿の月まで並べ、合計は期間内件数と一致", () => {
+    const withFuture = [
+      ...posts,
+      at("2026-12-05T09:00:00+09:00"),
+      at("2027-01-02T09:00:00+09:00"),
+    ];
+    for (const key of ["3m", "1y"] as const) {
+      const s = monthlySeries(withFuture, defs, { kind: "count" }, key, now);
+      expect(s.slice(-4)).toEqual([
+        { month: "2026-10", value: 0 },
+        { month: "2026-11", value: 0 },
+        { month: "2026-12", value: 1 },
+        { month: "2027-01", value: 1 },
+      ]);
+      const total = s.reduce((n, p) => n + (p.value ?? 0), 0);
+      expect(total).toBe(filterByPeriod(withFuture, key, now).length);
+    }
+    const all = monthlySeries(withFuture, defs, { kind: "count" }, "all", now);
+    expect(all.at(-1)).toEqual({ month: "2027-01", value: 1 });
+    expect(all.reduce((n, p) => n + (p.value ?? 0), 0)).toBe(
+      withFuture.filter((p) => p.checkpointAt !== "not a date").length,
+    );
+  });
+
+  it("1y は 12 か月前の月から", () => {
+    const s = monthlySeries(posts, defs, { kind: "count" }, "1y", now);
+    expect(s[0].month).toBe("2025-10");
+    expect(s.at(-1)?.month).toBe("2026-10");
+  });
+
   it("y:N はその年の 1〜12 月", () => {
     const s = monthlySeries(posts, defs, { kind: "count" }, "y:2026", now);
     expect(s.map((p) => p.month)).toEqual(
@@ -628,6 +658,17 @@ describe("sparklineLayout", () => {
     expect(l.d).toBe("M4 46 L96 4");
     expect(l.last).toEqual({ x: 96, y: 4 });
     expect(l.area).toBe("M4 46 L96 4 L96 50 L4 50 Z");
+  });
+
+  it("NaN / Infinity は除く", () => {
+    const l = sparklineLayout([NaN, 0, Infinity, 10, -Infinity], {
+      width: 100,
+      height: 50,
+    });
+    expect(l.d).toBe("M4 46 L96 4");
+    expect(l.min).toBe(0);
+    expect(l.max).toBe(10);
+    expect(sparklineLayout([NaN], { width: 100, height: 50 }).last).toBeNull();
   });
 
   it("limit で最新側を残す", () => {
