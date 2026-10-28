@@ -54,7 +54,14 @@ function collect(): Map<string, Node> {
   for (const lex of LEXICONS) {
     const name = lex.id.split(".").pop()!;
     for (const [defName, def] of Object.entries(lex.defs)) {
-      walk(def, defName === "main" ? name : defName, (n, path) => out.set(path, n));
+      walk(def, defName === "main" ? name : defName, (n, path) => {
+        // def 名は lexicon 横断で一意の前提。string が重複したら黙って上書きせず落とす
+        // (record → record.record のような包みは同じ path で 2 度来るので string だけ見る)
+        if (n.type === "string" && out.get(path)?.type === "string") {
+          throw new Error(`duplicate lexicon path: ${path}`);
+        }
+        out.set(path, n);
+      });
     }
   }
   return out;
