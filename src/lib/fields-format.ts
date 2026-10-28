@@ -48,31 +48,59 @@ export function formatResolvedValue(resolved: ResolvedValue): string {
   return "";
 }
 
-/** 時間の入力欄 (時・分・秒) ごとの文字列。入力途中の空欄を保つため数値にしない */
-export interface DurationParts {
-  h: string;
-  m: string;
-  s: string;
-}
-
-/** 秒を時・分・秒の入力欄の文字列に分ける */
-export function splitSeconds(seconds: number): DurationParts {
-  return {
-    h: String(Math.floor(seconds / 3600)),
-    m: String(Math.floor((seconds % 3600) / 60)),
-    s: String(seconds % 60),
-  };
-}
+const COLON_PATTERN = /^(\d+)(?::(\d{1,2}))?:(\d{1,2})$/;
+const JA_UNIT_PATTERN = /^(?:(\d+)時間(半)?)?(?:(\d+)分(半)?)?(?:(\d+)秒)?$/;
+const EN_UNIT_PATTERN = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i;
+const MINUTES_PATTERN = /^\d+(?:\.\d+)?$/;
 
 /**
- * 時・分・秒の入力を合計秒にする。
- * 全部空なら null (値なし)、分・秒が 59 を超えたら "invalid"。
+ * 時間の自由入力を合計秒にする。NFKC → trim して、空なら null (値なし)。
+ * - "h:mm:ss" / "m:ss"。2 つ目以降は 0〜59
+ * - "1時間23分45秒" / "83分" / "1時間半" / "2分半" (各部は省略可、空白は無視)
+ * - "1h23m45s" / "83m" / "90s" (大文字小文字は無視)
+ * - 数字だけ (小数可) は分。秒に四捨五入
+ * それ以外 (負数を含む) は "invalid"。
  */
-export function joinSeconds(parts: DurationParts): number | null | "invalid" {
-  if (!parts.h && !parts.m && !parts.s) return null;
-  const h = Number(parts.h || "0");
-  const m = Number(parts.m || "0");
-  const s = Number(parts.s || "0");
-  if (m > 59 || s > 59) return "invalid";
-  return h * 3600 + m * 60 + s;
+export function parseDurationInput(input: string): number | null | "invalid" {
+  const text = input.normalize("NFKC").trim();
+  if (!text) return null;
+
+  const colon = COLON_PATTERN.exec(text);
+  if (colon) {
+    const [, first, middle, last] = colon;
+    const h = middle === undefined ? 0 : Number(first);
+    const m = Number(middle ?? first);
+    const s = Number(last);
+    if ((middle !== undefined && m > 59) || s > 59) return "invalid";
+    return h * 3600 + m * 60 + s;
+  }
+
+  if (MINUTES_PATTERN.test(text)) return Math.round(Number(text) * 60);
+
+  const compact = text.replace(/\s+/g, "");
+  const ja = JA_UNIT_PATTERN.exec(compact);
+  if (ja) {
+    const [, h, hHalf, m, mHalf, s] = ja;
+    if (h === undefined && m === undefined && s === undefined) return "invalid";
+    // 「半」はその単位の最後に付くものだけ (「1時間半10分」は不正)
+    if ((hHalf && m !== undefined) || (mHalf && s !== undefined)) {
+      return "invalid";
+    }
+    return (
+      Number(h ?? 0) * 3600 +
+      (hHalf ? 1800 : 0) +
+      Number(m ?? 0) * 60 +
+      (mHalf ? 30 : 0) +
+      Number(s ?? 0)
+    );
+  }
+
+  const en = EN_UNIT_PATTERN.exec(compact);
+  if (en) {
+    const [, h, m, s] = en;
+    if (h === undefined && m === undefined && s === undefined) return "invalid";
+    return Number(h ?? 0) * 3600 + Number(m ?? 0) * 60 + Number(s ?? 0);
+  }
+
+  return "invalid";
 }
