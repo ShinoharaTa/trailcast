@@ -84,6 +84,7 @@
 - 範囲（#74）: number 項目だけ（duration は対象外）。**両端を含み、項目間 AND**。
   範囲を入れた項目に値を持たない投稿は一致しない。不正な入力の側は無視する（`filterPostsByRanges`）。
   タイムラインと記録帳の両方で効く。
+  archived の項目の範囲入力は prune で落とす（select は選択肢単位の archived があるため残す）。
 - 項目 × タグ × 範囲 × 検索 × 未記録: すべて AND。
 - 「自由タグ」= `initialFreeTagsForEdit(post, defs)`。選択肢と一致したタグは
   項目側のチップにだけ出す（二重に出さない）。
