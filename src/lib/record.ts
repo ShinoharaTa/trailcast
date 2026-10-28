@@ -45,6 +45,18 @@ export function defaultViewForRecord(view: ThreadView): ThreadView | undefined {
   return view === DEFAULT_THREAD_VIEW ? undefined : view;
 }
 
+/**
+ * 編集画面の保存値。既定の表示を触っていなければ元の値 ("review" や未知の値も) を
+ * そのまま残し、変えたときだけ defaultViewForRecord で組み立てる。
+ */
+export function defaultViewToSave(
+  saved: ThreadRecord["defaultView"],
+  initial: ThreadView,
+  current: ThreadView,
+): ThreadView | undefined {
+  return current === initial ? saved : defaultViewForRecord(current);
+}
+
 export interface RecordFilter {
   fields: FieldSelection;
   /** tagKey */

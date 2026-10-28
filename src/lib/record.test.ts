@@ -5,6 +5,7 @@ import {
   applyRecordFilter,
   countUnrecorded,
   defaultViewForRecord,
+  defaultViewToSave,
   effectiveDefaultView,
   isPostUnrecorded,
   isRecordFilterActive,
@@ -86,6 +87,25 @@ describe("defaultViewForRecord", () => {
   });
   it("log は書く", () => {
     expect(defaultViewForRecord("log")).toBe("log");
+  });
+});
+
+describe("defaultViewToSave", () => {
+  it("未変更なら review を保持する", () => {
+    expect(defaultViewToSave("review", "log", "log")).toBe("review");
+  });
+  it("未変更なら未知の値を保持する", () => {
+    const unknown = "grid" as unknown as ThreadView;
+    expect(defaultViewToSave(unknown, "timeline", "timeline")).toBe(unknown);
+  });
+  it("未変更で未設定なら undefined のまま", () => {
+    expect(defaultViewToSave(undefined, "timeline", "timeline")).toBeUndefined();
+  });
+  it("timeline に変えたら書かない", () => {
+    expect(defaultViewToSave("log", "log", "timeline")).toBeUndefined();
+  });
+  it("log に変えたら log", () => {
+    expect(defaultViewToSave(undefined, "timeline", "log")).toBe("log");
   });
 });
 

@@ -523,20 +523,23 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
   const defs = thread?.fields ?? NO_FIELDS;
 
+  // 絞り込み。select 項目 (項目内 OR / 項目間 AND) と自由タグ (AND) を AND で重ねる。
+  // タグは比較用の tagKey で保持する。検索語・未記録は記録帳だけで効く (タイムラインは見ない)
+  const [filter, setFilter] = useState<RecordFilter>(EMPTY_RECORD_FILTER);
+
   // 表示 (タイムライン / 記録帳)。初期値はスレッドの defaultView。
   // refresh() で thread が入れ替わっても上書きしないよう、初期化したスレッドの uri を持つ。
-  // 描画前に決めて、既定が記録帳のスレッドでタイムラインが一瞬見えないようにする
+  // 描画前に決めて、既定が記録帳のスレッドでタイムラインが一瞬見えないようにする。
+  // スレッドが変わったら絞り込みも初期化する (前のスレッドの検索語・未記録を持ち越さない)
   const [view, setView] = useState<ThreadView>("timeline");
   const viewInitUriRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (!thread || viewInitUriRef.current === thread.uri) return;
     viewInitUriRef.current = thread.uri;
     setView(effectiveDefaultView(thread, AVAILABLE_THREAD_VIEWS));
+    setFilter(EMPTY_RECORD_FILTER);
   }, [thread]);
 
-  // 絞り込み。select 項目 (項目内 OR / 項目間 AND) と自由タグ (AND) を AND で重ねる。
-  // タグは比較用の tagKey で保持する。検索語・未記録は記録帳だけで効く (タイムラインは見ない)
-  const [filter, setFilter] = useState<RecordFilter>(EMPTY_RECORD_FILTER);
   const threadTagCounts = useMemo(() => countTags(posts), [posts]);
   // 絞り込みバーの自由タグ (freeTagChips) と同じ集合。選択の掃除に使う
   const freeTagCounts = useMemo(
@@ -605,11 +608,15 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       return next.length === prev.tags.length ? prev : { ...prev, tags: next };
     });
   }, [freeTagCounts]);
-  // 項目の選択も同じ理由で、定義・投稿から消えた選択肢を落とす
+  // 項目の選択も同じ理由で、定義・投稿から消えた選択肢を落とす。
+  // 項目が無くなったら未記録 (項目に値が無い投稿) の絞り込みも意味を失うので外す
   useEffect(() => {
     setFilter((prev) => {
       const next = pruneFieldSelection(prev.fields, defs, posts);
-      return next === prev.fields ? prev : { ...prev, fields: next };
+      const unrecorded = defs.length === 0 ? false : prev.unrecorded;
+      return next === prev.fields && unrecorded === prev.unrecorded
+        ? prev
+        : { ...prev, fields: next, unrecorded };
     });
   }, [posts, defs]);
 

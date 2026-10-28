@@ -17,7 +17,7 @@ import {
 } from "@/lib/types";
 import {
   AVAILABLE_THREAD_VIEWS,
-  defaultViewForRecord,
+  defaultViewToSave,
   effectiveDefaultView,
 } from "@/lib/record";
 
@@ -343,8 +343,8 @@ export function ThreadEditScreen({
           coverImage,
           // 終了状態ごとの既定と同じなら値を書かず、違うときだけ残す。
           sortOrder: sortOrder === defaultSortOrder ? undefined : sortOrder,
-          // 既定 (タイムライン) なら書かない
-          defaultView: defaultViewForRecord(defaultView),
+          // 触っていなければ元の値を残す。変えたときは既定 (タイムライン) なら書かない
+          defaultView: defaultViewToSave(thread.defaultView, initialView, defaultView),
           // 終了時刻は最初に終了した時刻を保つ。再開したら消す。
           endedAt: ended ? (thread.endedAt ?? new Date().toISOString()) : undefined,
           // 変換した場合は編集中の tagGroups が空なので undefined になる

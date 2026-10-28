@@ -71,13 +71,27 @@ export function RecordLog({
   // 入力のたびに一覧を組み直すと重くなるので、検索語の反映は遅らせる
   const deferredQuery = useDeferredValue(filter.query);
 
+  // filter 全体を deps にすると、入力のたびに (query だけ変わっても) 組み直してしまう
   const rows = useMemo(
     () =>
       sortByCheckpoint(
-        applyRecordFilter(posts, defs, { ...filter, query: deferredQuery }),
+        applyRecordFilter(posts, defs, {
+          fields: filter.fields,
+          tags: filter.tags,
+          unrecorded: filter.unrecorded,
+          query: deferredQuery,
+        }),
         sortOrder,
       ),
-    [posts, defs, filter, deferredQuery, sortOrder],
+    [
+      posts,
+      defs,
+      filter.fields,
+      filter.tags,
+      filter.unrecorded,
+      deferredQuery,
+      sortOrder,
+    ],
   );
   const unrecordedCount = useMemo(
     () => countUnrecorded(posts, defs),
