@@ -65,7 +65,7 @@
 |---|---|---|---|---|
 | **4** | `feature/fields-filter` | タイムラインの絞り込みを「select 項目 + 自由タグ」に置き換え。`groupTagCounts` 経路の廃止 | #63/#65/#66 | 中 |
 | **5a** | `feature/record-mode-log` | 「タイムライン / 記録」切り替え、記録帳（検索・絞り込み・一覧・未記録チップ）、既定表示の保存（lexicon `defaultView`） | 4 | 中 |
-| **5b** | `feature/record-review-stats` | ふりかえり: 期間切替、KPI、select の件数・割合、number/duration の合計/平均/最大最小 | 5a | 中 |
+| **5b** | `feature/record-review-stats` | ふりかえり: 期間切替、KPI、select の件数・割合、number の合計/平均/最大最小（duration は対象外、D-11） | 5a | 中 |
 | **5c** | `feature/record-review-charts` | ふりかえりのグラフ: 月別（件数 / 数値の合計・平均）、数値の推移、ヒートマップ。SVG 手書き | 5b | 中 |
 
 - issue: 4 = #60、5a = #72、5b = #73、5c = #61。各 PR 本文に `Closes #<それぞれ>`、5a/5b は加えて `Refs #61`。
