@@ -10,6 +10,9 @@ export const TAG_INDEX_RKEY = "self";
 
 export type ThreadSortOrder = "asc" | "desc";
 
+/** スレッド詳細の表示。timeline = タイムライン、log = 記録帳、review = ふりかえり */
+export type ThreadView = "timeline" | "log" | "review";
+
 /**
  * スレッド詳細の絞り込みに出すタグのグループ (例: 「場所: #大阪駅 #東京駅」)。
  * 表示の整理のためだけのもので、タグの実体は常に post.tags 側にある。
@@ -95,6 +98,11 @@ export interface ThreadRecord {
    * 既存レコードとの後方互換のため optional で扱う。
    */
   sortOrder?: ThreadSortOrder;
+  /**
+   * スレッド詳細を開いたときの表示。省略時はタイムライン。所有者が設定し、
+   * 全閲覧者に効く。既存レコードとの後方互換のため optional。
+   */
+  defaultView?: ThreadView;
   /**
    * タグ絞り込みのカスタムグループ。未設定なら従来どおりフラット表示。
    * 既存レコードとの後方互換のため optional。

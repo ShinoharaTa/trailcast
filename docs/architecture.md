@@ -68,6 +68,7 @@ Tauri アプリ内から AT Protocol の OAuth (DPOP) フローを実行し、�
 | `visibility` | string (enum) | Yes | `private` / `public` |
 | `coverImage` | blob | No | カバー画像 |
 | `createdAt` | datetime | Yes | 作成日時 |
+| `defaultView` | string | No | スレッド詳細を開いたときの表示。`timeline`（省略時）/ `log`（記録帳）/ `review`（ふりかえり）。表示の設定のみで投稿には影響しない |
 
 ### `net.shino3.trailcast.post`
 
