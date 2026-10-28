@@ -32,6 +32,7 @@ export function FieldFilterBar({
   canEdit = false,
   onEditFields,
   hasLegacyTagGroups = false,
+  className = "mb-8",
 }: {
   /** 絞り込み前の全投稿。件数集計はこちらを基準にする */
   posts: PostWithMeta[];
@@ -48,6 +49,8 @@ export function FieldFilterBar({
   onEditFields?: () => void;
   /** thread.tagGroups が残っている (変換案内の文言用) */
   hasLegacyTagGroups?: boolean;
+  /** 外側の余白。記録帳のツールバーでは詰める */
+  className?: string;
 }) {
   const groups = useMemo(
     () => fieldFilterGroups(posts, defs, selection, tagKeys),
@@ -121,7 +124,7 @@ export function FieldFilterBar({
   );
 
   return (
-    <div className="mb-8 rounded-2xl border border-white/5 bg-white/[0.02] p-3.5">
+    <div className={`${className} rounded-2xl border border-white/5 bg-white/[0.02] p-3.5`}>
       <div className="mb-2.5 flex items-center gap-2">
         <HashIcon className="size-3.5 text-white/30" />
         <span className="text-xs font-medium text-white/50">

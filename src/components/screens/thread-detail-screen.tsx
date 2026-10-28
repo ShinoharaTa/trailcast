@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { NavigationProps } from "@/lib/use-navigation";
 import type {
   FieldDef,
@@ -29,18 +36,26 @@ import {
   PlusIcon,
   StarIcon,
 } from "@/components/ui/icons";
-import { countTags, tagKey } from "@/lib/tags";
+import { countTags } from "@/lib/tags";
 import {
   countFreeTags,
-  filterPostsByFieldsAndTags,
   initialFreeTagsForEdit,
   pruneFieldSelection,
-  resolveFieldValues,
   toggleFieldOption,
-  type FieldSelection,
 } from "@/lib/fields";
-import { formatResolvedValue } from "@/lib/fields-format";
+import {
+  AVAILABLE_THREAD_VIEWS,
+  EMPTY_RECORD_FILTER,
+  applyRecordFilter,
+  effectiveDefaultView,
+  isRecordFilterActive,
+  type RecordFilter,
+  type ThreadView,
+} from "@/lib/record";
 import { FieldFilterBar } from "@/components/ui/field-filter-bar";
+import { PostFieldValues, PostTags } from "@/components/ui/post-field-values";
+import { RecordTabs, ViewSwitch } from "@/components/record/view-switch";
+import { RecordLog } from "@/components/record/record-log";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -495,118 +510,6 @@ function YearDivider({ year }: { year: number }) {
   );
 }
 
-/**
- * チェックポイント本文の下、タグの前に出す記録項目の値 (「項目名 値」)。
- * select の値はボタンで、押すとその選択肢の絞り込みをトグルする (#60)
- */
-function PostFieldValues({
-  post,
-  defs,
-  selection,
-  onToggleOption,
-}: {
-  post: PostWithMeta;
-  defs: FieldDef[];
-  selection: FieldSelection;
-  onToggleOption: (fieldId: string, optionId: string) => void;
-}) {
-  const items = resolveFieldValues(post, defs)
-    .map((r) => ({ resolved: r, text: formatResolvedValue(r) }))
-    .filter((item) => item.text);
-  if (items.length === 0) return null;
-  return (
-    <div className="mt-3 flex flex-wrap gap-1.5">
-      {items.map(({ resolved, text }) => {
-        const { field } = resolved;
-        if (field.type !== "select") {
-          return (
-            <span
-              key={field.id}
-              className="flex max-w-full items-center gap-1 rounded-full bg-white/5 px-2.5 py-0.5 text-[11px]"
-            >
-              <span className="shrink-0 text-white/40">{field.label}</span>
-              <span className="min-w-0 truncate text-white/75">{text}</span>
-            </span>
-          );
-        }
-        const byId = new Map((field.options ?? []).map((o) => [o.id, o]));
-        const selected = selection[field.id] ?? [];
-        return (
-          <span
-            key={field.id}
-            className="flex max-w-full items-center gap-0.5 rounded-full bg-white/5 py-0.5 pl-2.5 pr-1 text-[11px]"
-          >
-            <span className="mr-0.5 shrink-0 text-white/40">{field.label}</span>
-            {[...new Set(resolved.optionIds ?? [])].map((id) => {
-              const opt = byId.get(id);
-              // 定義から消えた選択肢は絞り込めないので文字だけ出す
-              if (!opt) {
-                return (
-                  <span key={id} className="min-w-0 truncate px-1.5 text-white/40">
-                    {formatResolvedValue({ ...resolved, optionIds: [id] })}
-                  </span>
-                );
-              }
-              const active = selected.includes(id);
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => onToggleOption(field.id, id)}
-                  aria-pressed={active}
-                  className={`min-w-0 truncate rounded-full px-1.5 transition ${
-                    active
-                      ? "bg-indigo-500/30 text-indigo-100"
-                      : "text-white/75 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-/** チェックポイント本文の下に出すタグ。クリックでその絞り込みをトグルする */
-function PostTags({
-  tags,
-  selectedKeys,
-  onToggle,
-}: {
-  tags: string[];
-  selectedKeys: string[];
-  onToggle: (key: string) => void;
-}) {
-  if (tags.length === 0) return null;
-  return (
-    <div className="mt-3 flex flex-wrap gap-2 md:gap-1.5">
-      {tags.map((tag) => {
-        const key = tagKey(tag);
-        const active = selectedKeys.includes(key);
-        return (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onToggle(key)}
-            aria-pressed={active}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium transition md:px-2.5 md:py-0.5 md:text-[11px] ${
-              active
-                ? "bg-indigo-500/30 text-indigo-100"
-                : "bg-indigo-500/10 text-indigo-300/80 hover:bg-indigo-500/20 hover:text-indigo-200"
-            }`}
-          >
-            #{tag}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const { did: myDid, isAuthenticated } = useAuthStore();
   const [thread, setThread] = useState<ThreadWithMeta | null>(null);
@@ -620,10 +523,20 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
   const defs = thread?.fields ?? NO_FIELDS;
 
+  // 表示 (タイムライン / 記録帳)。初期値はスレッドの defaultView。
+  // refresh() で thread が入れ替わっても上書きしないよう、初期化したスレッドの uri を持つ。
+  // 描画前に決めて、既定が記録帳のスレッドでタイムラインが一瞬見えないようにする
+  const [view, setView] = useState<ThreadView>("timeline");
+  const viewInitUriRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!thread || viewInitUriRef.current === thread.uri) return;
+    viewInitUriRef.current = thread.uri;
+    setView(effectiveDefaultView(thread, AVAILABLE_THREAD_VIEWS));
+  }, [thread]);
+
   // 絞り込み。select 項目 (項目内 OR / 項目間 AND) と自由タグ (AND) を AND で重ねる。
-  // タグは比較用の tagKey で保持する
-  const [fieldSelection, setFieldSelection] = useState<FieldSelection>({});
-  const [selectedTagKeys, setSelectedTagKeys] = useState<string[]>([]);
+  // タグは比較用の tagKey で保持する。検索語・未記録は記録帳だけで効く (タイムラインは見ない)
+  const [filter, setFilter] = useState<RecordFilter>(EMPTY_RECORD_FILTER);
   const threadTagCounts = useMemo(() => countTags(posts), [posts]);
   // 絞り込みバーの自由タグ (freeTagChips) と同じ集合。選択の掃除に使う
   const freeTagCounts = useMemo(
@@ -631,46 +544,73 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     [posts, defs],
   );
   const visiblePosts = useMemo(
-    () =>
-      filterPostsByFieldsAndTags(
-        orderedPosts,
-        defs,
-        fieldSelection,
-        selectedTagKeys,
-      ),
-    [orderedPosts, defs, fieldSelection, selectedTagKeys],
+    () => applyRecordFilter(orderedPosts, defs, filter, { timeline: true }),
+    [orderedPosts, defs, filter],
   );
-  const filtering =
-    Object.keys(fieldSelection).length > 0 || selectedTagKeys.length > 0;
+  const filtering = isRecordFilterActive(filter, { timeline: true });
   const toggleTagKey = useCallback((key: string) => {
-    setSelectedTagKeys((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-    );
+    setFilter((prev) => ({
+      ...prev,
+      tags: prev.tags.includes(key)
+        ? prev.tags.filter((k) => k !== key)
+        : [...prev.tags, key],
+    }));
   }, []);
   const toggleFieldSelection = useCallback(
     (fieldId: string, optionId: string) => {
-      setFieldSelection((prev) => toggleFieldOption(prev, fieldId, optionId));
+      setFilter((prev) => ({
+        ...prev,
+        fields: toggleFieldOption(prev.fields, fieldId, optionId),
+      }));
     },
     [],
   );
+  // タイムラインの絞り込みバーから解除するのは、タイムラインで効いている項目・タグだけ
   const clearFilter = useCallback(() => {
-    setFieldSelection({});
-    setSelectedTagKeys([]);
+    setFilter((prev) => ({ ...prev, fields: {}, tags: [] }));
   }, []);
+
+  // 記録帳の行から、タイムラインのその投稿へ移る。
+  // 検索語・未記録はタイムラインに効かないので残す。項目・タグの条件でその投稿が
+  // 隠れるときだけ、項目・タグの絞り込みを外す
+  const scrollToPost = useCallback(
+    (uri: string) => {
+      setView("timeline");
+      const post = posts.find((p) => p.uri === uri);
+      setFilter((prev) =>
+        post &&
+        applyRecordFilter([post], defs, prev, { timeline: true }).length === 0
+          ? { ...prev, fields: {}, tags: [] }
+          : prev,
+      );
+      // タイムラインの描画を待ってからスクロールする
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document
+            .querySelector(`[data-post-uri="${CSS.escape(uri)}"]`)
+            ?.scrollIntoView({ block: "center" });
+        });
+      });
+    },
+    [posts, defs],
+  );
 
   // スレッドの切り替えや投稿の削除・編集で消えたタグ (選択肢扱いになったタグを含む)
   // が選択に残り続けると「絞り込んでいるのに 0 件」の状態から抜けられなくなるため、
   // 絞り込みバーに出ない自由タグは都度落とす。
   useEffect(() => {
     const available = new Set(freeTagCounts.map((t) => t.key));
-    setSelectedTagKeys((prev) => {
-      const next = prev.filter((k) => available.has(k));
-      return next.length === prev.length ? prev : next;
+    setFilter((prev) => {
+      const next = prev.tags.filter((k) => available.has(k));
+      return next.length === prev.tags.length ? prev : { ...prev, tags: next };
     });
   }, [freeTagCounts]);
   // 項目の選択も同じ理由で、定義・投稿から消えた選択肢を落とす
   useEffect(() => {
-    setFieldSelection((prev) => pruneFieldSelection(prev, defs, posts));
+    setFilter((prev) => {
+      const next = pruneFieldSelection(prev.fields, defs, posts);
+      return next === prev.fields ? prev : { ...prev, fields: next };
+    });
   }, [posts, defs]);
 
   const [loading, setLoading] = useState(true);
@@ -1198,8 +1138,27 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         </div>
       </div>
 
-      {/* Timeline */}
+      {/* Timeline / 記録 */}
       <div className="mx-auto max-w-3xl px-4 pt-10 pb-28 sm:px-5">
+        <ViewSwitch view={view} onChange={setView} />
+
+        {view !== "timeline" && (
+          <>
+            <RecordTabs view={view} onChange={setView} />
+            <RecordLog
+              posts={posts}
+              thread={thread}
+              filter={filter}
+              onFilterChange={setFilter}
+              onOpenPost={scrollToPost}
+              canEdit={isOwner}
+              onEditFields={() => setModal("thread-edit-fields")}
+            />
+          </>
+        )}
+
+        {view === "timeline" && (
+        <>
         {posts.length === 0 && (
           <div className="py-16 text-center">
             <p className="text-white/30">まだチェックポイントがありません</p>
@@ -1209,8 +1168,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         <FieldFilterBar
           posts={posts}
           defs={defs}
-          selection={fieldSelection}
-          tagKeys={selectedTagKeys}
+          selection={filter.fields}
+          tagKeys={filter.tags}
           onToggleOption={toggleFieldSelection}
           onToggleTag={toggleTagKey}
           onClear={clearFilter}
@@ -1262,7 +1221,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             </div>
 
             {group.posts.map((cp, i) => (
-              <div key={cp.uri} className="group relative">
+              <div key={cp.uri} data-post-uri={cp.uri} className="group relative">
                 {/* 2 件目以降は従来どおり小さな○。先頭 post の位置は DateBadge に
                     重なるので ○ は描画しない。 */}
                 {i > 0 && (
@@ -1349,14 +1308,14 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               <PostFieldValues
                 post={cp}
                 defs={defs}
-                selection={fieldSelection}
+                selection={filter.fields}
                 onToggleOption={toggleFieldSelection}
               />
 
               <PostTags
                 // 項目のチップに出したタグ由来の選択肢は、タグ側では出さない
                 tags={initialFreeTagsForEdit(cp, defs)}
-                selectedKeys={selectedTagKeys}
+                selectedKeys={filter.tags}
                 onToggle={toggleTagKey}
               />
                 </div>
@@ -1376,6 +1335,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 : `${posts.length} チェックポイント`}
             </span>
           </div>
+        )}
+        </>
         )}
       </div>
 

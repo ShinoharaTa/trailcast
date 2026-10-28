@@ -12,8 +12,14 @@ import {
   type FieldType,
   stripRecordMeta,
   type ThreadSortOrder,
+  type ThreadView,
   type ThreadWithMeta,
 } from "@/lib/types";
+import {
+  AVAILABLE_THREAD_VIEWS,
+  defaultViewForRecord,
+  effectiveDefaultView,
+} from "@/lib/record";
 
 function formatEndedAt(iso: string): string {
   const d = new Date(iso);
@@ -106,6 +112,12 @@ export function ThreadEditScreen({
   const [sortOrder, setSortOrder] = useState<ThreadSortOrder>(() =>
     effectiveSortOrder(thread),
   );
+  // スレッド詳細を開いたときの表示 (全閲覧者に効く)。未設定はタイムライン
+  const initialView: ThreadView = effectiveDefaultView(
+    thread,
+    AVAILABLE_THREAD_VIEWS,
+  );
+  const [defaultView, setDefaultView] = useState<ThreadView>(initialView);
 
   // スレッド自体の分類タグ / 新規投稿の既定タグ (#36 #38)
   const [threadTagList, setThreadTagList] = useState<string[]>(
@@ -331,6 +343,8 @@ export function ThreadEditScreen({
           coverImage,
           // 終了状態ごとの既定と同じなら値を書かず、違うときだけ残す。
           sortOrder: sortOrder === defaultSortOrder ? undefined : sortOrder,
+          // 既定 (タイムライン) なら書かない
+          defaultView: defaultViewForRecord(defaultView),
           // 終了時刻は最初に終了した時刻を保つ。再開したら消す。
           endedAt: ended ? (thread.endedAt ?? new Date().toISOString()) : undefined,
           // 変換した場合は編集中の tagGroups が空なので undefined になる
@@ -411,6 +425,7 @@ export function ThreadEditScreen({
     (description.trim() || undefined) !== thread.description ||
     visibility !== thread.visibility ||
     sortOrder !== initialSortOrder ||
+    defaultView !== initialView ||
     endedDirty ||
     coverFile !== null ||
     coverRemoved ||
@@ -569,6 +584,40 @@ export function ThreadEditScreen({
             >
               新しい順 (降順)
             </button>
+          </div>
+        </div>
+
+        {/* 表示の設定なので、終了したスレッドでも編集できる */}
+        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+          <div className="mb-2">
+            <div className="text-sm text-white/70">既定の表示</div>
+            <div className="text-[11px] text-white/40">
+              スレッドを開いたときの表示です。見る人全員に適用されます
+              {defaultView === "timeline" && " (デフォルト)"}
+            </div>
+          </div>
+          <div className="flex gap-2" role="radiogroup" aria-label="既定の表示">
+            {(
+              [
+                { view: "timeline", label: "タイムライン" },
+                { view: "log", label: "記録帳" },
+              ] as const
+            ).map((o) => (
+              <button
+                key={o.view}
+                type="button"
+                role="radio"
+                aria-checked={defaultView === o.view}
+                onClick={() => setDefaultView(o.view)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                  defaultView === o.view
+                    ? "border-indigo-400/60 bg-indigo-500/15 text-white"
+                    : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/5"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
           </div>
         </div>
 
