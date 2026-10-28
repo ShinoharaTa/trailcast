@@ -8,5 +8,7 @@ export default defineConfig({
   },
   test: {
     include: ["src/**/*.test.ts"],
+    // 日付キーはブラウザのローカル時刻で作るので、テストは JST に固定する (record-mode.md §3.4)
+    env: { TZ: "Asia/Tokyo" },
   },
 });

@@ -106,6 +106,9 @@
   fallback は **option.label 完全一致（tagKey）** のみ、曖昧マッチはしない。
 - タグからの読み替え（fallback）は post に `fields` プロパティが**存在しない**場合のみ。
   空配列 `[]` は「明示的に値なし」として扱い fallback しない。
+- 記録項目（archived 以外）のあるスレッドでは、新規投稿も編集保存も、項目が
+  未入力なら `fields: []` を書く（自由タグが選択肢扱いで読み替えられないように）。
+  項目の無いスレッドでは新規投稿は `fields` を書かない。
 - `tagGroups` は **deprecated**。変換後は thread から消す（§7）。lexicon の
   プロパティ自体は残す（既存 record が持っているため）。
 
@@ -280,6 +283,8 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
 | 4 | `feature/fields-filter` | thread-detail の `TagFilterBar` を「select フィールド + 自由タグ」構成に置き換え（`groupTagCounts` 経路の廃止）。fallback 込み | 1, 2 | 中 |
 | 5 | （別仕様）記録帳 / ふりかえり | 絞り込み一覧・集計の表示モード。number/duration の合計/平均/最大最小 | 1, 4 | 大 |
 | 6 | `feature/fields-migrate-posts` | 所有者の旧 post を fields に書き換える任意ツール（設定 or スレッド編集から） | 1, 2 | 小〜中 |
+
+PR 4・5（絞り込み / 記録帳 / ふりかえり）の実装仕様は [record-mode.md](./record-mode.md)。
 
 - PR 1 は UI を含まないので単独でマージ可。2 と 3 は並行可。
 - `implementer` に渡すときは PR 1 の関数シグネチャ一覧（下記）を仕様として添える。

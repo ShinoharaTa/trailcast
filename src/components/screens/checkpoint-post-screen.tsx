@@ -8,9 +8,15 @@ import { processSelectedImage, type PreparedImage } from "@/lib/image-process";
 import { buildCrosspostText, buildEmbedImages } from "@/lib/bsky-crosspost";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { TagInput } from "@/components/ui/tag-input";
+import { FieldInputs } from "@/components/ui/field-inputs";
 import { recordTagUsage } from "@/lib/pds/tags";
 import { sanitizeTagsForRecord, type TagCount } from "@/lib/tags";
-import type { Location, TagGroup } from "@/lib/types";
+import {
+  buildNewPostFields,
+  crosspostTagsFor,
+  stripSelectedOptionTags,
+} from "@/lib/fields";
+import type { FieldDef, FieldValue, Location, TagGroup } from "@/lib/types";
 
 const MAX_IMAGES = 4;
 const MAX_TEXT = 200;
@@ -64,6 +70,8 @@ export interface CheckpointPostScreenProps {
   tagGroups?: TagGroup[];
   /** スレッド設定の既定タグ。初期値として入れる (外せる) */
   defaultTags?: string[];
+  /** スレッド (所有者) の記録項目の定義。参加者もこの定義で入力する */
+  fields?: FieldDef[];
   onSubmitted: () => void;
 }
 
@@ -73,11 +81,15 @@ export function CheckpointPostScreen({
   threadTags,
   tagGroups,
   defaultTags,
+  fields,
   onSubmitted,
 }: CheckpointPostScreenProps) {
   const handle = useAuthStore((s) => s.handle);
   const [text, setText] = useState("");
   const [tags, setTags] = useState<string[]>(() => [...(defaultTags ?? [])]);
+  const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
+  const [fieldsValid, setFieldsValid] = useState(true);
+  const inputDefs = (fields ?? []).filter((d) => !d.archived);
   // タグ欄は既定で畳む (#35)。「とにかく記録する」ときに邪魔にならないように。
   // 既定タグがあれば触らなくても付くので、開くのは足したい/外したいときだけ。
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -241,12 +253,18 @@ export function CheckpointPostScreen({
     setLocationError(null);
   };
 
+  // 記録項目のあるスレッドでは未入力でも `fields: []` を書く (タグ fallback を止める)
+  const recordFields = buildNewPostFields(fields ?? [], fieldValues);
+
   const handleSubmit = async () => {
     if (!threadUri) return;
     setSubmitting(true);
     setError(null);
     try {
-      const recordTags = sanitizeTagsForRecord(tags);
+      // 選択した option の label は tags に書かない (fields 側が正)
+      const recordTags = sanitizeTagsForRecord(
+        stripSelectedOptionTags(tags, recordFields, fields ?? []),
+      );
 
       // 画像はすでに縮小 + 圧縮済みの Blob を保持しているのでそのままアップロード。
       const blobs = await Promise.all(
@@ -276,7 +294,11 @@ export function CheckpointPostScreen({
           handle: effectiveHandle,
           threadUri,
           body: text,
-          tags: recordTags,
+          // 自由タグ + 選択した option の label をハッシュタグにする
+          tags: crosspostTagsFor(
+            { tags: recordTags, fields: recordFields },
+            fields ?? [],
+          ),
         });
         const res = await agent.post({
           text: bskyText,
@@ -296,6 +318,7 @@ export function CheckpointPostScreen({
         images: blobs.length > 0 ? blobs : undefined,
         location: location ?? undefined,
         tags: recordTags,
+        fields: recordFields,
         checkpointAt: checkpointIso,
         sourceRef,
         createdAt,
@@ -309,7 +332,11 @@ export function CheckpointPostScreen({
     }
   };
 
-  const hasContent = text.trim().length > 0 || images.length > 0;
+  // 本文・画像が無くても、記録項目の値が 1 つでもあれば投稿できる
+  const hasContent =
+    text.trim().length > 0 ||
+    images.length > 0 ||
+    (recordFields?.length ?? 0) > 0;
 
   return (
     <>
@@ -329,6 +356,14 @@ export function CheckpointPostScreen({
             {text.length}/{MAX_TEXT}
           </span>
         </div>
+
+        <FieldInputs
+          defs={inputDefs}
+          values={fieldValues}
+          onChange={setFieldValues}
+          onValidityChange={setFieldsValid}
+          disabled={submitting}
+        />
 
         {tagsOpen ? (
           <TagInput
@@ -583,7 +618,7 @@ export function CheckpointPostScreen({
 
         <button
           onClick={handleSubmit}
-          disabled={submitting || processing || !hasContent}
+          disabled={submitting || processing || !hasContent || !fieldsValid}
           className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:opacity-50 disabled:pointer-events-none"
         >
           {submitting ? (

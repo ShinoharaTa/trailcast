@@ -47,6 +47,11 @@
             "knownValues": ["asc", "desc"],
             "description": "Display order of checkpoints by checkpointAt. 'desc' (default) shows newest first, 'asc' shows oldest first."
           },
+          "defaultView": {
+            "type": "string",
+            "knownValues": ["timeline", "log", "review"],
+            "description": "Which view the thread detail opens in: 'timeline' (default when absent), 'log' (searchable list), or 'review' (stats). Display preference only; does not affect stored posts."
+          },
           "tagGroups": {
             "type": "array",
             "maxLength": 50,
