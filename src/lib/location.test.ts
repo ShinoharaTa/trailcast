@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DECIMAL_PATTERN } from "@/lib/fields";
-import { formatCoordinate, locationToRecord, parseLocation } from "@/lib/location";
+import { formatCoordinate, locationToRecord, locationToSave, parseLocation } from "@/lib/location";
 import type { Location } from "@/lib/types";
 
 describe("formatCoordinate", () => {
@@ -14,6 +14,10 @@ describe("formatCoordinate", () => {
     const s = formatCoordinate(n);
     expect(s).toBe(expected);
     expect(DECIMAL_PATTERN.test(s)).toBe(true);
+  });
+
+  it.each([NaN, Infinity, -Infinity])("%s は throw", (n) => {
+    expect(() => formatCoordinate(n)).toThrow();
   });
 });
 
@@ -79,6 +83,18 @@ describe("locationToRecord", () => {
     expect("altitude" in rec).toBe(false);
   });
 
+  it.each([NaN, Infinity, -Infinity])("緯度経度が %s なら throw", (n) => {
+    expect(() => locationToRecord({ latitude: n, longitude: 139 })).toThrow();
+    expect(() => locationToRecord({ latitude: 35, longitude: n })).toThrow();
+  });
+
+  it.each([NaN, Infinity, -Infinity])("altitude が %s なら altitude だけ落とす", (n) => {
+    expect(locationToRecord({ latitude: 35, longitude: 139, altitude: n })).toEqual({
+      latitude: "35",
+      longitude: "139",
+    });
+  });
+
   it("parseLocation と往復する", () => {
     const cases: Location[] = [
       { latitude: 35.68123456789, longitude: 139.76712345678, altitude: 12.3456789 },
@@ -96,5 +112,35 @@ describe("locationToRecord", () => {
         expect(Math.abs(back!.altitude! - loc.altitude)).toBeLessThanOrEqual(1e-7);
       }
     }
+  });
+});
+
+describe("locationToSave", () => {
+  it("未変更なら読めない値をそのまま保持する", () => {
+    const original = { latitude: "abc", longitude: 139 };
+    expect(locationToSave(original, parseLocation(original), false)).toBe(original);
+  });
+
+  it("位置を外したら undefined", () => {
+    expect(locationToSave({ latitude: "abc", longitude: 139 }, null, true)).toBeUndefined();
+    expect(locationToSave({ latitude: 35, longitude: 139 }, null, true)).toBeUndefined();
+  });
+
+  it("編集したら string 化する", () => {
+    expect(locationToSave({ latitude: "abc" }, { latitude: 35.5, longitude: 139.25 }, false)).toEqual({
+      latitude: "35.5",
+      longitude: "139.25",
+    });
+  });
+
+  it("number の旧値は未変更でも string に正規化する", () => {
+    const original = { latitude: 35.6812, longitude: 139.7671, altitude: 40 };
+    const expected = { latitude: "35.6812", longitude: "139.7671", altitude: "40" };
+    expect(locationToSave(original, parseLocation(original), false)).toEqual(expected);
+    expect(locationToSave(original, null, false)).toEqual(expected);
+  });
+
+  it("元が無ければ undefined", () => {
+    expect(locationToSave(undefined, null, false)).toBeUndefined();
   });
 });

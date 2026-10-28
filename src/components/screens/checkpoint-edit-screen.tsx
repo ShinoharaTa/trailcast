@@ -22,7 +22,7 @@ import {
   initialFreeTagsForEdit,
   resolveFieldValues,
 } from "@/lib/fields";
-import { locationToRecord, parseLocation } from "@/lib/location";
+import { locationToSave, parseLocation } from "@/lib/location";
 import { recordTagUsage } from "@/lib/pds/tags";
 import { tagKey, type TagCount } from "@/lib/tags";
 
@@ -75,6 +75,8 @@ export function CheckpointEditScreen({
   const [location, setLocation] = useState<Location | null>(() =>
     parseLocation(post.location),
   );
+  // 位置を外す操作をしたか。読めない location は外されない限り元の値を書き戻す
+  const [locationRemoved, setLocationRemoved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,7 +97,7 @@ export function CheckpointEditScreen({
         ...stripRecordMeta(post),
         text: text.trim() || undefined,
         // 旧 record の数値もここで decimal string に正規化される (#64)
-        location: location ? locationToRecord(location) : undefined,
+        location: locationToSave(post.location, location, locationRemoved),
         tags: recordTags,
         fields: recordFields,
         checkpointAt: checkpointAt || post.checkpointAt,
@@ -191,7 +193,10 @@ export function CheckpointEditScreen({
               </span>
             </div>
             <button
-              onClick={() => setLocation(null)}
+              onClick={() => {
+                setLocation(null);
+                setLocationRemoved(true);
+              }}
               className="rounded-full p-1.5 text-white/30 transition hover:bg-red-500/10 hover:text-red-400"
             >
               <CloseIcon className="size-4" />

@@ -8,8 +8,12 @@
 import { DECIMAL_PATTERN } from "@/lib/fields";
 import type { Location, LocationRecord } from "@/lib/types";
 
-/** 小数 7 桁 (約 1cm) に丸め、末尾の 0 と "." を落とす。"-0" は "0"。DECIMAL_PATTERN を満たす */
+/**
+ * 小数 7 桁 (約 1cm) に丸め、末尾の 0 と "." を落とす。"-0" は "0"。DECIMAL_PATTERN を満たす。
+ * NaN / ±Infinity は呼び出し元の不具合なので throw する
+ */
 export function formatCoordinate(n: number): string {
+  if (!Number.isFinite(n)) throw new Error(`座標が有限値ではありません: ${n}`);
   let s = n.toFixed(7);
   if (s.includes(".")) s = s.replace(/0+$/, "").replace(/\.$/, "");
   return s === "-0" ? "0" : s;
@@ -41,12 +45,36 @@ export function parseLocation(raw: unknown): Location | null {
   return altitude === null ? { latitude, longitude } : { latitude, longitude, altitude };
 }
 
-/** 保存用。3 値とも formatCoordinate。altitude が undefined ならキーを作らない */
+/**
+ * 保存用。3 値とも formatCoordinate。緯度経度が有限値でなければ throw。
+ * altitude が undefined か有限値でなければキーを作らない
+ */
 export function locationToRecord(loc: Location): LocationRecord {
   const out: LocationRecord = {
     latitude: formatCoordinate(loc.latitude),
     longitude: formatCoordinate(loc.longitude),
   };
-  if (loc.altitude !== undefined) out.altitude = formatCoordinate(loc.altitude);
+  if (loc.altitude !== undefined && Number.isFinite(loc.altitude)) {
+    out.altitude = formatCoordinate(loc.altitude);
+  }
   return out;
+}
+
+/**
+ * 編集保存で書く location を決める。
+ * - edited があればそれを string 化する (読める旧値の number もここで正規化される)
+ * - removed (ユーザーが位置を外した) なら undefined
+ * - どちらでもなければ、読める original は string に正規化し、読めない original はそのまま返す
+ *   (parseLocation が null の値をユーザーの操作なしに消さない)
+ */
+export function locationToSave(
+  original: unknown,
+  edited: Location | null,
+  removed: boolean,
+): LocationRecord | undefined {
+  if (edited) return locationToRecord(edited);
+  if (removed) return undefined;
+  const parsed = parseLocation(original);
+  if (parsed) return locationToRecord(parsed);
+  return original as LocationRecord | undefined;
 }

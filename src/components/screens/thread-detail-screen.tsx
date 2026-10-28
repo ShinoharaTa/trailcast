@@ -1228,7 +1228,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               </div>
             </div>
 
-            {group.posts.map((cp, i) => (
+            {group.posts.map((cp, i) => {
+              // record 上は number (旧) か decimal string。読めなければ出さない
+              const loc = parseLocation(cp.location);
+              return (
               <div key={cp.uri} data-post-uri={cp.uri} className="group relative">
                 {/* 2 件目以降は従来どおり小さな○。先頭 post の位置は DateBadge に
                     重なるので ○ は描画しない。 */}
@@ -1241,18 +1244,12 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 {multiAuthor && (
                   <PostAuthorChip did={parseAtUri(cp.uri).repo} navigate={navigate} />
                 )}
-                {(() => {
-                  // record 上は number (旧) か decimal string。読めなければ出さない
-                  const loc = parseLocation(cp.location);
-                  return (
-                    loc && (
-                      <span className="flex items-center gap-1 text-white/40">
-                        <PinIcon className="size-3" />
-                        {loc.latitude.toFixed(4)}, {loc.longitude.toFixed(4)}
-                      </span>
-                    )
-                  );
-                })()}
+                {loc && (
+                  <span className="flex items-center gap-1 text-white/40">
+                    <PinIcon className="size-3" />
+                    {loc.latitude.toFixed(4)}, {loc.longitude.toFixed(4)}
+                  </span>
+                )}
                 {cp.sourceRef && (
                   <span className="flex items-center gap-1.5">
                     <a
@@ -1334,7 +1331,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               />
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>,
           );
           return nodes;
