@@ -1059,8 +1059,8 @@ export function isRangeField(def: FieldDef): boolean {
 }
 
 /**
- * 境界 1 つを数値にする。trim 後に空なら null、解釈できなければ "invalid"。
- * DECIMAL_PATTERN かつ MAX_NUMBER_VALUE_LENGTH 以内なら Number()。
+ * 境界 1 つを数値にする。NFKC 正規化 (全角数字 → 半角) と trim の後に空なら null、
+ * 解釈できなければ "invalid"。DECIMAL_PATTERN かつ MAX_NUMBER_VALUE_LENGTH 以内なら Number()。
  * 範囲項目でない def には常に "invalid"
  */
 export function parseRangeBound(
@@ -1068,7 +1068,7 @@ export function parseRangeBound(
   def: FieldDef,
 ): number | null | "invalid" {
   if (!isRangeField(def)) return "invalid";
-  const s = raw.trim();
+  const s = raw.normalize("NFKC").trim();
   if (!s) return null;
   return isValidDecimal(s) ? Number(s) : "invalid";
 }
@@ -1098,7 +1098,10 @@ export function numericValueOf(
   return isValidDecimal(value) ? Number(value) : null;
 }
 
-/** 境界を更新した新しい選択。両方空になったキーは削除。入力は変更しない */
+/**
+ * 境界を更新した新しい選択。trim 後に空ならその端は空にし、両方空になったキーは削除。
+ * 入力は変更しない
+ */
 export function setRangeBound(
   ranges: RangeSelection,
   fieldId: string,
@@ -1107,7 +1110,7 @@ export function setRangeBound(
 ): RangeSelection {
   const next: RangeInput = {
     ...(ranges[fieldId] ?? EMPTY_RANGE_INPUT),
-    [bound]: raw,
+    [bound]: raw.trim() ? raw : "",
   };
   const out: RangeSelection = { ...ranges };
   if (next.min || next.max) out[fieldId] = next;

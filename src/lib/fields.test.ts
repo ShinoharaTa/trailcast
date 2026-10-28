@@ -1286,6 +1286,11 @@ describe("範囲絞り込み (#74)", () => {
       expect(parseRangeBound("1e3", weight)).toBe("invalid");
       expect(parseRangeBound("1".repeat(33), weight)).toBe("invalid");
     });
+    it("全角数字は NFKC 正規化してから解釈する", () => {
+      expect(parseRangeBound("８０", weight)).toBe(80);
+      expect(parseRangeBound("　１２．５　", weight)).toBe(12.5);
+      expect(parseRangeBound("　", weight)).toBeNull();
+    });
     it("範囲項目でない def は常に invalid", () => {
       expect(parseRangeBound("1", kind)).toBe("invalid");
       expect(parseRangeBound("1", time)).toBe("invalid");
@@ -1333,6 +1338,17 @@ describe("範囲絞り込み (#74)", () => {
       expect(c).toEqual({ weight: { min: "", max: "90" } });
       expect(b).toEqual({ weight: { min: "80", max: "90" } });
       expect(setRangeBound(c, "weight", "max", "")).toEqual({});
+    });
+    it("空白だけの入力は空として扱う", () => {
+      const a = setRangeBound({}, "weight", "min", "  ");
+      expect(a).toEqual({});
+      expect(hasRangeInput(a)).toBe(false);
+      expect(
+        setRangeBound({ weight: { min: "", max: "90" } }, "weight", "max", "  "),
+      ).toEqual({});
+      expect(
+        setRangeBound({ weight: { min: "80", max: "" } }, "weight", "max", "  "),
+      ).toEqual({ weight: { min: "80", max: "" } });
     });
   });
 

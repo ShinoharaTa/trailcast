@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { FieldDef, PostWithMeta } from "@/lib/types";
 import {
   FIELD_UNSET,
+  effectiveRange,
   fieldFilterGroups,
   formatRangeBound,
   freeTagChips,
@@ -17,6 +18,10 @@ import {
 } from "@/lib/fields";
 import { HashIcon } from "@/components/ui/icons";
 
+/** FieldInputs の inputClass を絞り込みバー用に詰めたもの */
+const rangeInputClass =
+  "rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50 md:text-xs";
+
 /**
  * タイムライン上部に置く絞り込み / 集計バー (#60)。仕様は docs/record-mode.md §4.3。
  *
@@ -25,10 +30,6 @@ import { HashIcon } from "@/components/ui/icons";
  * - 選択済みチップをもう一度押すと解除
  * - 未選択で件数 0 のチップは、押せないようにして空振りを防ぐ
  */
-/** FieldInputs の inputClass を絞り込みバー用に詰めたもの */
-const rangeInputClass =
-  "rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50 md:text-xs";
-
 export function FieldFilterBar({
   posts,
   defs,
@@ -65,6 +66,17 @@ export function FieldFilterBar({
   /** 外側の余白。記録帳のツールバーでは詰める */
   className?: string;
 }) {
+  // blur 済みの範囲入力 ("fieldId:min" など)。入力中は不正の注記を出さない
+  const [blurred, setBlurred] = useState<ReadonlySet<string>>(new Set());
+  const setBlurredKey = (key: string, on: boolean) =>
+    setBlurred((prev) => {
+      if (prev.has(key) === on) return prev;
+      const next = new Set(prev);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+
   const groups = useMemo(
     () => fieldFilterGroups(posts, defs, selection, tagKeys, ranges),
     [posts, defs, selection, tagKeys, ranges],
@@ -133,15 +145,27 @@ export function FieldFilterBar({
 
   const renderRangeRow = (r: RangeFilterRow) => {
     const { field } = r;
+    const showInvalid = (key: "min" | "max") =>
+      r.invalid[key] && blurred.has(`${field.id}:${key}`);
+    const range = effectiveRange(r.input, field);
+    const reversed =
+      range !== null &&
+      range.min !== null &&
+      range.max !== null &&
+      range.min > range.max;
     const bound = (key: "min" | "max") => (
       <input
         type="text"
         inputMode="decimal"
         value={r.input[key]}
-        onChange={(e) => onRangeChange(field.id, key, e.target.value)}
+        onChange={(e) => {
+          setBlurredKey(`${field.id}:${key}`, false);
+          onRangeChange(field.id, key, e.target.value);
+        }}
+        onBlur={() => setBlurredKey(`${field.id}:${key}`, true)}
         placeholder={r.span ? formatRangeBound(r.span[key]) : ""}
         aria-label={`${field.label} の${key === "min" ? "下限" : "上限"}`}
-        aria-invalid={r.invalid[key] || undefined}
+        aria-invalid={showInvalid(key) || undefined}
         className={`w-20 ${rangeInputClass}`}
       />
     );
@@ -150,7 +174,7 @@ export function FieldFilterBar({
         <div className="mb-1.5 text-[11px] font-medium text-white/40">
           {field.label}
         </div>
-        <div className="flex items-center gap-2 md:gap-1.5">
+        <div className="flex flex-wrap items-center gap-2 md:gap-1.5">
           {bound("min")}
           <span className="text-sm text-white/40 md:text-xs">〜</span>
           {bound("max")}
@@ -176,9 +200,14 @@ export function FieldFilterBar({
             </span>
           )}
         </div>
-        {(r.invalid.min || r.invalid.max) && (
+        {(showInvalid("min") || showInvalid("max")) && (
           <p className="mt-1 text-[11px] text-red-400">
             数字で入力してください
+          </p>
+        )}
+        {reversed && (
+          <p className="mt-1 text-[11px] text-red-400">
+            下限が上限より大きくなっています
           </p>
         )}
       </div>
