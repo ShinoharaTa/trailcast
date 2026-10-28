@@ -56,6 +56,7 @@ Tauri アプリ内から AT Protocol の OAuth (DPOP) フローを実行し、�
 
 スレッドごとの記録項目（`thread.fields` / `post.fields`）の仕様は [custom-fields.md](./custom-fields.md) を参照。
 記録項目を使った絞り込み・記録帳・ふりかえりの仕様は [record-mode.md](./record-mode.md) を参照。
+残 issue（#64 / #74 / #62 / #31）の実装仕様は [remaining-spec.md](./remaining-spec.md) を参照。
 
 ### `net.shino3.trailcast.thread`
 
