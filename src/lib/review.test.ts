@@ -5,6 +5,7 @@ import {
   availablePeriods,
   barLayout,
   dayKey,
+  dayLabel,
   filterByPeriod,
   formatStat,
   heatLevel,
@@ -17,6 +18,7 @@ import {
   periodRange,
   reviewKpis,
   sparklineLayout,
+  spansMultipleYears,
 } from "@/lib/review";
 import type { FieldDef, FieldValue } from "@/lib/types";
 
@@ -50,18 +52,25 @@ describe("periodRange / filterByPeriod", () => {
     expect(filterByPeriod(posts, "all", now)).toBe(posts);
   });
 
-  it("3m はちょうど 3 か月前を含み、now を含む", () => {
-    const { from } = periodRange("3m", now);
+  it("3m はちょうど 3 か月前を含み、now と未来の投稿も含む", () => {
+    const { from, to } = periodRange("3m", now);
     expect(from?.getTime()).toBe(
       new Date("2026-07-28T12:00:00+09:00").getTime(),
     );
+    expect(to).toBeNull();
     const posts = [
       at("2026-07-28T11:59:59.999+09:00"),
       at("2026-07-28T12:00:00+09:00"),
       at("2026-10-28T12:00:00+09:00"),
       at("2026-10-28T12:00:00.001+09:00"),
+      at("2027-01-01T00:00:00+09:00"),
     ];
-    expect(filterByPeriod(posts, "3m", now)).toEqual([posts[1], posts[2]]);
+    expect(filterByPeriod(posts, "3m", now)).toEqual([
+      posts[1],
+      posts[2],
+      posts[3],
+      posts[4],
+    ]);
   });
 
   it("3m は前の月に同じ日が無ければ末日に寄せる", () => {
@@ -71,10 +80,11 @@ describe("periodRange / filterByPeriod", () => {
     );
   });
 
-  it("1y は 1 年前の同時刻から", () => {
+  it("1y は 1 年前の同時刻から、終わりは無し", () => {
     expect(periodRange("1y", now).from?.getTime()).toBe(
       new Date("2025-10-28T12:00:00+09:00").getTime(),
     );
+    expect(periodRange("1y", now).to).toBeNull();
   });
 
   it("y:2025 は 1/1 00:00 から 12/31 23:59:59 まで", () => {
@@ -85,6 +95,17 @@ describe("periodRange / filterByPeriod", () => {
       at("2026-01-01T00:00:00+09:00"),
     ];
     expect(filterByPeriod(posts, "y:2025", now)).toEqual([posts[1], posts[2]]);
+  });
+
+  it("y:50 は 1950 年ではなく 50 年", () => {
+    const posts = [
+      at("0050-06-01T00:00:00+09:00"),
+      at("1950-06-01T00:00:00+09:00"),
+    ];
+    expect(filterByPeriod(posts, "y:50", now)).toEqual([posts[0]]);
+    const { from, to } = periodRange("y:50", now);
+    expect(from?.getFullYear()).toBe(50);
+    expect(to?.getFullYear()).toBe(51);
   });
 
   it("all 以外では不正な日付を除く", () => {
@@ -156,6 +177,25 @@ describe("dayKey / monthKey", () => {
   it("不正な日付は null", () => {
     expect(dayKey("not a date")).toBeNull();
     expect(monthKey("")).toBeNull();
+  });
+});
+
+describe("spansMultipleYears / dayLabel", () => {
+  it("単年なら M/D、複数年にまたがれば YYYY/M/D", () => {
+    const single = [
+      at("2026-01-01T00:30:00+09:00"),
+      at("2026-12-31T23:30:00+09:00"),
+      at("not a date"),
+    ];
+    const multi = [
+      at("2025-12-31T23:30:00+09:00"),
+      at("2026-01-01T00:30:00+09:00"),
+    ];
+    expect(spansMultipleYears(single)).toBe(false);
+    expect(spansMultipleYears(multi)).toBe(true);
+    expect(spansMultipleYears([])).toBe(false);
+    expect(dayLabel("2026-06-03", spansMultipleYears(single))).toBe("6/3");
+    expect(dayLabel("2026-06-03", spansMultipleYears(multi))).toBe("2026/6/3");
   });
 });
 
@@ -379,6 +419,15 @@ describe("formatStat", () => {
     expect(formatStat(9.75, n())).toBe("9.8");
     expect(formatStat(7, n(3))).toBe("7");
     expect(formatStat(-0.01, n(1))).toBe("0");
+  });
+
+  it("巨大・極小の値も指数表記にしない (末尾 0 なし)", () => {
+    expect(formatStat(1e21, n(1))).toBe("1000000000000000000000");
+    expect(formatStat(-2.5e22, n(0))).toBe("-25000000000000000000000");
+    expect(formatStat(1.5e21, n(3))).toBe("1500000000000000000000");
+    expect(formatStat(0.0000001, n(3))).toBe("0");
+    expect(formatStat(0.001, n(3))).toBe("0.001");
+    expect(formatStat(12345.6, n(1))).toBe("12345.6");
   });
 
   it("duration は m:ss / h:mm:ss", () => {

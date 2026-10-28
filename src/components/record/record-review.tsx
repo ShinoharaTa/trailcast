@@ -7,6 +7,7 @@ import {
   HEATMAP_WEEKS,
   availablePeriods,
   barLayout,
+  dayLabel,
   filterByPeriod,
   formatStat,
   heatmapCells,
@@ -15,6 +16,7 @@ import {
   optionShares,
   reviewKpis,
   sparklineLayout,
+  spansMultipleYears,
   type MonthlyMetric,
   type PeriodKey,
 } from "@/lib/review";
@@ -35,13 +37,9 @@ const SPARK_WIDTH = 320;
 const TICK_CHAR_WIDTH = 6.5;
 const BAR_PAD_LEFT = 26;
 
-/** "YYYY-MM-DD" → "M/D" */
-function dayLabel(day: string): string {
-  const [, m, d] = day.split("-");
-  return `${Number(m)}/${Number(d)}`;
-}
-
+/** 整数 %。0 より大きく 1% 未満は "<1%" (0% と見分ける) */
 function percent(share: number): string {
+  if (share > 0 && share < 0.01) return "<1%";
   return `${Math.round(share * 100)}%`;
 }
 
@@ -128,7 +126,11 @@ export function RecordReview({
           value={kpis.busiestDay ? String(kpis.busiestDay.count) : "—"}
           unit={kpis.busiestDay ? "件" : undefined}
           label="1 日最多"
-          sub={kpis.busiestDay ? dayLabel(kpis.busiestDay.day) : undefined}
+          sub={
+            kpis.busiestDay
+              ? dayLabel(kpis.busiestDay.day, spansMultipleYears(inPeriod))
+              : undefined
+          }
         />
       </div>
 
@@ -233,6 +235,9 @@ function SelectSection({
   const max = Math.max(1, unset, ...items.map((i) => i.count));
   const shown = expanded ? items : items.slice(0, TOP_OPTIONS);
   const hidden = items.length - shown.length;
+  // 単一選択でも 1 件が複数の選択肢に数えられていれば延べ数 (割合の合計が 100% を超える)
+  const overCounted =
+    items.reduce((sum, i) => sum + i.count, 0) + unset > total;
 
   const bar = (
     key: string,
@@ -277,7 +282,9 @@ function SelectSection({
     <section className="mt-7">
       <SectionHeading
         title={def.label}
-        note={def.multiple ? "複数選択は延べ数" : undefined}
+        note={
+          def.multiple ? "複数選択は延べ数" : overCounted ? "延べ数" : undefined
+        }
       />
       {items.length === 0 && unset === 0 ? (
         <p className="text-xs text-white/30">この期間の記録はありません</p>
@@ -342,7 +349,7 @@ function NumericSection({
       {card.count === 0 ? (
         <p className="text-xs text-white/30">この期間の記録はありません</p>
       ) : (
-        <dl className="grid grid-cols-5 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10">
+        <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:grid-cols-5">
           {rows.map((r) => (
             <div key={r.label} className="min-w-0 bg-surface-900 px-2 py-2.5">
               <dt className="text-[10.5px] text-white/40">{r.label}</dt>

@@ -467,7 +467,7 @@ export interface Period { key: PeriodKey; label: string }   // "全期間" "直�
 /** 固定 3 つ + 投稿がある年（新しい順、最大 5）。投稿が 0 件なら固定 3 つだけ */
 export function availablePeriods(posts: { checkpointAt: string }[], now: Date): Period[];
 
-/** [from, to) をローカル時刻で。all は両方 null。3m = now の 3 か月前の同時刻から、1y 同様、y:N = その年 */
+/** [from, to) をローカル時刻で。all は両方 null。3m = now の 3 か月前の同時刻から、1y 同様（どちらも to は null = 未来日時の投稿も含む）、y:N = その年 */
 export function periodRange(key: PeriodKey, now: Date): { from: Date | null; to: Date | null };
 export function filterByPeriod<T extends { checkpointAt: string }>(posts: T[], key: PeriodKey, now: Date): T[];
 
@@ -511,9 +511,9 @@ export function formatStat(value: number | null, def: FieldDef): string;
 1. 期間チップ（`availablePeriods`）。初期値 `"all"`。state は `RecordReview` 内（記録帳と共有しない）。
 2. KPI 4 枚（モックの `.kpis`、2 列 × 2 行 on mobile）:
    「記録」count 件 / 「活動日」activeDays 日 / 「月あたり」perMonth（小数 1 桁）/
-   「1 日最多」busiestDay.count 件（下に日付 `M/D`）。
+   「1 日最多」busiestDay.count 件（下に日付 `M/D`。期間内の投稿が複数年にまたがるときは `YYYY/M/D`）。
 3. select 項目ごとの節（`optionShares`）: 見出し = `field.label`、副題「複数選択は延べ数」
-   （`multiple` のときのみ）。横棒（モックの `.bar`、`fill` は単色 indigo）+ 右に「N件 P%」。
+   （`multiple` のときのみ。単一選択でも件数の合計が期間内の投稿数を超えるときは「延べ数」）。横棒（モックの `.bar`、`fill` は単色 indigo）+ 右に「N件 P%」。
    上位 8 件、残りは「ほか n 件を表示」で展開。末尾に未設定（unset > 0 のとき、点線）。
    **棒を押すと記録帳へ**: `onJumpToLog({ fields: { [field.id]: [optionId] } })`
    → 親が `filter` をそれだけに置き換え、`view = "log"`。期間は持ち越さない（記録帳に
@@ -536,7 +536,7 @@ export function formatStat(value: number | null, def: FieldDef): string;
 - [ ] `defaultView: "review"` で開くとふりかえりが初期表示。
 
 ### 6.5 テストケース（`review.test.ts`）
-- `periodRange` / `filterByPeriod`: all / 3m の境界（ちょうど 3 か月前は含む、now は含む）/ y:2025 の 1/1 00:00 と 12/31 23:59:59 / 不正日付は除外。
+- `periodRange` / `filterByPeriod`: all / 3m の境界（ちょうど 3 か月前は含む、now と未来の投稿も含む）/ y:2025 の 1/1 00:00 と 12/31 23:59:59 / 不正日付は除外。
 - `availablePeriods`: 年の並び（新しい順）/ 最大 5 / 投稿 0 件。
 - `dayKey` / `monthKey`: JST の日付跨ぎ（`2026-06-30T23:30:00+09:00` → `2026-06-30`、UTC 換算で日が変わるケース）。
 - `reviewKpis`: 同日 3 件 → activeDays 1、busiestDay / 1 件だけ → spanMonths 1, perMonth = 1 / 0 件 → null。

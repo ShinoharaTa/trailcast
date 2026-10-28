@@ -43,6 +43,7 @@ export function availablePeriods(
   // 年チップは投稿から作るので now は使わない (シグネチャは仕様に揃える)
   _now: Date,
 ): Period[] {
+  // 未使用引数の lint (no-unused-vars) を避ける
   void _now;
   const years = new Set<number>();
   for (const p of posts) {
@@ -67,9 +68,18 @@ function monthsBefore(now: Date, months: number): Date {
   return d;
 }
 
+/** その年の 1/1 00:00 (ローカル)。new Date(y, 0, 1) は 0〜99 年を 1900 年代にするので使わない */
+function startOfYear(year: number): Date {
+  const d = new Date(0);
+  d.setFullYear(year, 0, 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 /**
  * [from, to) をローカル時刻で。all は両方 null。
- * 3m / 1y は now の 3 か月 / 1 年前の同時刻から now まで (now を含む)。
+ * 3m / 1y は now の 3 か月 / 1 年前の同時刻から。to は null (未来日時の投稿や、
+ * now より後に入ってきた投稿も含める)。
  * y:N はその年の 1/1 00:00 から翌年 1/1 00:00 まで。
  */
 export function periodRange(
@@ -77,12 +87,10 @@ export function periodRange(
   now: Date,
 ): { from: Date | null; to: Date | null } {
   if (key === "all") return { from: null, to: null };
-  // to は排他なので、now を含めるため 1ms 先にする
-  const to = new Date(now.getTime() + 1);
-  if (key === "3m") return { from: monthsBefore(now, 3), to };
-  if (key === "1y") return { from: monthsBefore(now, 12), to };
+  if (key === "3m") return { from: monthsBefore(now, 3), to: null };
+  if (key === "1y") return { from: monthsBefore(now, 12), to: null };
   const year = Number(key.slice(2));
-  return { from: new Date(year, 0, 1), to: new Date(year + 1, 0, 1) };
+  return { from: startOfYear(year), to: startOfYear(year + 1) };
 }
 
 /** 期間内の投稿。all は同じ参照を返す。それ以外では不正な日付の投稿を除く */
@@ -119,6 +127,25 @@ export function monthKey(iso: string): string | null {
   const d = parseTime(iso);
   if (!d) return null;
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+}
+
+/** 投稿 (不正な日付は除く) が複数の年 (ローカル) にまたがるか */
+export function spansMultipleYears(posts: { checkpointAt: string }[]): boolean {
+  let year: number | null = null;
+  for (const p of posts) {
+    const d = parseTime(p.checkpointAt);
+    if (!d) continue;
+    if (year === null) year = d.getFullYear();
+    else if (d.getFullYear() !== year) return true;
+  }
+  return false;
+}
+
+/** dayKey ("YYYY-MM-DD") → "M/D"。withYear なら "YYYY/M/D" */
+export function dayLabel(day: string, withYear: boolean): string {
+  const [y, m, d] = day.split("-");
+  const md = `${Number(m)}/${Number(d)}`;
+  return withYear ? `${Number(y)}/${md}` : md;
 }
 
 // ─── KPI ─────────────────────────────────────────────────────
@@ -264,8 +291,12 @@ export function formatStat(value: number | null, def: FieldDef): string {
   if (def.type === "duration") return formatDuration(Math.round(value));
   const scale = Math.max(0, Math.floor(def.scale ?? DEFAULT_STAT_SCALE));
   const rounded = Number(value.toFixed(scale));
-  // -0 を "0" にする
-  return String(rounded === 0 ? 0 : rounded);
+  // String() だと 1e21 以上などが指数表記になるので、桁区切り無しの固定小数で出す
+  // (末尾の 0 は付かない)。-0 を "0" にする
+  return (rounded === 0 ? 0 : rounded).toLocaleString("ja-JP", {
+    maximumFractionDigits: scale,
+    useGrouping: false,
+  });
 }
 
 // ─── グラフ (5c) ─────────────────────────────────────────────
