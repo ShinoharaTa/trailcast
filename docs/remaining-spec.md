@@ -161,6 +161,8 @@ export interface LocationRecord {
 
 ## 2. #74 記録帳で数値・時間の範囲絞り込み
 
+> **注記（2026-10-28）**: §5 のユーザー判断により **duration は範囲絞り込みの対象外（number のみ）**。本節の duration に関する記述（D-4、parseRangeBound / numericValueOf / formatRangeBound の duration 分岐、単位「分」、duration のエラー文言・テスト）は無効。
+
 ### 2.1 何のために
 「80 kg 以上」「60 分以内」のように number / duration 項目で記録を絞れるようにする。
 record-mode.md §8 U-1 で見送った分。select・自由タグ・検索と同じ AND の枠組みに入れる。
@@ -729,7 +731,7 @@ export interface AppHeaderProps {
 | #62 U-2 | **A**。記録帳の「整理」行 |
 | #31 | **保留**。着手するときは推薦案（U-1 A / U-2 A / U-3 A）でまずモックを作り、ユーザー確認後に実装 |
 
-## 6. 追加の決定: duration 項目の扱い（2026-10-28）
+## 6. 追加の決定: duration 項目の扱い（2026-10-28、#85）
 
 - 投稿・編集画面の duration 入力を、時・分・秒の 3 欄から**自由入力 1 欄**に変える。保存は従来どおり `durationValue.seconds`（整数秒）。
 - 解析 `parseDurationInput(input: string): number | null | "invalid"`（`src/lib/fields-format.ts`）。NFKC → trim。空なら null。受け付ける形:
