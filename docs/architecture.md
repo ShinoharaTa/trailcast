@@ -80,7 +80,7 @@ Tauri アプリ内から AT Protocol の OAuth (DPOP) フローを実行し、�
 | `thread` | ref (at-uri) | Yes | 紐づく `thread` レコードの AT URI |
 | `text` | string | No | テキスト（最大 200 文字） |
 | `images` | array of blob | No | 画像（最大 4 件） |
-| `location` | object | No | デバイスの現在地。位置情報トグル ON 時のみ記録。`{ latitude: number, longitude: number, altitude?: number }` |
+| `location` | object | No | デバイスの現在地。位置情報トグル ON 時のみ記録。`{ latitude: string, longitude: string, altitude?: string }`（WGS84 の 10 進度を 10 進文字列で。例 `"35.6812362"`）。2026-10 以前の record は number を持つことがあり、読み取りは両方を受ける（`src/lib/location.ts`、#64） |
 | `checkpointAt` | datetime | Yes | チェックポイント時刻（初期値は投稿時刻、あとから編集可） |
 | `exif` | object | No | 写真から抽出したメタデータ（撮影位置・時刻等）。ユーザーが任意で付与（オプトイン）。意図的に削除可能。`location` とは独立したデータ |
 | `sourceRef` | ref (at-uri) | No | Bluesky 投稿からインポートした場合の元投稿 AT URI |

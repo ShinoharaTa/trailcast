@@ -16,6 +16,7 @@ import {
   crosspostTagsFor,
   stripSelectedOptionTags,
 } from "@/lib/fields";
+import { locationToRecord } from "@/lib/location";
 import type { FieldDef, FieldValue, Location, TagGroup } from "@/lib/types";
 
 const MAX_IMAGES = 4;
@@ -316,7 +317,7 @@ export function CheckpointPostScreen({
         thread: threadUri,
         text: text.trim() || undefined,
         images: blobs.length > 0 ? blobs : undefined,
-        location: location ?? undefined,
+        location: location ? locationToRecord(location) : undefined,
         tags: recordTags,
         fields: recordFields,
         checkpointAt: checkpointIso,

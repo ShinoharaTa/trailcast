@@ -43,6 +43,7 @@ import {
   pruneFieldSelection,
   toggleFieldOption,
 } from "@/lib/fields";
+import { parseLocation } from "@/lib/location";
 import {
   AVAILABLE_THREAD_VIEWS,
   EMPTY_RECORD_FILTER,
@@ -1240,12 +1241,18 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 {multiAuthor && (
                   <PostAuthorChip did={parseAtUri(cp.uri).repo} navigate={navigate} />
                 )}
-                {cp.location && (
-                  <span className="flex items-center gap-1 text-white/40">
-                    <PinIcon className="size-3" />
-                    {cp.location.latitude.toFixed(4)}, {cp.location.longitude.toFixed(4)}
-                  </span>
-                )}
+                {(() => {
+                  // record 上は number (旧) か decimal string。読めなければ出さない
+                  const loc = parseLocation(cp.location);
+                  return (
+                    loc && (
+                      <span className="flex items-center gap-1 text-white/40">
+                        <PinIcon className="size-3" />
+                        {loc.latitude.toFixed(4)}, {loc.longitude.toFixed(4)}
+                      </span>
+                    )
+                  );
+                })()}
                 {cp.sourceRef && (
                   <span className="flex items-center gap-1.5">
                     <a
