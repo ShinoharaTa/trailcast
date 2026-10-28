@@ -2,6 +2,7 @@
 //
 // 記録帳の絞り込みは タイムラインと同じ RecordFilter を共有する。
 // 検索語 (query) と未記録 (unrecorded) は記録帳だけで効き、タイムラインは見ない。
+// 項目・タグ・範囲は両方で効く。
 
 import type {
   FieldDef,
@@ -12,10 +13,12 @@ import type {
 } from "@/lib/types";
 import {
   filterPostsByFieldsAndTags,
+  hasRangeInput,
   initialFreeTagsForEdit,
   resolveFieldValues,
   type FieldSelection,
   type HasFieldValues,
+  type RangeSelection,
 } from "@/lib/fields";
 import { formatResolvedValue } from "@/lib/fields-format";
 
@@ -61,6 +64,8 @@ export interface RecordFilter {
   fields: FieldSelection;
   /** tagKey */
   tags: string[];
+  /** number 項目の範囲 (入力欄の生文字列) */
+  ranges: RangeSelection;
   /** 記録帳のみ */
   query: string;
   /** 記録帳のみ */
@@ -70,16 +75,23 @@ export interface RecordFilter {
 export const EMPTY_RECORD_FILTER: RecordFilter = {
   fields: {},
   tags: [],
+  ranges: {},
   query: "",
   unrecorded: false,
 };
 
-/** 絞り込み中か。timeline: true なら fields / tags だけを見る */
+/** 絞り込み中か。timeline: true なら fields / tags / ranges だけを見る */
 export function isRecordFilterActive(
   f: RecordFilter,
   opts?: { timeline?: boolean },
 ): boolean {
-  if (Object.keys(f.fields).length > 0 || f.tags.length > 0) return true;
+  if (
+    Object.keys(f.fields).length > 0 ||
+    f.tags.length > 0 ||
+    hasRangeInput(f.ranges)
+  ) {
+    return true;
+  }
   if (opts?.timeline) return false;
   return f.unrecorded || parseQuery(f.query).length > 0;
 }
@@ -151,8 +163,8 @@ export function searchPosts<T extends PostLike>(
 }
 
 /**
- * 記録帳の絞り込み。順に unrecorded → fields → tags → query。
- * opts.timeline が true なら fields / tags のみ (タイムライン用)。
+ * 記録帳の絞り込み。順に unrecorded → fields → tags → ranges → query。
+ * opts.timeline が true なら fields / tags / ranges のみ (タイムライン用)。
  * 何も当てなければ同じ参照を返す。
  */
 export function applyRecordFilter<T extends PostLike>(
@@ -165,7 +177,13 @@ export function applyRecordFilter<T extends PostLike>(
   if (!opts?.timeline && filter.unrecorded) {
     out = out.filter((p) => isPostUnrecorded(p, defs));
   }
-  out = filterPostsByFieldsAndTags(out, defs, filter.fields, filter.tags);
+  out = filterPostsByFieldsAndTags(
+    out,
+    defs,
+    filter.fields,
+    filter.tags,
+    filter.ranges,
+  );
   if (!opts?.timeline) out = searchPosts(out, defs, filter.query);
   return out;
 }

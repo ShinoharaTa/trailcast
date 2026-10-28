@@ -81,14 +81,19 @@
 ### 3.1 絞り込みの意味論
 - select 項目: **項目内 OR、項目間 AND**（`filterPostsByFields` のまま）。
 - 自由タグ: **AND**（`filterPostsByTags` のまま）。
-- 項目 × タグ × 検索 × 未記録: すべて AND。
+- 範囲（#74）: number 項目だけ（duration は対象外）。**両端を含み、項目間 AND**。
+  範囲を入れた項目に値を持たない投稿は一致しない。不正な入力の側は無視する（`filterPostsByRanges`）。
+  タイムラインと記録帳の両方で効く。
+- 項目 × タグ × 範囲 × 検索 × 未記録: すべて AND。
 - 「自由タグ」= `initialFreeTagsForEdit(post, defs)`。選択肢と一致したタグは
   項目側のチップにだけ出す（二重に出さない）。
 
 ### 3.2 チップの件数と無効化（ファセット方式）
 モックに合わせ、件数は「**その項目以外の条件**を当てた上での該当数」にする。
 - 項目内が OR なので、この数 = そのチップを足したときに増える件数。
-- 自由タグも同じ考え（`countWithTagAdded(項目で絞った posts, tagKeys, key)`）。
+- 自由タグも同じ考え（`countWithTagAdded(項目と範囲で絞った posts, tagKeys, key)`）。
+- 範囲も「他条件」に含める（select チップ・自由タグ・他項目の範囲）。範囲の行の件数は
+  select・タグ・他項目の範囲を当てた上で、その範囲に一致する件数（`rangeFilterRows`）。
 - 表示: `total`（全投稿での件数）> 0 のチップだけ出す。選択中は total に関係なく出す。
 - 無効化: 未選択かつファセット件数 0。
 - archived の選択肢は非 archived の後ろに並べ、`title="入力画面では非表示の選択肢"`、
@@ -315,12 +320,13 @@ export function defaultViewForRecord(view: ThreadView): ThreadView | undefined;
 export interface RecordFilter {
   fields: FieldSelection;   // PR4
   tags: string[];           // tagKey
+  ranges: RangeSelection;   // #74。入力欄の生文字列。両モードで効く
   query: string;            // 記録帳のみ
   unrecorded: boolean;      // 記録帳のみ
 }
 export const EMPTY_RECORD_FILTER: RecordFilter;
 export function isRecordFilterActive(f: RecordFilter, opts?: { timeline?: boolean }): boolean;
-  // timeline: true なら fields / tags だけを見る
+  // timeline: true なら fields / tags / ranges だけを見る
 
 /** 記録項目が 1 つでも定義され、かつ値が 1 つも解決できない投稿（archived 項目の値も「記録あり」） */
 export function isPostUnrecorded(post: HasFieldValues, defs: FieldDef[]): boolean;
@@ -341,8 +347,8 @@ export function postSearchText(post: PostWithMetaLike, defs: FieldDef[]): string
 export function searchPosts<T extends PostLike>(posts: T[], defs: FieldDef[], query: string): T[];
 
 /**
- * 記録帳の絞り込み。順に unrecorded → fields → tags → query。
- * opts.timeline が true なら fields / tags のみ（タイムライン用）。
+ * 記録帳の絞り込み。順に unrecorded → fields → tags → ranges → query。
+ * opts.timeline が true なら fields / tags / ranges のみ（タイムライン用）。
  */
 export function applyRecordFilter<T extends PostLike>(
   posts: T[], defs: FieldDef[], filter: RecordFilter, opts?: { timeline?: boolean },
@@ -649,6 +655,7 @@ export function heatLevel(count: number): 0 | 1 | 2 | 3;
 
 ### 決定（ユーザー判断済み 2026-10-27、すべて推薦どおり）
 - **U-1** number / duration の範囲絞り込みは今回入れない。別 issue。
+  → #74 で number のみ実装（duration は対象外）。
 - **U-2** 閲覧者が最後に選んだ表示は端末に記憶しない（localStorage を使わない）。
 - **U-3** ふりかえりの期間チップは「全期間 / 直近3か月 / 直近1年 / 年ごと（最大 5）」。
 - **U-4** PR5 は 5a / 5b / 5c の 3 分割。
