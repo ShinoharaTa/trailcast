@@ -43,10 +43,13 @@ function percent(share: number): string {
   return `${Math.round(share * 100)}%`;
 }
 
-/** select の分布・数値のカードを出す項目。text は出さない。archived は値が 1 件以上あるときだけ */
+/**
+ * select の分布・数値のカードを出す項目。text と duration は出さない (duration は §8 D-11)。
+ * archived は値が 1 件以上あるときだけ
+ */
 function reviewFields(posts: PostWithMeta[], defs: FieldDef[]): FieldDef[] {
   return defs.filter((def) => {
-    if (def.type === "text") return false;
+    if (def.type !== "select" && def.type !== "number") return false;
     if (!def.archived) return true;
     if (def.type === "select") return optionShares(posts, def).items.length > 0;
     return numericCard(posts, def).count > 0;
@@ -151,6 +154,7 @@ export function RecordReview({
           cells={heatmap.cells}
           monthLabels={heatmap.monthLabels}
           weeks={HEATMAP_WEEKS}
+          now={now}
         />
       </section>
 
@@ -333,19 +337,23 @@ function NumericSection({
         : null,
     [card],
   );
-  const duration = def.type === "duration";
   const title = def.unit ? `${def.label}（${def.unit}）` : def.label;
   const rows: { label: string; value: string }[] = [
     { label: "件数", value: `${card.count}件` },
     { label: "合計", value: formatStat(card.sum, def) },
     { label: "平均", value: formatStat(card.avg, def) },
-    { label: duration ? "最長" : "最大", value: formatStat(card.max, def) },
-    { label: duration ? "最速" : "最小", value: formatStat(card.min, def) },
+    { label: "最大", value: formatStat(card.max, def) },
+    { label: "最小", value: formatStat(card.min, def) },
   ];
 
   return (
     <section className="mt-7">
-      <SectionHeading title={title} />
+      <SectionHeading
+        title={title}
+        note={
+          spark ? `直近 ${Math.min(card.series.length, SPARK_LIMIT)} 回` : undefined
+        }
+      />
       {card.count === 0 ? (
         <p className="text-xs text-white/30">この期間の記録はありません</p>
       ) : (
@@ -375,7 +383,6 @@ function NumericSection({
           layout={spark}
           width={SPARK_WIDTH}
           height={SPARK_HEIGHT}
-          count={Math.min(card.series.length, SPARK_LIMIT)}
           label={`${def.label}の推移`}
         />
       )}
@@ -404,13 +411,13 @@ function MonthlySection({
 }: {
   posts: PostWithMeta[];
   defs: FieldDef[];
-  /** ふりかえりに出す項目 (この中の number / duration を指標に出す) */
+  /** ふりかえりに出す項目 (この中の number を指標に出す) */
   fields: FieldDef[];
   periodKey: PeriodKey;
   now: Date;
 }) {
   const numericFields = useMemo(
-    () => fields.filter((f) => f.type === "number" || f.type === "duration"),
+    () => fields.filter((f) => f.type === "number"),
     [fields],
   );
   const options = useMemo(
@@ -444,7 +451,7 @@ function MonthlySection({
     def ? formatStat(v, def) : String(Math.round(v));
   const layout = useMemo(() => {
     const first = barLayout(points, { padLeft: BAR_PAD_LEFT });
-    // 目盛りのラベル (duration の "1:00:00" など) が収まるよう左の余白を広げる
+    // 目盛りのラベル (桁の多い値など) が収まるよう左の余白を広げる
     const longest = Math.max(
       ...first.gridlines.map((g) =>
         (def ? formatStat(g.value, def) : String(g.value)).length,

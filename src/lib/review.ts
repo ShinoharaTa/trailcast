@@ -7,12 +7,10 @@ import type { FieldDef } from "@/lib/types";
 import {
   FIELD_UNSET,
   countSelectOptions,
-  summarizeDuration,
   summarizeNumber,
   type HasFieldValues,
   type NumericSummary,
 } from "@/lib/fields";
-import { formatDuration } from "@/lib/fields-format";
 import type { PostLike } from "@/lib/record";
 
 // ─── 期間 ────────────────────────────────────────────────────
@@ -244,37 +242,32 @@ export function optionShares(
   return { total, items, unset };
 }
 
-// ─── number / duration ───────────────────────────────────────
+// ─── number ──────────────────────────────────────────────────
+// duration はふりかえりの集計対象外 (§8 D-11)
 
 export interface NumericCard extends NumericSummary {
   /** 時系列 (checkpointAt 昇順)。推移グラフ (5c) 用。不正な日付の投稿は含めない */
   series: { at: string; value: number }[];
 }
 
-/** number / duration 共通。それ以外の型は count 0 */
+/** number 項目だけ。それ以外の型 (duration を含む) は count 0 */
 export function numericCard(posts: PostLike[], def: FieldDef): NumericCard {
-  const summarize =
-    def.type === "number"
-      ? summarizeNumber
-      : def.type === "duration"
-        ? summarizeDuration
-        : null;
-  if (!summarize) {
+  if (def.type !== "number") {
     return { count: 0, sum: null, avg: null, min: null, max: null, series: [] };
   }
-  // 1 件ずつ集計にかけ、値の検証 (不正な decimal の除外など) を summarize* と揃える
+  // 1 件ずつ集計にかけ、値の検証 (不正な decimal の除外など) を summarizeNumber と揃える
   const series: { at: string; value: number; t: number }[] = [];
   for (const post of posts) {
     const d = parseTime(post.checkpointAt);
     if (!d) continue;
-    const one = summarize([post], def);
+    const one = summarizeNumber([post], def);
     if (one.count === 1 && one.sum !== null) {
       series.push({ at: post.checkpointAt, value: one.sum, t: d.getTime() });
     }
   }
   series.sort((a, b) => a.t - b.t);
   return {
-    ...summarize(posts, def),
+    ...summarizeNumber(posts, def),
     series: series.map(({ at, value }) => ({ at, value })),
   };
 }
@@ -282,13 +275,9 @@ export function numericCard(posts: PostLike[], def: FieldDef): NumericCard {
 /** number の丸め桁数 (scale 未設定は 1 桁) */
 const DEFAULT_STAT_SCALE = 1;
 
-/**
- * number は scale 桁で丸め (scale 未設定は 1 桁。末尾の 0 は付けない)、
- * duration は秒に丸めて formatDuration。null は "—"
- */
+/** number を scale 桁で丸める (scale 未設定は 1 桁。末尾の 0 は付けない)。null は "—" */
 export function formatStat(value: number | null, def: FieldDef): string {
   if (value === null || !Number.isFinite(value)) return "—";
-  if (def.type === "duration") return formatDuration(Math.round(value));
   const scale = Math.max(0, Math.floor(def.scale ?? DEFAULT_STAT_SCALE));
   const rounded = Number(value.toFixed(scale));
   // String() だと 1e21 以上などが指数表記になるので、桁区切り無しの固定小数で出す
@@ -322,7 +311,7 @@ export function monthKeysBetween(from: Date, to: Date): string[] {
 
 export type MonthlyMetric =
   | { kind: "count" }
-  /** number / duration 項目 */
+  /** number 項目 (duration は集計対象外) */
   | { kind: "sum" | "avg"; fieldId: string };
 
 /** count は 0、sum/avg は値が無い月は null */
@@ -375,17 +364,13 @@ export function monthlySeries(
     metric.kind === "count"
       ? undefined
       : defs.find((d) => d.id === metric.fieldId);
-  const summarize =
-    def?.type === "number"
-      ? summarizeNumber
-      : def?.type === "duration"
-        ? summarizeDuration
-        : null;
   return monthKeysBetween(from, to).map((month): MonthlyPoint => {
     const list = byMonth.get(month) ?? [];
     if (metric.kind === "count") return { month, value: list.length };
-    if (!summarize || !def || list.length === 0) return { month, value: null };
-    const s = summarize(list, def);
+    if (def?.type !== "number" || list.length === 0) {
+      return { month, value: null };
+    }
+    const s = summarizeNumber(list, def);
     return { month, value: metric.kind === "sum" ? s.sum : s.avg };
   });
 }
@@ -550,6 +535,15 @@ export function heatmapCells(
     }
   }
   return { cells, monthLabels };
+}
+
+/** 描くセル。今日 (now のローカル日付) より後の日は除く */
+export function visibleHeatmapCells(
+  cells: HeatmapCell[],
+  now: Date,
+): HeatmapCell[] {
+  const today = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  return cells.filter((c) => c.day <= today);
 }
 
 /** 0 / 1 / 2 / 3+ の 4 段階 */

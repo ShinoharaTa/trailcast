@@ -19,6 +19,7 @@ import {
   reviewKpis,
   sparklineLayout,
   spansMultipleYears,
+  visibleHeatmapCells,
 } from "@/lib/review";
 import type { FieldDef, FieldValue } from "@/lib/types";
 
@@ -369,16 +370,19 @@ describe("numericCard", () => {
     expect(card.series.map((s) => s.value)).toEqual([3]);
   });
 
-  it("duration は秒で集計し、最速 = 最小", () => {
+  it("duration は集計対象外 (count 0)", () => {
     const posts = [
       at("2026-06-01T09:00:00+09:00", { fields: [dur("time", 3725)] }),
       at("2026-06-02T09:00:00+09:00", { fields: [dur("time", 125)] }),
     ];
-    const card = numericCard(posts, time);
-    expect(card).toMatchObject({ count: 2, sum: 3850, min: 125, max: 3725 });
-    expect(formatStat(card.min, time)).toBe("2:05");
-    expect(formatStat(card.max, time)).toBe("1:02:05");
-    expect(formatStat(card.avg, time)).toBe("32:05");
+    expect(numericCard(posts, time)).toEqual({
+      count: 0,
+      sum: null,
+      avg: null,
+      min: null,
+      max: null,
+      series: [],
+    });
   });
 
   it("値が無ければ count 0、他は null", () => {
@@ -428,13 +432,6 @@ describe("formatStat", () => {
     expect(formatStat(0.0000001, n(3))).toBe("0");
     expect(formatStat(0.001, n(3))).toBe("0.001");
     expect(formatStat(12345.6, n(1))).toBe("12345.6");
-  });
-
-  it("duration は m:ss / h:mm:ss", () => {
-    const d: FieldDef = { id: "d", label: "d", type: "duration" };
-    expect(formatStat(59, d)).toBe("0:59");
-    expect(formatStat(3600, d)).toBe("1:00:00");
-    expect(formatStat(90.6, d)).toBe("1:31");
   });
 
   it("null は —", () => {
@@ -588,6 +585,24 @@ describe("monthlySeries", () => {
     );
     expect(s.every((p) => p.value === null)).toBe(true);
   });
+
+  it("duration 項目の sum / avg は集計しない (すべて null)", () => {
+    const time: FieldDef = { id: "time", label: "タイム", type: "duration" };
+    const withTime = [
+      at("2026-07-10T09:00:00+09:00", { fields: [dur("time", 600)] }),
+    ];
+    for (const kind of ["sum", "avg"] as const) {
+      const s = monthlySeries(
+        withTime,
+        [time],
+        { kind, fieldId: "time" },
+        "all",
+        now,
+      );
+      expect(s.length).toBeGreaterThan(0);
+      expect(s.every((p) => p.value === null)).toBe(true);
+    }
+  });
 });
 
 describe("barLayout", () => {
@@ -735,6 +750,22 @@ describe("heatmapCells", () => {
       expect(`${Number(sunday.day.slice(5, 7))}月`).toBe(label);
       expect(Number(sunday.day.slice(8))).toBeLessThanOrEqual(7);
     }
+  });
+});
+
+describe("visibleHeatmapCells", () => {
+  it("今日より後の日を除く (今日は含む)", () => {
+    const { cells } = heatmapCells([], now);
+    const visible = visibleHeatmapCells(cells, now);
+    // 10/29〜10/31 の 3 日を除く
+    expect(visible).toHaveLength(26 * 7 - 3);
+    expect(visible.at(-1)?.day).toBe("2026-10-28");
+  });
+
+  it("今日が土曜なら全部残る", () => {
+    const sat = new Date("2026-10-31T23:59:00+09:00");
+    const { cells } = heatmapCells([], sat);
+    expect(visibleHeatmapCells(cells, sat)).toHaveLength(26 * 7);
   });
 });
 

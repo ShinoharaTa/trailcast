@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef } from "react";
 import {
   heatLevel,
+  visibleHeatmapCells,
   type BarLayout,
   type HeatmapCell,
   type SparklineLayout,
@@ -111,15 +112,12 @@ export function Sparkline({
   layout,
   width,
   height,
-  count,
   label,
 }: {
   layout: SparklineLayout;
   /** layout を計算したときの幅 (viewBox) */
   width: number;
   height: number;
-  /** 描いた点の数 (左下のラベル「N回前」) */
-  count: number;
   label: string;
 }) {
   return (
@@ -153,8 +151,7 @@ export function Sparkline({
           />
         )}
       </svg>
-      <div className="mt-1 flex justify-between font-mono text-[10px] text-white/40">
-        <span>{count}回前</span>
+      <div className="mt-1 flex justify-end font-mono text-[10px] text-white/40">
         <span>最新</span>
       </div>
     </div>
@@ -189,15 +186,18 @@ function slashDay(day: string): string {
   return `${y}/${Number(m)}/${Number(d)}`;
 }
 
-/** 活動した日のヒートマップ (列 = 週、行 = 曜日)。初期位置は右端 (今日) */
+/** 活動した日のヒートマップ (列 = 週、行 = 曜日)。初期位置は右端 (今日)。今日より後の日は描かない */
 export function Heatmap({
   cells,
   monthLabels,
   weeks,
+  now,
 }: {
   cells: HeatmapCell[];
   monthLabels: { week: number; label: string }[];
   weeks: number;
+  /** 今日の基準 (heatmapCells に渡したもの) */
+  now: Date;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -236,7 +236,7 @@ export function Heatmap({
             {l.label}
           </text>
         ))}
-        {cells.map((c) => (
+        {visibleHeatmapCells(cells, now).map((c) => (
           <rect
             key={c.day}
             x={HEAT_LEFT + c.week * PITCH}

@@ -500,9 +500,9 @@ export interface NumericCard extends NumericSummary {
   /** 時系列（checkpointAt 昇順）。推移グラフ（5c）用 */
   series: { at: string; value: number }[];
 }
-export function numericCard(posts: PostLike[], def: FieldDef): NumericCard;   // number / duration 共通
+export function numericCard(posts: PostLike[], def: FieldDef): NumericCard;   // number だけ。duration を含む他の型は count 0（§8 D-11）
 
-/** number は scale 桁で丸め（scale 未設定は 1 桁）、duration は formatDuration。null は "—" */
+/** number を scale 桁で丸める（scale 未設定は 1 桁）。null は "—" */
 export function formatStat(value: number | null, def: FieldDef): string;
 ```
 
@@ -518,11 +518,11 @@ export function formatStat(value: number | null, def: FieldDef): string;
    **棒を押すと記録帳へ**: `onJumpToLog({ fields: { [field.id]: [optionId] } })`
    → 親が `filter` をそれだけに置き換え、`view = "log"`。期間は持ち越さない（記録帳に
    期間が無いため。画面に「期間は記録帳に引き継がれません」とは書かない）。
-4. number / duration 項目ごとのカード（`numericCard`）: 見出し = label（+ unit）。
-   行に 件数 / 合計 / 平均 / 最大 / 最小（duration は 最長 / 最速 と表記）。count 0 なら
-   「この期間の記録はありません」。
+4. number 項目ごとのカード（`numericCard`）: 見出し = label（+ unit）。
+   行に 件数 / 合計 / 平均 / 最大 / 最小。count 0 なら「この期間の記録はありません」。
 5. 項目が無いスレッドは 1・2 だけ。
-- text 項目は出さない。archived 項目は値が 1 件以上あるときだけ出す。
+- text / duration 項目は出さない（duration は集計対象外、§8 D-11）。duration しか数値系の
+  項目が無いスレッドでは数値の節は出ない。archived 項目は値が 1 件以上あるときだけ出す。
 - `thread-detail-screen`: `available` を `THREAD_VIEWS` に、`defaultView: "review"` で
   ふりかえりが開く。
 
@@ -531,7 +531,7 @@ export function formatStat(value: number | null, def: FieldDef): string;
 - [ ] 期間「直近3か月」で件数・分布が変わり、「全期間」で戻る。年チップは投稿のある年だけ出る。
 - [ ] 分布の棒を押すと記録帳がその選択肢で絞られた状態で開く。
 - [ ] number 項目で `12.5` と `7` の 2 件 → 合計 19.5、平均 9.8（scale 1）、最大 12.5、最小 7。
-- [ ] duration 項目は `m:ss` / `h:mm:ss` で、最速 = 最小。
+- [ ] duration 項目はカード・推移・月別の指標に出ない。
 - [ ] 項目の無いスレッドで KPI だけ出て落ちない。投稿 0 件で落ちない。
 - [ ] `defaultView: "review"` で開くとふりかえりが初期表示。
 
@@ -541,8 +541,8 @@ export function formatStat(value: number | null, def: FieldDef): string;
 - `dayKey` / `monthKey`: JST の日付跨ぎ（`2026-06-30T23:30:00+09:00` → `2026-06-30`、UTC 換算で日が変わるケース）。
 - `reviewKpis`: 同日 3 件 → activeDays 1、busiestDay / 1 件だけ → spanMonths 1, perMonth = 1 / 0 件 → null。
 - `optionShares`: 降順・同数は定義順 / 分母に未設定を含む / count 0 は含まない / multiple の延べ数 / archived。
-- `numericCard`: series が昇順 / 不正な decimal を除外 / duration の秒 / count 0 → null。
-- `formatStat`: scale 0/1/3、duration、null。
+- `numericCard`: series が昇順 / 不正な decimal を除外 / duration は count 0 / count 0 → null。
+- `formatStat`: scale 0/1/3、null。
 
 ---
 
@@ -576,7 +576,7 @@ export function monthKeysBetween(from: Date, to: Date): string[];
 
 export type MonthlyMetric =
   | { kind: "count" }
-  | { kind: "sum" | "avg"; fieldId: string };      // number / duration 項目
+  | { kind: "sum" | "avg"; fieldId: string };      // number 項目（duration は値が全部 null）
 
 export interface MonthlyPoint { month: string; value: number | null }  // count は 0、sum/avg は値が無い月は null
 /**
@@ -598,22 +598,25 @@ export function sparklineLayout(values: number[], opts: { width: number; height:
 /** 直近 weeks 週（今日を含む週の土曜まで）。日曜始まり。 */
 export interface HeatmapCell { day: string; count: number; week: number; dow: number }
 export function heatmapCells(posts: { checkpointAt: string }[], now: Date, weeks?: number): { cells: HeatmapCell[]; monthLabels: { week: number; label: string }[] };
+/** 描くセル。今日（now のローカル日付）より後の日は除く */
+export function visibleHeatmapCells(cells: HeatmapCell[], now: Date): HeatmapCell[];
 /** 0 / 1 / 2 / 3+ の 4 段階 */
 export function heatLevel(count: number): 0 | 1 | 2 | 3;
 ```
 
 ### 7.4 UI
 - **月別**（KPI の下）: 見出し「月ごとの記録」+ 右に指標セレクト（`<select>`）:
-  「件数」+ number/duration 項目ごとに「<label> 合計」「<label> 平均」。初期値 件数。
+  「件数」+ number 項目ごとに「<label> 合計」「<label> 平均」。初期値 件数（duration は出さない、§8 D-11）。
   `barLayout` を `<svg>` に描く。棒は indigo 単色、棒の上に値（件数は整数、sum/avg は
   `formatStat`）。横幅 = 月数 × 44px、`overflow-x: auto` の容器、**初期スクロール位置は右端**
   （最新月が見える）。
 - **ヒートマップ**（月別の下）: 見出し「活動した日 <small>直近 26 週</small>」。
   期間チップに依存せず常に直近 26 週（§8 D-3）。11px の角丸セル、14px ピッチ、
   曜日ラベルは 日/火/木/土。セルに `<title>YYYY/M/D n件</title>`。色は
-  `rgba(129,140,248,.45/.7)` / `#a5b4fc`、0 件は `white/5`。
-- **推移**: 5b の number/duration カードに `Sparkline`（高さ 90px、最新 30 件、
-  左下「30回前」右下「最新」のラベル。件数が 30 未満なら「N回前」）。1 件以下なら描かない。
+  `rgba(129,140,248,.45/.7)` / `#a5b4fc`、0 件は `white/5`。今日より後の日（今週の残り）の
+  セルは描かない（`visibleHeatmapCells`）。
+- **推移**: 5b の number カードに `Sparkline`（高さ 90px、最新 30 件、右下に「最新」の
+  ラベル）。カードの見出しの右に「直近 N 回」（N は描いた点の数、最大 30）。1 件以下なら描かない。
 - `prefers-reduced-motion` は関係なし（アニメーション無し）。
 
 ### 7.5 受け入れ条件
@@ -629,6 +632,7 @@ export function heatLevel(count: number): 0 | 1 | 2 | 3;
 - `barLayout`: top の切り上げ（7 → 10、0 → 5）/ null は h 0 / 幅 = n × (barWidth+gap) + padLeft。
 - `sparklineLayout`: 1 件 / 同値のみ（min == max で 0 除算しない）/ limit 切り詰めが最新側。
 - `heatmapCells`: セル数 = weeks × 7 / 先頭が日曜 / 今日が含まれる / monthLabels は各月の最初の週に 1 つ。
+- `visibleHeatmapCells`: 今日より後の日を除く（今日は含む）/ 今日が土曜なら全部残る。
 - `heatLevel`: 0/1/2/3/10。
 
 ---
@@ -646,6 +650,7 @@ export function heatLevel(count: number): 0 | 1 | 2 | 3;
 - **D-8** 既定表示 `defaultView` はスレッド record（所有者設定、全閲覧者に効く）。既定値なら書かない。
 - **D-9** select の割合の分母は期間内の投稿数（未設定を含む）。multiple は延べ数。
 - **D-10** 絞り込みバーに、archived な項目と値が 1 件も無い項目は出さない（その項目を選択中なら出す）。自由タグの選択は絞り込みバーに出るもの（`countFreeTags`）を基準に掃除する。
+- **D-11** duration はふりかえりの集計対象外（2026-10-28 ユーザー判断、#85）。数値カード・推移・月別の指標に出さない。
 
 ### 決定（ユーザー判断済み 2026-10-27、すべて推薦どおり）
 - **U-1** number / duration の範囲絞り込みは今回入れない。別 issue。
