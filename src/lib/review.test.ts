@@ -3,14 +3,20 @@ import { FIELD_UNSET, fieldFilterGroups } from "@/lib/fields";
 import type { PostLike } from "@/lib/record";
 import {
   availablePeriods,
+  barLayout,
   dayKey,
   filterByPeriod,
   formatStat,
+  heatLevel,
+  heatmapCells,
   monthKey,
+  monthKeysBetween,
+  monthlySeries,
   numericCard,
   optionShares,
   periodRange,
   reviewKpis,
+  sparklineLayout,
 } from "@/lib/review";
 import type { FieldDef, FieldValue } from "@/lib/types";
 
@@ -384,5 +390,266 @@ describe("formatStat", () => {
 
   it("null は —", () => {
     expect(formatStat(null, n(1))).toBe("—");
+  });
+});
+
+describe("monthKeysBetween", () => {
+  it("同月は 1 つ", () => {
+    expect(
+      monthKeysBetween(
+        new Date("2026-06-01T00:00:00+09:00"),
+        new Date("2026-06-30T23:59:59+09:00"),
+      ),
+    ).toEqual(["2026-06"]);
+  });
+
+  it("年跨ぎ", () => {
+    expect(
+      monthKeysBetween(
+        new Date("2025-11-15T00:00:00+09:00"),
+        new Date("2026-02-01T00:00:00+09:00"),
+      ),
+    ).toEqual(["2025-11", "2025-12", "2026-01", "2026-02"]);
+  });
+
+  it("逆順は []", () => {
+    expect(
+      monthKeysBetween(
+        new Date("2026-06-01T00:00:00+09:00"),
+        new Date("2026-05-31T23:59:59+09:00"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("月は JST で決める (UTC では前月のケース)", () => {
+    expect(
+      monthKeysBetween(
+        new Date("2026-07-01T00:30:00+09:00"),
+        new Date("2026-07-01T00:30:00+09:00"),
+      ),
+    ).toEqual(["2026-07"]);
+  });
+});
+
+describe("monthlySeries", () => {
+  const distance: FieldDef = {
+    id: "dist",
+    label: "距離",
+    type: "number",
+    scale: 1,
+  };
+  const defs = [distance];
+  const posts = [
+    at("2026-07-10T09:00:00+09:00", { fields: [num("dist", "10")] }),
+    at("2026-07-20T09:00:00+09:00", { fields: [num("dist", "5")] }),
+    at("2026-07-31T23:30:00+09:00", { fields: [] }),
+    at("2026-09-01T09:00:00+09:00", { fields: [num("dist", "3")] }),
+    at("not a date", { fields: [num("dist", "100")] }),
+  ];
+
+  it("count は 0 埋めで、all の範囲は最初の投稿の月〜now の月", () => {
+    expect(monthlySeries(posts, defs, { kind: "count" }, "all", now)).toEqual([
+      { month: "2026-07", value: 3 },
+      { month: "2026-08", value: 0 },
+      { month: "2026-09", value: 1 },
+      { month: "2026-10", value: 0 },
+    ]);
+  });
+
+  it("sum は値の無い月が null", () => {
+    expect(
+      monthlySeries(posts, defs, { kind: "sum", fieldId: "dist" }, "all", now),
+    ).toEqual([
+      { month: "2026-07", value: 15 },
+      { month: "2026-08", value: null },
+      { month: "2026-09", value: 3 },
+      { month: "2026-10", value: null },
+    ]);
+  });
+
+  it("avg は値のある投稿だけで割る", () => {
+    const s = monthlySeries(
+      posts,
+      defs,
+      { kind: "avg", fieldId: "dist" },
+      "all",
+      now,
+    );
+    expect(s[0]).toEqual({ month: "2026-07", value: 7.5 });
+  });
+
+  it("3m の範囲は periodRange の月 (7/28〜10/28 → 7〜10 月)", () => {
+    const s = monthlySeries(posts, defs, { kind: "count" }, "3m", now);
+    expect(s).toEqual([
+      { month: "2026-07", value: 1 },
+      { month: "2026-08", value: 0 },
+      { month: "2026-09", value: 1 },
+      { month: "2026-10", value: 0 },
+    ]);
+  });
+
+  it("y:N はその年の 1〜12 月", () => {
+    const s = monthlySeries(posts, defs, { kind: "count" }, "y:2026", now);
+    expect(s.map((p) => p.month)).toEqual(
+      Array.from({ length: 12 }, (_, i) => `2026-${String(i + 1).padStart(2, "0")}`),
+    );
+  });
+
+  it("期間内の投稿 0 件・項目が無い", () => {
+    expect(monthlySeries([], defs, { kind: "count" }, "all", now)).toEqual([]);
+    expect(monthlySeries(posts, defs, { kind: "count" }, "y:2024", now)).toEqual(
+      [],
+    );
+    const s = monthlySeries(
+      posts,
+      defs,
+      { kind: "sum", fieldId: "missing" },
+      "all",
+      now,
+    );
+    expect(s.every((p) => p.value === null)).toBe(true);
+  });
+});
+
+describe("barLayout", () => {
+  const pts = (...values: (number | null)[]) =>
+    values.map((value, i) => ({
+      month: `2026-${String(i + 1).padStart(2, "0")}`,
+      value,
+    }));
+
+  it("top は 5 の倍数に切り上げ (7 → 10、0 → 5)", () => {
+    expect(barLayout(pts(7, 3)).top).toBe(10);
+    expect(barLayout(pts(0, 0)).top).toBe(5);
+    expect(barLayout(pts(10)).top).toBe(10);
+    expect(barLayout(pts(null)).top).toBe(5);
+  });
+
+  it("null は h 0、最大値の棒はプロット上端まで", () => {
+    const l = barLayout(pts(null, 10), { height: 170, padBottom: 22 });
+    expect(l.bars[0].h).toBe(0);
+    expect(l.bars[0].value).toBeNull();
+    const base = l.gridlines[0].y;
+    expect(l.bars[0].y).toBe(base);
+    expect(l.bars[1].y).toBe(l.gridlines[5].y);
+    expect(l.bars[1].y + l.bars[1].h).toBe(base);
+  });
+
+  it("幅 = n × (barWidth + gap) + padLeft、x は等間隔", () => {
+    const l = barLayout(pts(1, 2, 3), { barWidth: 20, gap: 10, padLeft: 30 });
+    expect(l.width).toBe(3 * 30 + 30);
+    expect(l.bars.map((b) => b.x)).toEqual([35, 65, 95]);
+    expect(l.bars.every((b) => b.w === 20)).toBe(true);
+  });
+
+  it("目盛りは 0〜top の 6 本、ラベルは M月", () => {
+    const l = barLayout(pts(7));
+    expect(l.gridlines.map((g) => g.value)).toEqual([0, 2, 4, 6, 8, 10]);
+    expect(l.bars[0].label).toBe("1月");
+  });
+});
+
+describe("sparklineLayout", () => {
+  it("0 件は空", () => {
+    expect(sparklineLayout([], { width: 100, height: 50 })).toEqual({
+      d: "",
+      area: "",
+      last: null,
+      min: 0,
+      max: 0,
+    });
+  });
+
+  it("1 件は点だけ", () => {
+    const l = sparklineLayout([3], { width: 100, height: 50 });
+    expect(l.d).toBe("M50 25");
+    expect(l.area).toBe("");
+    expect(l.last).toEqual({ x: 50, y: 25 });
+  });
+
+  it("同値のみは中央の水平線 (0 除算しない)", () => {
+    const l = sparklineLayout([2, 2, 2], { width: 100, height: 50 });
+    expect(l.d).toBe("M4 25 L50 25 L96 25");
+    expect(l.min).toBe(2);
+    expect(l.max).toBe(2);
+  });
+
+  it("最大が上・最小が下、最新が右端", () => {
+    const l = sparklineLayout([0, 10], { width: 100, height: 50 });
+    expect(l.d).toBe("M4 46 L96 4");
+    expect(l.last).toEqual({ x: 96, y: 4 });
+    expect(l.area).toBe("M4 46 L96 4 L96 50 L4 50 Z");
+  });
+
+  it("limit で最新側を残す", () => {
+    const l = sparklineLayout([100, 1, 2, 3], {
+      width: 100,
+      height: 50,
+      limit: 3,
+    });
+    expect(l.min).toBe(1);
+    expect(l.max).toBe(3);
+    expect(l.d.split(" L")).toHaveLength(3);
+  });
+});
+
+describe("heatmapCells", () => {
+  // 2026-10-28 (水)。今日を含む週の土曜は 10/31、先頭の日曜は 25 週前の 5/3
+  it("セル数 = weeks × 7、先頭が日曜、末尾が今日を含む週の土曜", () => {
+    const { cells } = heatmapCells([], now);
+    expect(cells).toHaveLength(26 * 7);
+    expect(cells[0]).toMatchObject({ day: "2026-05-03", week: 0, dow: 0 });
+    expect(new Date(2026, 4, 3).getDay()).toBe(0);
+    expect(cells[cells.length - 1]).toMatchObject({
+      day: "2026-10-31",
+      week: 25,
+      dow: 6,
+    });
+    expect(cells.find((c) => c.day === "2026-10-28")).toMatchObject({
+      week: 25,
+      dow: 3,
+    });
+  });
+
+  it("weeks を指定できる", () => {
+    expect(heatmapCells([], now, 4).cells).toHaveLength(28);
+  });
+
+  it("JST 23:30 の投稿がその日に乗る。範囲外・不正な日付は数えない", () => {
+    const { cells } = heatmapCells(
+      [
+        at("2026-10-27T23:30:00+09:00"),
+        at("2026-10-27T08:00:00+09:00"),
+        at("2026-05-02T12:00:00+09:00"),
+        at("not a date"),
+      ],
+      now,
+    );
+    expect(cells.find((c) => c.day === "2026-10-27")?.count).toBe(2);
+    expect(cells.find((c) => c.day === "2026-10-28")?.count).toBe(0);
+    expect(cells.reduce((s, c) => s + c.count, 0)).toBe(2);
+  });
+
+  it("monthLabels は各月の最初の週に 1 つ", () => {
+    const { cells, monthLabels } = heatmapCells([], now);
+    expect(monthLabels.map((l) => l.label)).toEqual([
+      "5月",
+      "6月",
+      "7月",
+      "8月",
+      "9月",
+      "10月",
+    ]);
+    for (const { week, label } of monthLabels) {
+      const sunday = cells.find((c) => c.week === week && c.dow === 0)!;
+      expect(`${Number(sunday.day.slice(5, 7))}月`).toBe(label);
+      expect(Number(sunday.day.slice(8))).toBeLessThanOrEqual(7);
+    }
+  });
+});
+
+describe("heatLevel", () => {
+  it("0 / 1 / 2 / 3+", () => {
+    expect([0, 1, 2, 3, 10].map(heatLevel)).toEqual([0, 1, 2, 3, 3]);
   });
 });

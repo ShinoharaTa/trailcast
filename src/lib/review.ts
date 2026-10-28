@@ -267,3 +267,264 @@ export function formatStat(value: number | null, def: FieldDef): string {
   // -0 を "0" にする
   return String(rounded === 0 ? 0 : rounded);
 }
+
+// ─── グラフ (5c) ─────────────────────────────────────────────
+// 仕様は docs/record-mode.md §7.3。座標はすべて SVG のユーザー単位 (px)。
+
+/** from の月から to の月まで "YYYY-MM" を昇順で (両端含む)。from > to なら [] */
+export function monthKeysBetween(from: Date, to: Date): string[] {
+  const keys: string[] = [];
+  let y = from.getFullYear();
+  let m = from.getMonth();
+  const endY = to.getFullYear();
+  const endM = to.getMonth();
+  while (y < endY || (y === endY && m <= endM)) {
+    keys.push(`${y}-${pad2(m + 1)}`);
+    m += 1;
+    if (m === 12) {
+      m = 0;
+      y += 1;
+    }
+  }
+  return keys;
+}
+
+export type MonthlyMetric =
+  | { kind: "count" }
+  /** number / duration 項目 */
+  | { kind: "sum" | "avg"; fieldId: string };
+
+/** count は 0、sum/avg は値が無い月は null */
+export interface MonthlyPoint {
+  month: string;
+  value: number | null;
+}
+
+/**
+ * 月別の系列。範囲は period が all なら 最初の投稿の月〜now の月、
+ * それ以外は periodRange の月 (from の月〜to の直前の月)。期間内の投稿が 0 件なら []
+ */
+export function monthlySeries(
+  posts: PostLike[],
+  defs: FieldDef[],
+  metric: MonthlyMetric,
+  key: PeriodKey,
+  now: Date,
+): MonthlyPoint[] {
+  const inPeriod = filterByPeriod(posts, key, now).filter(
+    (p) => parseTime(p.checkpointAt) !== null,
+  );
+  if (inPeriod.length === 0) return [];
+
+  let from: Date;
+  let to: Date;
+  if (key === "all") {
+    let first = Infinity;
+    for (const p of inPeriod) {
+      first = Math.min(first, parseTime(p.checkpointAt)!.getTime());
+    }
+    from = new Date(first);
+    to = now;
+  } else {
+    const range = periodRange(key, now);
+    from = range.from!;
+    // to は排他なので 1ms 前の月まで
+    to = new Date(range.to!.getTime() - 1);
+  }
+
+  const byMonth = new Map<string, PostLike[]>();
+  for (const p of inPeriod) {
+    const k = monthKey(p.checkpointAt)!;
+    const list = byMonth.get(k);
+    if (list) list.push(p);
+    else byMonth.set(k, [p]);
+  }
+
+  const def =
+    metric.kind === "count"
+      ? undefined
+      : defs.find((d) => d.id === metric.fieldId);
+  const summarize =
+    def?.type === "number"
+      ? summarizeNumber
+      : def?.type === "duration"
+        ? summarizeDuration
+        : null;
+  return monthKeysBetween(from, to).map((month): MonthlyPoint => {
+    const list = byMonth.get(month) ?? [];
+    if (metric.kind === "count") return { month, value: list.length };
+    if (!summarize || !def || list.length === 0) return { month, value: null };
+    const s = summarize(list, def);
+    return { month, value: metric.kind === "sum" ? s.sum : s.avg };
+  });
+}
+
+/** 棒グラフの座標。values の null は 0 高さ。top は最大値を 5 の倍数に切り上げ (最小 5) */
+export interface BarLayout {
+  width: number;
+  height: number;
+  top: number;
+  bars: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    label: string;
+    value: number | null;
+  }[];
+  gridlines: { y: number; value: number }[];
+}
+
+/** 棒の上の値ラベルが切れないよう、プロット領域の上に空ける高さ */
+const BAR_PAD_TOP = 16;
+/** 目盛りは 0 から top までを 5 等分 */
+const BAR_GRID_STEPS = 5;
+
+export function barLayout(
+  points: MonthlyPoint[],
+  opts: {
+    barWidth?: number;
+    gap?: number;
+    height?: number;
+    padLeft?: number;
+    padBottom?: number;
+  } = {},
+): BarLayout {
+  const {
+    barWidth = 26,
+    gap = 18,
+    height = 170,
+    padLeft = 26,
+    padBottom = 22,
+  } = opts;
+  const max = Math.max(0, ...points.map((p) => p.value ?? 0));
+  const top = Math.max(5, Math.ceil(max / 5) * 5);
+  const plotH = Math.max(0, height - padBottom - BAR_PAD_TOP);
+  const base = BAR_PAD_TOP + plotH;
+  const bars = points.map((p, i) => {
+    // 負の値は 0 高さ (棒は下に伸ばさない)
+    const v = p.value === null ? 0 : Math.max(0, p.value);
+    const h = (plotH * v) / top;
+    return {
+      x: padLeft + i * (barWidth + gap) + gap / 2,
+      y: base - h,
+      w: barWidth,
+      h,
+      label: `${Number(p.month.slice(5))}月`,
+      value: p.value,
+    };
+  });
+  const gridlines: BarLayout["gridlines"] = [];
+  for (let i = 0; i <= BAR_GRID_STEPS; i++) {
+    const value = (top * i) / BAR_GRID_STEPS;
+    gridlines.push({ y: base - (plotH * value) / top, value });
+  }
+  return {
+    width: points.length * (barWidth + gap) + padLeft,
+    height,
+    top,
+    bars,
+    gridlines,
+  };
+}
+
+/** 折れ線 (等間隔 x)。最新 limit 件。1 件なら点だけ */
+export interface SparklineLayout {
+  d: string;
+  area: string;
+  last: { x: number; y: number } | null;
+  min: number;
+  max: number;
+}
+
+/** 線の太さ・末尾の点が端で切れないよう、上下左右に空ける幅 */
+const SPARK_PAD = 4;
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+export function sparklineLayout(
+  values: number[],
+  opts: { width: number; height: number; limit?: number },
+): SparklineLayout {
+  const { width, height, limit = 30 } = opts;
+  const vs = values.slice(-limit);
+  if (vs.length === 0) return { d: "", area: "", last: null, min: 0, max: 0 };
+  const min = Math.min(...vs);
+  const max = Math.max(...vs);
+  const innerW = Math.max(0, width - SPARK_PAD * 2);
+  const innerH = Math.max(0, height - SPARK_PAD * 2);
+  // 同値のみなら中央に寝かせる (0 除算しない)
+  const y = (v: number) =>
+    max === min
+      ? height / 2
+      : SPARK_PAD + (1 - (v - min) / (max - min)) * innerH;
+  if (vs.length === 1) {
+    const p = { x: width / 2, y: y(vs[0]) };
+    return { d: `M${round2(p.x)} ${round2(p.y)}`, area: "", last: p, min, max };
+  }
+  const pts = vs.map((v, i) => ({
+    x: SPARK_PAD + (innerW * i) / (vs.length - 1),
+    y: y(v),
+  }));
+  const d = pts
+    .map((p, i) => `${i === 0 ? "M" : "L"}${round2(p.x)} ${round2(p.y)}`)
+    .join(" ");
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const area = `${d} L${round2(last.x)} ${height} L${round2(first.x)} ${height} Z`;
+  return { d, area, last, min, max };
+}
+
+/** week は左から 0..weeks-1、dow は 0 = 日曜 .. 6 = 土曜 */
+export interface HeatmapCell {
+  day: string;
+  count: number;
+  week: number;
+  dow: number;
+}
+
+/** ヒートマップの週数の既定。期間チップに依らず直近 26 週 (§8 D-3) */
+export const HEATMAP_WEEKS = 26;
+
+/**
+ * 直近 weeks 週 (今日を含む週の土曜まで)。日曜始まり。ローカル時刻。
+ * monthLabels は各月の最初の週 (日曜がその月の 1〜7 日の週) に 1 つ
+ */
+export function heatmapCells(
+  posts: { checkpointAt: string }[],
+  now: Date,
+  weeks: number = HEATMAP_WEEKS,
+): { cells: HeatmapCell[]; monthLabels: { week: number; label: string }[] } {
+  const perDay = new Map<string, number>();
+  for (const p of posts) {
+    const k = dayKey(p.checkpointAt);
+    if (k) perDay.set(k, (perDay.get(k) ?? 0) + 1);
+  }
+  // 先頭の日曜からの日数で Date(y, m, d) を作る (夏時間のある TZ でも日がずれない)
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const startDate = now.getDate() - now.getDay() - (weeks - 1) * 7;
+  const cells: HeatmapCell[] = [];
+  const monthLabels: { week: number; label: string }[] = [];
+  for (let i = 0; i < weeks * 7; i++) {
+    const d = new Date(y, m, startDate + i);
+    const day = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    const week = Math.floor(i / 7);
+    const dow = i % 7;
+    cells.push({ day, count: perDay.get(day) ?? 0, week, dow });
+    if (dow === 0 && d.getDate() <= 7) {
+      monthLabels.push({ week, label: `${d.getMonth() + 1}月` });
+    }
+  }
+  return { cells, monthLabels };
+}
+
+/** 0 / 1 / 2 / 3+ の 4 段階 */
+export function heatLevel(count: number): 0 | 1 | 2 | 3 {
+  if (count <= 0) return 0;
+  if (count === 1) return 1;
+  if (count === 2) return 2;
+  return 3;
+}
