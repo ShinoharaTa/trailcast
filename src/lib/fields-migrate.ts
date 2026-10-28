@@ -129,7 +129,7 @@ export interface MigrationProgress {
 
 /**
  * 1 件ずつ順に書く。失敗は failures に積んで続行。signal.aborted なら次に進まず aborted = true。
- * write は差し替え可能（テスト用）。既定は rewritePost(plan.post.rkey, migratedPostRecord(plan))。
+ * write は差し替え可能（テスト用）。既定は rewritePost(plan.post.uri, migratedPostRecord(plan), plan.post.cid)。
  * 各件の前後で onProgress を呼ぶ（og/backfill.ts と同じ）。
  */
 export async function runFieldMigration(
@@ -143,7 +143,7 @@ export async function runFieldMigration(
   const write =
     opts.write ??
     (async (plan: MigrationPlan) => {
-      await rewritePost(plan.post.rkey, migratedPostRecord(plan));
+      await rewritePost(plan.post.uri, migratedPostRecord(plan), plan.post.cid);
     });
   const progress: MigrationProgress = {
     total: plans.length,
@@ -173,7 +173,7 @@ export async function runFieldMigration(
       progress.failures.push({
         uri: plan.post.uri,
         title: migrationRowTitle(plan),
-        message: e instanceof Error ? e.message : String(e),
+        message: migrationFailureMessage(e),
       });
     } finally {
       progress.done += 1;
@@ -183,6 +183,21 @@ export async function runFieldMigration(
   progress.currentUri = undefined;
   report();
   return { ...progress, failures: [...progress.failures] };
+}
+
+/**
+ * 失敗理由の表示文言。swapRecord の不一致 (InvalidSwap) は読んだ後に他で編集されたことを示す。
+ * @atproto/api の InvalidSwapError は XRPCError で error === "InvalidSwap" を持つ。
+ */
+export function migrationFailureMessage(e: unknown): string {
+  if (
+    typeof e === "object" &&
+    e !== null &&
+    (e as { error?: unknown }).error === "InvalidSwap"
+  ) {
+    return "他で編集されたため書き換えませんでした";
+  }
+  return e instanceof Error ? e.message : String(e);
 }
 
 /** プレビュー行の見出し。splitPostText(post.text).title を使う */

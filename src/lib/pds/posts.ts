@@ -2,6 +2,7 @@ import { getAgent, getMyDid } from "@/lib/atp-agent";
 import {
   NSID_POST,
   buildAtUri,
+  parseAtUri,
   stripRecordMeta,
   type PostRecord,
   type PostWithMeta,
@@ -72,17 +73,27 @@ export async function updatePost(
  * 投稿の整理用の書き戻し（記録項目への移行 #62 など）。
  * updatePost と違い touchThread を呼ばない（整理は活動ではないので一覧の並びを動かさない）。
  * cid が変わるのでインデックスへの通知はする。
+ *
+ * swapCid を swapRecord に渡す楽観ロック。読んだ後に他で編集されていれば
+ * PDS が InvalidSwap で reject する。自分の repo 以外の uri は書かずに throw。
  */
 export async function rewritePost(
-  rkey: string,
+  uri: string,
   record: PostRecord,
+  swapCid: string,
 ): Promise<PostWithMeta> {
+  const { repo, rkey } = parseAtUri(uri);
+  const myDid = getMyDid();
+  if (repo !== myDid) {
+    throw new Error("自分の投稿ではないため書き換えません");
+  }
   const agent = getAgent();
   const res = await agent.com.atproto.repo.putRecord({
-    repo: getMyDid(),
+    repo: myDid,
     collection: NSID_POST,
     rkey,
     record: record as unknown as Record<string, unknown>,
+    swapRecord: swapCid,
   });
   void notifyPostIndexed(res.data.uri);
   return { ...record, uri: res.data.uri, cid: res.data.cid, rkey };

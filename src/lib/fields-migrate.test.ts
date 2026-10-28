@@ -9,6 +9,7 @@ vi.mock("@/lib/pds/posts", () => ({
 
 import {
   migratedPostRecord,
+  migrationFailureMessage,
   migrationRowTitle,
   planFieldMigration,
   planFieldMigrations,
@@ -295,6 +296,41 @@ describe("runFieldMigration", () => {
     warn.mockRestore();
     expect(rewritePost).toHaveBeenCalledTimes(1);
     expect(res.failed).toBe(1);
+  });
+
+  it("既定の write は uri / 書き込む record / 読んだ cid を rewritePost に渡す", async () => {
+    const { rewritePost } = await import("@/lib/pds/posts");
+    const mock = vi.mocked(rewritePost);
+    mock.mockClear();
+    mock.mockResolvedValueOnce({} as PostWithMeta);
+    const [p] = plans();
+    const res = await runFieldMigration([p]);
+    expect(res.succeeded).toBe(1);
+    expect(mock).toHaveBeenCalledWith(p.post.uri, migratedPostRecord(p), p.post.cid);
+  });
+
+  it("InvalidSwap は他で編集された旨の文言で failures に積む", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ps = plans().slice(0, 1);
+    const res = await runFieldMigration(ps, {
+      write: async () => {
+        throw Object.assign(new Error("Record was at bafy..."), { error: "InvalidSwap" });
+      },
+    });
+    warn.mockRestore();
+    expect(res.failures).toEqual([
+      { uri: ps[0].post.uri, title: "一件目", message: "他で編集されたため書き換えませんでした" },
+    ]);
+  });
+});
+
+describe("migrationFailureMessage", () => {
+  it("InvalidSwap だけ専用の文言、それ以外は message", () => {
+    expect(migrationFailureMessage({ error: "InvalidSwap" })).toBe(
+      "他で編集されたため書き換えませんでした",
+    );
+    expect(migrationFailureMessage(new Error("network down"))).toBe("network down");
+    expect(migrationFailureMessage("x")).toBe("x");
   });
 });
 

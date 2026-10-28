@@ -70,6 +70,9 @@ export function FieldMigratePanel({
     onClose(phase === "done" ? progress : null);
   }, [phase, progress, onClose]);
 
+  // パネルが消えたら (親の画面遷移など) 次の件に進ませない。処理中の 1 件は完走する
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   useEffect(() => {
     if (!requestCloseRef) return;
     requestCloseRef.current = requestClose;
@@ -191,6 +194,7 @@ export function FieldMigratePanel({
   const failed = result?.failed ?? 0;
   const remaining = result ? result.total - result.done : 0;
   const failures = result?.failures ?? [];
+  const leftover = failures.length > 0 || (!!result?.aborted && remaining > 0);
   return (
     <div>
       <h3 className="text-lg font-bold text-white">
@@ -211,19 +215,19 @@ export function FieldMigratePanel({
         )}
       </p>
       {failures.length > 0 && (
-        <>
-          <ul className="mt-3 space-y-1.5 text-xs">
-            {failures.slice(0, FAILURE_ROWS).map((f) => (
-              <li key={f.uri} className="min-w-0">
-                <div className="truncate text-white/70">{f.title}</div>
-                <div className="truncate text-red-300/80">{f.message}</div>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-xs text-white/40">
-            もう一度開くと、失敗した分と未処理の分だけが対象に残ります
-          </p>
-        </>
+        <ul className="mt-3 space-y-1.5 text-xs">
+          {failures.slice(0, FAILURE_ROWS).map((f) => (
+            <li key={f.uri} className="min-w-0">
+              <div className="truncate text-white/70">{f.title}</div>
+              <div className="truncate text-red-300/80">{f.message}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {leftover && (
+        <p className="mt-3 text-xs text-white/40">
+          もう一度開くと、失敗した分と未処理の分だけが対象に残ります
+        </p>
       )}
       <div className="mt-6 flex justify-end">
         <button
