@@ -107,6 +107,8 @@ describe("parseDurationInput", () => {
     expect(parseDurationInput("1時間半")).toBe(5400);
     expect(parseDurationInput("2分半")).toBe(150);
     expect(parseDurationInput("1時間半10分")).toBe("invalid");
+    expect(parseDurationInput("1時間半30秒")).toBe("invalid");
+    expect(parseDurationInput("2分半10秒")).toBe("invalid");
   });
 
   it("英字の単位 (大文字小文字は無視)", () => {
@@ -135,11 +137,25 @@ describe("parseDurationInput", () => {
     expect(parseDurationInput("時間")).toBe("invalid");
     expect(parseDurationInput("1:2:3:4")).toBe("invalid");
     expect(parseDurationInput("1.5.0")).toBe("invalid");
+    expect(parseDurationInput("::")).toBe("invalid");
+    expect(parseDurationInput("1 5")).toBe("invalid");
+    expect(parseDurationInput("1 : 23")).toBe("invalid");
+    expect(parseDurationInput("1時間0.5分")).toBe("invalid");
+    expect(parseDurationInput("1.5時間")).toBe("invalid");
+    expect(parseDurationInput("1.5h")).toBe("invalid");
+  });
+
+  it("合計秒が安全な整数に収まらないものは invalid", () => {
+    expect(parseDurationInput("99999999999999999999")).toBe("invalid");
+    expect(parseDurationInput("9007199254740991")).toBe("invalid");
   });
 
   it("formatDuration の出力を戻すと同じ秒になる", () => {
     for (const seconds of [0, 1, 59, 60, 61, 1425, 3599, 3600, 5025, 36059]) {
       expect(parseDurationInput(formatDuration(seconds))).toBe(seconds);
     }
+    expect(parseDurationInput(formatDuration(Number.MAX_SAFE_INTEGER))).toBe(
+      Number.MAX_SAFE_INTEGER,
+    );
   });
 });

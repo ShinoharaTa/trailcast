@@ -59,12 +59,17 @@ const MINUTES_PATTERN = /^\d+(?:\.\d+)?$/;
  * - "1時間23分45秒" / "83分" / "1時間半" / "2分半" (各部は省略可、空白は無視)
  * - "1h23m45s" / "83m" / "90s" (大文字小文字は無視)
  * - 数字だけ (小数可) は分。秒に四捨五入
- * それ以外 (負数を含む) は "invalid"。
+ * それ以外 (負数を含む) と、合計秒が安全な整数に収まらないものは "invalid"。
  */
 export function parseDurationInput(input: string): number | null | "invalid" {
   const text = input.normalize("NFKC").trim();
   if (!text) return null;
+  const seconds = parseDurationText(text);
+  if (seconds === "invalid" || !Number.isSafeInteger(seconds)) return "invalid";
+  return seconds;
+}
 
+function parseDurationText(text: string): number | "invalid" {
   const colon = COLON_PATTERN.exec(text);
   if (colon) {
     const [, first, middle, last] = colon;
@@ -82,8 +87,11 @@ export function parseDurationInput(input: string): number | null | "invalid" {
   if (ja) {
     const [, h, hHalf, m, mHalf, s] = ja;
     if (h === undefined && m === undefined && s === undefined) return "invalid";
-    // 「半」はその単位の最後に付くものだけ (「1時間半10分」は不正)
-    if ((hHalf && m !== undefined) || (mHalf && s !== undefined)) {
+    // 「半」は単位の末尾に付くものだけ (「1時間半10分」「1時間半30秒」は不正)
+    if (
+      (hHalf && (m !== undefined || s !== undefined)) ||
+      (mHalf && s !== undefined)
+    ) {
       return "invalid";
     }
     return (
