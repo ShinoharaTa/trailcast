@@ -284,6 +284,8 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
 | 5 | （別仕様）記録帳 / ふりかえり | 絞り込み一覧・集計の表示モード。number/duration の合計/平均/最大最小 | 1, 4 | 大 |
 | 6 | `feature/fields-migrate-posts` | 所有者の旧 post を fields に書き換える任意ツール（設定 or スレッド編集から） | 1, 2 | 小〜中 |
 
+PR 4・5（絞り込み / 記録帳 / ふりかえり）の実装仕様は [record-mode.md](./record-mode.md)。
+
 - PR 1 は UI を含まないので単独でマージ可。2 と 3 は並行可。
 - `implementer` に渡すときは PR 1 の関数シグネチャ一覧（下記）を仕様として添える。
 

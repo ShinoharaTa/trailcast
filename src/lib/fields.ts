@@ -16,11 +16,15 @@ import type {
   TagGroup,
 } from "@/lib/types";
 import {
+  countTags,
+  countWithTagAdded,
   dedupeTags,
+  filterPostsByTags,
   normalizeTag,
   sanitizeTagsForRecord,
   sliceGraphemes,
   tagKey,
+  type TagCount,
 } from "@/lib/tags";
 
 /** 1 スレッドに定義できる項目数 (lexicon の maxLength と一致させる) */
@@ -209,7 +213,7 @@ function sanitizeValue(
 
 // ─── 読み取り ────────────────────────────────────────────────
 
-interface HasFieldValues {
+export interface HasFieldValues {
   tags?: string[];
   fields?: FieldValue[];
 }
@@ -832,4 +836,198 @@ export function summarizeDuration(
     values.push(seconds);
   }
   return summarize(values);
+}
+
+// ─── 絞り込みバー (タイムライン / 記録帳) ─────────────────────────
+// 仕様は docs/record-mode.md §3.1〜3.2, §4.2。
+
+/** 項目 id → 選択した option id (FIELD_UNSET を含む)。空配列のキーは持たない */
+export type FieldSelection = Record<string, string[]>;
+
+/** 選択肢を押したときの新しい選択。あれば外し、無ければ足す。空になったキーは削除。入力は変更しない */
+export function toggleFieldOption(
+  selection: FieldSelection,
+  fieldId: string,
+  optionId: string,
+): FieldSelection {
+  const current = selection[fieldId] ?? [];
+  const next = current.includes(optionId)
+    ? current.filter((id) => id !== optionId)
+    : [...current, optionId];
+  const out: FieldSelection = { ...selection };
+  if (next.length > 0) out[fieldId] = next;
+  else delete out[fieldId];
+  return out;
+}
+
+/**
+ * 定義に無い項目・選択肢、全投稿で件数 0 の選択肢を選択から落とす。
+ * select 以外の項目 id も落とす (絞り込みの条件にならないため)。
+ * 変化が無ければ同じ参照を返す (setState の無駄な更新を避ける)。
+ * FIELD_UNSET は未設定件数 > 0 のときだけ残す。
+ */
+export function pruneFieldSelection(
+  selection: FieldSelection,
+  defs: FieldDef[],
+  posts: HasFieldValues[],
+): FieldSelection {
+  const defById = new Map(defs.map((d) => [d.id, d]));
+  const out: FieldSelection = {};
+  let changed = false;
+  for (const [fieldId, ids] of Object.entries(selection)) {
+    const def = defById.get(fieldId);
+    if (!def || def.type !== "select") {
+      changed = true;
+      continue;
+    }
+    const available = new Set(
+      countSelectOptions(posts, def)
+        .filter((c) => c.count > 0)
+        .map((c) => c.optionId),
+    );
+    const kept = ids.filter((id) => available.has(id));
+    if (kept.length !== ids.length) changed = true;
+    if (kept.length > 0) out[fieldId] = kept;
+    else changed = true;
+  }
+  return changed ? out : selection;
+}
+
+/** 自由タグ (選択肢扱いのタグを除く) の件数。countTags と同じ並び */
+export function countFreeTags(
+  posts: HasFieldValues[],
+  defs: FieldDef[],
+): TagCount[] {
+  if (defs.length === 0) return countTags(posts);
+  return countTags(
+    posts.map((post) => ({ tags: initialFreeTagsForEdit(post, defs) })),
+  );
+}
+
+export interface FieldFilterChip {
+  /** option id または FIELD_UNSET */
+  optionId: string;
+  /** option.label / "未設定" */
+  label: string;
+  archived: boolean;
+  /** 全投稿での件数 */
+  total: number;
+  /** 他条件 (他項目 + タグ) を当てた上での件数 */
+  count: number;
+  active: boolean;
+  /** !active && count === 0 */
+  disabled: boolean;
+}
+
+export interface FieldFilterGroup {
+  field: FieldDef;
+  chips: FieldFilterChip[];
+}
+
+/**
+ * 絞り込みバーに出す select 項目ごとのチップ。
+ * - 対象は type === "select" の定義 (archived 含む)。定義順
+ * - chips は options 順で非 archived → archived、最後に FIELD_UNSET
+ * - total === 0 かつ非選択のチップは含めない。chips が空になった項目は返さない
+ * - 項目が archived か、全投稿を通して値が 1 件も無い (未設定だけ) 項目は、
+ *   その項目の選択肢 (FIELD_UNSET 含む) が 1 つも選択されていなければ返さない。
+ *   値の有無は他条件を当てる前の total で判定する
+ * - count は「当該項目以外の選択 + タグ」で絞った投稿での件数 (ファセット方式)。
+ *   項目内は OR なので、この数がそのチップを足したときに増える件数になる
+ */
+export function fieldFilterGroups(
+  posts: HasFieldValues[],
+  defs: FieldDef[],
+  selection: FieldSelection,
+  tagKeys: string[],
+): FieldFilterGroup[] {
+  const out: FieldFilterGroup[] = [];
+  for (const def of defs) {
+    if (def.type !== "select") continue;
+    const others: FieldSelection = { ...selection };
+    delete others[def.id];
+    const base = filterPostsByTags(
+      filterPostsByFields(posts, defs, others),
+      tagKeys,
+    );
+    const totals = new Map(
+      countSelectOptions(posts, def).map((c) => [c.optionId, c.count]),
+    );
+    const counts = new Map(
+      countSelectOptions(base, def).map((c) => [c.optionId, c.count]),
+    );
+    const active = new Set(selection[def.id] ?? []);
+    const hasValue = [...totals].some(
+      ([optionId, total]) => optionId !== FIELD_UNSET && total > 0,
+    );
+    if ((def.archived || !hasValue) && active.size === 0) continue;
+
+    const chip = (
+      optionId: string,
+      label: string,
+      archived: boolean,
+    ): FieldFilterChip | null => {
+      const total = totals.get(optionId) ?? 0;
+      const isActive = active.has(optionId);
+      if (total === 0 && !isActive) return null;
+      const count = counts.get(optionId) ?? 0;
+      return {
+        optionId,
+        label,
+        archived,
+        total,
+        count,
+        active: isActive,
+        disabled: !isActive && count === 0,
+      };
+    };
+
+    const chips = [
+      ...orderFields(def.options ?? []).map((o) =>
+        chip(o.id, o.label, Boolean(o.archived)),
+      ),
+      chip(FIELD_UNSET, "未設定", false),
+    ].filter((c): c is FieldFilterChip => c !== null);
+    if (chips.length > 0) out.push({ field: def, chips });
+  }
+  return out;
+}
+
+export interface FreeTagChip extends TagCount {
+  active: boolean;
+  disabled: boolean;
+  /** 項目の選択で絞った投稿に、このタグを足したときの件数 */
+  facetCount: number;
+}
+
+/**
+ * 自由タグのチップ。並びは countFreeTags (件数順)。
+ * facetCount = countWithTagAdded(filterPostsByFields(posts, defs, selection), tagKeys, key)
+ * disabled = !active && facetCount === 0
+ */
+export function freeTagChips(
+  posts: HasFieldValues[],
+  defs: FieldDef[],
+  selection: FieldSelection,
+  tagKeys: string[],
+): FreeTagChip[] {
+  const base = filterPostsByFields(posts, defs, selection);
+  return countFreeTags(posts, defs).map((t) => {
+    const active = tagKeys.includes(t.key);
+    const facetCount = countWithTagAdded(base, tagKeys, t.key);
+    return { ...t, active, facetCount, disabled: !active && facetCount === 0 };
+  });
+}
+
+/** 項目 → タグの順で絞る。両方空なら同じ参照を返す */
+export function filterPostsByFieldsAndTags<T extends HasFieldValues>(
+  posts: T[],
+  defs: FieldDef[],
+  selection: FieldSelection,
+  tagKeys: string[],
+): T[] {
+  return filterPostsByTags(
+    filterPostsByFields(posts, defs, selection),
+    tagKeys,
+  );
 }
