@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   FIELD_UNSET,
+  MAX_FIELD_OPTIONS,
+  appendPendingOptions,
+  findOptionByLabel,
+  mergePendingOptions,
+  remapSelectValues,
+  selectedPendingOptions,
   buildEditedPostFields,
   buildNewPostFields,
   convertTagGroupsToFields,
@@ -1247,5 +1253,117 @@ describe("filterPostsByFieldsAndTags", () => {
     expect(
       filterPostsByFieldsAndTags(posts, [kind], { kind: ["hall", "room"] }, ["東京"]),
     ).toEqual([posts[0], posts[2]]);
+  });
+});
+
+describe("投稿画面からの選択肢追加", () => {
+  const place: FieldDef = {
+    id: "place",
+    label: "場所",
+    type: "select",
+    options: [
+      { id: "tokyo", label: "東京" },
+      { id: "old", label: "大阪", archived: true },
+    ],
+  };
+  const pending = (fieldId: string, id: string, label: string) => ({
+    fieldId,
+    option: { id, label },
+  });
+
+  describe("findOptionByLabel", () => {
+    it("NFKC・前後空白除去後に一致する archived でない選択肢を返す", () => {
+      expect(findOptionByLabel([{ id: "a", label: "ABC" }], " ＡＢＣ ")?.id).toBe(
+        "a",
+      );
+    });
+    it("大文字小文字は区別する", () => {
+      expect(findOptionByLabel([{ id: "a", label: "abc" }], "ABC")).toBeUndefined();
+    });
+    it("archived の選択肢は一致させない", () => {
+      expect(findOptionByLabel(place.options!, "大阪")).toBeUndefined();
+    });
+  });
+
+  it("mergePendingOptions は項目の末尾に足し、元の定義は変えない", () => {
+    const merged = mergePendingOptions([place, kind], [pending("place", "p1", "京都")]);
+    expect(merged[0].options!.map((o) => o.id)).toEqual(["tokyo", "old", "p1"]);
+    expect(merged[1]).toBe(kind);
+    expect(place.options).toHaveLength(2);
+  });
+
+  it("selectedPendingOptions は選ばれていないものを落とす", () => {
+    const p = [pending("place", "p1", "京都"), pending("place", "p2", "奈良")];
+    expect(selectedPendingOptions(p, [select("place", ["p2"])])).toEqual([p[1]]);
+    expect(selectedPendingOptions(p, [])).toEqual([]);
+  });
+
+  describe("appendPendingOptions", () => {
+    it("末尾に追加する", () => {
+      const res = appendPendingOptions([place, kind], [pending("place", "p1", "京都")]);
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.fields[0].options).toEqual([
+        ...place.options!,
+        { id: "p1", label: "京都" },
+      ]);
+      expect(res.idMap.get("p1")).toBe("p1");
+      expect(place.options).toHaveLength(2);
+    });
+
+    it("同じ名前の既存の選択肢があればその id を使う", () => {
+      const res = appendPendingOptions([place], [pending("place", "p1", " 東京 ")]);
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.fields[0].options).toHaveLength(2);
+      expect(res.idMap.get("p1")).toBe("tokyo");
+    });
+
+    it("archived の選択肢と同じ名前なら新しく追加する", () => {
+      const res = appendPendingOptions([place], [pending("place", "p1", "大阪")]);
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.fields[0].options!.map((o) => o.id)).toEqual(["tokyo", "old", "p1"]);
+      expect(res.idMap.get("p1")).toBe("p1");
+    });
+
+    it("項目が無ければ失敗", () => {
+      expect(appendPendingOptions([kind], [pending("place", "p1", "京都")])).toEqual({
+        ok: false,
+        reason: "missing",
+        fieldId: "place",
+      });
+    });
+
+    it("項目が archived なら失敗", () => {
+      expect(
+        appendPendingOptions(
+          [{ ...place, archived: true }],
+          [pending("place", "p1", "京都")],
+        ),
+      ).toEqual({ ok: false, reason: "archived", fieldId: "place" });
+    });
+
+    it("選択肢数が上限なら失敗", () => {
+      const full: FieldDef = {
+        ...place,
+        options: Array.from({ length: MAX_FIELD_OPTIONS }, (_, i) => ({
+          id: `o${i}`,
+          label: `選択肢${i}`,
+        })),
+      };
+      expect(appendPendingOptions([full], [pending("place", "p1", "京都")])).toEqual({
+        ok: false,
+        reason: "full",
+        fieldId: "place",
+      });
+    });
+  });
+
+  it("remapSelectValues は select の id を置き換えて重複をまとめる", () => {
+    const idMap = new Map([["p1", "tokyo"]]);
+    expect(
+      remapSelectValues([select("place", ["tokyo", "p1"]), num("result", "1")], idMap),
+    ).toEqual([select("place", ["tokyo"]), num("result", "1")]);
   });
 });
