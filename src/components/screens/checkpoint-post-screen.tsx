@@ -283,9 +283,9 @@ export function CheckpointPostScreen({
     setLocationError(null);
   };
 
-  // 同じ名前 (スレッド編集と同じく大文字小文字を区別しない) の archived でない選択肢があれば
-  // 追加せずにそれを選ぶ。追加・既存どちらも選択状態にする
-  // (1 つだけ: 置き換え / 複数: 足す)
+  // 同じ名前 (スレッド編集と同じく大文字小文字を区別しない) の選択肢があれば
+  // 追加せずにそれを選ぶ。archived なら投稿時に archived を外す予定にする。
+  // 追加・既存どちらも選択状態にする (1 つだけ: 置き換え / 複数: 足す)
   const handleAddOption = (fieldId: string, label: string) => {
     const def = defs.find((d) => d.id === fieldId);
     if (!def || def.type !== "select") return;
@@ -293,6 +293,16 @@ export function CheckpointPostScreen({
     let optionId: string;
     if (existing) {
       optionId = existing.id;
+      if (existing.archived) {
+        setPendingOptions((prev) => [
+          ...prev,
+          {
+            fieldId,
+            option: { id: existing.id, label: existing.label },
+            unarchive: true,
+          },
+        ]);
+      }
     } else {
       if ((def.options?.length ?? 0) >= MAX_FIELD_OPTIONS) return;
       optionId = generateFieldId();
@@ -336,10 +346,16 @@ export function CheckpointPostScreen({
   }> => {
     const toWrite = selectedPendingOptions(pendingOptions, fieldValues);
     if (toWrite.length === 0) return { defs, values: fieldValues };
+    // 書き込めるのは所有者の repo だけ。UI で出し分けているが念のため止める
+    if (!isOwner) {
+      throw new Error("選択肢を追加できるのはスレッドの所有者だけです");
+    }
     const { repo, rkey } = parseAtUri(threadUri);
     const fresh = await getThread(repo, rkey);
     const merged = appendPendingOptions(fresh.fields ?? [], toWrite);
     if (!merged.ok) {
+      // 取り直した定義で画面を最新にしてから止める
+      onThreadUpdated?.(fresh);
       const label =
         defs.find((d) => d.id === merged.fieldId)?.label ?? "記録項目";
       throw new Error(

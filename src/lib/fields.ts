@@ -730,16 +730,19 @@ export function restoreBlankLabel(
 
 // ─── 投稿画面からの選択肢追加 (所有者のみ) ─────────────────────
 
-/** 投稿画面で追加した、まだ thread.fields に書いていない選択肢 */
+/**
+ * 投稿画面で追加した、まだ thread.fields に書いていない選択肢。
+ * `unarchive` は同じ名前の archived の選択肢を戻す予定 (option.id は既存の id)
+ */
 export interface PendingFieldOption {
   fieldId: string;
   option: FieldOption;
+  unarchive?: boolean;
 }
 
 /**
- * 同じ名前の archived でない選択肢。無ければ undefined。
+ * 同じ名前の選択肢。archived でないものを優先し、無ければ archived のもの。
  * 比較はスレッド編集の optionLabelTaken と同じ (normalizeTag 後に tagKey 一致)。
- * archived の選択肢は一致させない (戻さずに新しく追加する)。
  */
 export function findOptionByLabel(
   options: FieldOption[],
@@ -747,21 +750,35 @@ export function findOptionByLabel(
 ): FieldOption | undefined {
   const key = optionLabelKey(label);
   if (key === null) return undefined;
-  return options.find((o) => !o.archived && optionLabelKey(o.label) === key);
+  const matches = options.filter((o) => optionLabelKey(o.label) === key);
+  return matches.find((o) => !o.archived) ?? matches[0];
 }
 
-/** 定義の末尾に追加待ちの選択肢を足した定義。入力・投稿の組み立てに使う */
+/**
+ * 追加待ちの選択肢を反映した定義。入力・投稿の組み立てに使う。
+ * 新規は末尾に足し、unarchive は既存の選択肢の archived を外す。
+ */
 export function mergePendingOptions(
   defs: FieldDef[],
   pending: PendingFieldOption[],
 ): FieldDef[] {
   if (pending.length === 0) return defs;
   return defs.map((def) => {
-    const added = pending
-      .filter((p) => p.fieldId === def.id)
-      .map((p) => p.option);
-    if (added.length === 0) return def;
-    return { ...def, options: [...(def.options ?? []), ...added] };
+    const mine = pending.filter((p) => p.fieldId === def.id);
+    if (mine.length === 0) return def;
+    const unarchive = new Set(
+      mine.filter((p) => p.unarchive).map((p) => p.option.id),
+    );
+    const added = mine.filter((p) => !p.unarchive).map((p) => p.option);
+    return {
+      ...def,
+      options: [
+        ...(def.options ?? []).map((o) =>
+          unarchive.has(o.id) ? { id: o.id, label: o.label } : o,
+        ),
+        ...added,
+      ],
+    };
   });
 }
 
@@ -798,8 +815,11 @@ export type AppendPendingOptionsResult =
  * 書き込み直前に取り直した thread.fields に、追加待ちの選択肢を足す。
  * - 項目が無い・archived なら失敗 (投稿しない)
  * - 取り直した定義に同じ名前の archived でない選択肢があればそれを使う
- *   (別の端末で先に追加された場合など)。archived の選択肢は使わない
+ *   (別の端末で先に追加・再表示された場合など)
+ * - unarchive の選択肢が取り直した定義にあれば、その archived を外して使う
+ * - 同じ名前の archived の選択肢があれば、その archived を外して使う
  * - それ以外は末尾に足す。選択肢数が MAX_FIELD_OPTIONS に達していれば失敗
+ *   (archived を外すだけなら選択肢数は増えないので上限で止めない)
  * 戻り値は未サニタイズ。保存前に必ず sanitizeFieldsForRecord を通すこと。
  */
 export function appendPendingOptions(
@@ -820,8 +840,16 @@ export function appendPendingOptions(
       return { ok: false, reason: "archived", fieldId: p.fieldId };
     }
     const options = (def.options ??= []);
-    const existing = findOptionByLabel(options, p.option.label);
+    const byLabel = findOptionByLabel(options, p.option.label);
+    const existing =
+      byLabel && !byLabel.archived
+        ? byLabel
+        : ((p.unarchive
+            ? options.find((o) => o.id === p.option.id)
+            : undefined) ?? byLabel);
     if (existing) {
+      const i = options.indexOf(existing);
+      if (existing.archived) options[i] = { id: existing.id, label: existing.label };
       idMap.set(p.option.id, existing.id);
       continue;
     }

@@ -27,8 +27,8 @@ export interface FieldInputsProps {
   onChange: (values: FieldValue[]) => void;
   disabled?: boolean;
   /**
-   * 不正な入力 (decimal に合わない・長すぎる数値、59 を超える分・秒) の有無が
-   * 変わったときに呼ぶ。
+   * 不正な入力 (decimal に合わない・長すぎる数値、59 を超える分・秒) や
+   * 「＋ 追加」に追加していない入力が残っているかが変わったときに呼ぶ。
    * 呼び出し側は false の間、送信ボタンを無効にする
    */
   onValidityChange?: (valid: boolean) => void;
@@ -68,7 +68,7 @@ export function FieldInputs({
     },
   );
 
-  const valid = defs.every((def) => {
+  const fieldsValid = defs.every((def) => {
     if (def.type === "number") {
       const v = values.find((x) => x.field === def.id);
       return (
@@ -83,6 +83,17 @@ export function FieldInputs({
     }
     return true;
   });
+  // 「＋ 追加」の入力欄に文字が残っている間は送信させない (追加し忘れを防ぐ)
+  // (入力欄が出ていないとき = 項目が消えた・上限に達したときは数えない)
+  const draftPending =
+    Boolean(onAddOption) &&
+    optionDraft.trim() !== "" &&
+    defs.some(
+      (d) =>
+        d.id === addingFieldId &&
+        (d.options?.length ?? 0) < MAX_FIELD_OPTIONS,
+    );
+  const valid = fieldsValid && !draftPending;
   useEffect(() => {
     onValidityChange?.(valid);
   }, [valid, onValidityChange]);
@@ -211,46 +222,53 @@ export function FieldInputs({
                     {onAddOption &&
                       (def.options?.length ?? 0) < MAX_FIELD_OPTIONS &&
                       (addingFieldId === def.id ? (
-                        <span className="flex w-full items-center gap-1.5">
-                          <input
-                            type="text"
-                            value={optionDraft}
-                            onChange={(e) => setOptionDraft(e.target.value)}
-                            onKeyDown={(e) => {
-                              // IME 変換中の Enter は変換確定なので無視する
-                              if (e.nativeEvent.isComposing) return;
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                submitAddOption(def.id);
-                              } else if (e.key === "Escape") {
-                                e.preventDefault();
-                                cancelAddOption();
-                              }
-                            }}
-                            disabled={disabled}
-                            autoFocus
-                            maxLength={MAX_TAG_LENGTH}
-                            placeholder="選択肢の名前"
-                            aria-label={`${def.label}に選択肢を追加`}
-                            className={`min-w-0 flex-1 py-1.5 text-base md:text-sm ${inputClass}`}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => submitAddOption(def.id)}
-                            disabled={disabled || isBlankOptionLabel(optionDraft)}
-                            className="shrink-0 rounded-full bg-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-200 transition hover:bg-indigo-500/30 disabled:opacity-40"
-                          >
-                            追加
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelAddOption}
-                            disabled={disabled}
-                            className="shrink-0 rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:bg-white/10 disabled:opacity-50"
-                          >
-                            キャンセル
-                          </button>
-                        </span>
+                        <>
+                          <span className="flex w-full items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={optionDraft}
+                              onChange={(e) => setOptionDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                // IME 変換中の Enter は変換確定なので無視する
+                                if (e.nativeEvent.isComposing) return;
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  submitAddOption(def.id);
+                                } else if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  cancelAddOption();
+                                }
+                              }}
+                              disabled={disabled}
+                              autoFocus
+                              maxLength={MAX_TAG_LENGTH}
+                              placeholder="選択肢の名前"
+                              aria-label={`${def.label}に選択肢を追加`}
+                              className={`min-w-0 flex-1 py-1.5 text-base md:text-sm ${inputClass}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => submitAddOption(def.id)}
+                              disabled={disabled || isBlankOptionLabel(optionDraft)}
+                              className="shrink-0 rounded-full bg-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-200 transition hover:bg-indigo-500/30 disabled:opacity-40"
+                            >
+                              追加
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelAddOption}
+                              disabled={disabled}
+                              className="shrink-0 rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:bg-white/10 disabled:opacity-50"
+                            >
+                              キャンセル
+                            </button>
+                          </span>
+                          {draftPending && (
+                            <p className="w-full text-[11px] text-amber-200/70">
+                              追加を押してください
+                            </p>
+                          )}
+                        </>
                       ) : (
                         <button
                           type="button"
