@@ -149,12 +149,12 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
   "properties": {
     "id":       { "type": "string", "minLength": 1, "maxLength": 16,
                   "description": "Stable opaque id, unique within the thread. Never derived from label." },
-    "label":    { "type": "string", "maxLength": 20 },
+    "label":    { "type": "string", "maxGraphemes": 20, "maxLength": 200 },
     "type":     { "type": "string", "knownValues": ["select", "number", "duration", "text"] },
     "multiple": { "type": "boolean", "description": "select only. true = checkboxes, false/absent = radio" },
     "options":  { "type": "array", "maxLength": 50, "items": { "type": "ref", "ref": "#fieldOption" },
                   "description": "select only" },
-    "unit":     { "type": "string", "maxLength": 8, "description": "number only (kg, km, 回)" },
+    "unit":     { "type": "string", "maxGraphemes": 8, "maxLength": 80, "description": "number only (kg, km, 回)" },
     "scale":    { "type": "integer", "minimum": 0, "maximum": 3,
                   "description": "number only. Decimal digits accepted in the input UI (display hint)" },
     "archived": { "type": "boolean", "description": "Hidden from the input UI; existing values still resolve" }
@@ -165,7 +165,7 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
   "required": ["id", "label"],
   "properties": {
     "id":       { "type": "string", "minLength": 1, "maxLength": 16 },
-    "label":    { "type": "string", "maxLength": 64,
+    "label":    { "type": "string", "maxGraphemes": 64, "maxLength": 640,
                   "description": "Shown in UI and used as the hashtag on cross-post (normalized by normalizeTag)" },
     "archived": { "type": "boolean" }
   }
@@ -201,9 +201,11 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
                                    "seconds": {"type":"integer","minimum":0} } },
 "textValue":     { "type": "object", "required": ["field", "text"],
                    "properties": { "field": {"type":"string","maxLength":16},
-                                   "text": {"type":"string","maxLength":200} } }
+                                   "text": {"type":"string","maxGraphemes":200,"maxLength":2000} } }
 ```
 
+- 人が書く string は `maxGraphemes`（書記素数）で上限を決め、`maxLength`（UTF-8 バイト）は
+  その 10 倍にしてある（#64）。id 系と `numberValue.value` は ASCII 固定なので `maxLength` のみ。
 - union なので各要素は `$type: "net.shino3.trailcast.post#numberValue"` を持つ。
   他クライアントは thread 定義を見なくても値の型が分かる。
 - `numberValue.value` を **decimal string** にしたのは lexicon に float が無いため。
