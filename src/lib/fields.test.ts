@@ -1272,13 +1272,13 @@ describe("投稿画面からの選択肢追加", () => {
   });
 
   describe("findOptionByLabel", () => {
-    it("NFKC・前後空白除去後に一致する archived でない選択肢を返す", () => {
-      expect(findOptionByLabel([{ id: "a", label: "ABC" }], " ＡＢＣ ")?.id).toBe(
+    it("前後空白・先頭の # を除いて一致する archived でない選択肢を返す", () => {
+      expect(findOptionByLabel([{ id: "a", label: "温泉" }], " #温泉 ")?.id).toBe(
         "a",
       );
     });
-    it("大文字小文字は区別する", () => {
-      expect(findOptionByLabel([{ id: "a", label: "abc" }], "ABC")).toBeUndefined();
+    it("大文字小文字は区別しない (ABC がある所に abc → 既存を選ぶ)", () => {
+      expect(findOptionByLabel([{ id: "a", label: "ABC" }], "abc")?.id).toBe("a");
     });
     it("archived の選択肢は一致させない", () => {
       expect(findOptionByLabel(place.options!, "大阪")).toBeUndefined();

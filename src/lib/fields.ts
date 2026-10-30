@@ -737,24 +737,17 @@ export interface PendingFieldOption {
 }
 
 /**
- * 投稿画面で同じ選択肢かを判定するキー。NFKC + 前後空白除去。大文字小文字は区別する。
- * label は保存時と同じ normalizeTag を通してから比べる。
- */
-function pendingLabelKey(label: string): string {
-  return (normalizeTag(label) ?? "").normalize("NFKC").trim();
-}
-
-/**
- * 同じ名前 (pendingLabelKey 一致) の archived でない選択肢。無ければ undefined。
+ * 同じ名前の archived でない選択肢。無ければ undefined。
+ * 比較はスレッド編集の optionLabelTaken と同じ (normalizeTag 後に tagKey 一致)。
  * archived の選択肢は一致させない (戻さずに新しく追加する)。
  */
 export function findOptionByLabel(
   options: FieldOption[],
   label: string,
 ): FieldOption | undefined {
-  const key = pendingLabelKey(label);
-  if (!key) return undefined;
-  return options.find((o) => !o.archived && pendingLabelKey(o.label) === key);
+  const key = optionLabelKey(label);
+  if (key === null) return undefined;
+  return options.find((o) => !o.archived && optionLabelKey(o.label) === key);
 }
 
 /** 定義の末尾に追加待ちの選択肢を足した定義。入力・投稿の組み立てに使う */

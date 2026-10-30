@@ -283,7 +283,7 @@ export function CheckpointPostScreen({
     setLocationError(null);
   };
 
-  // 同じ名前 (NFKC・前後空白除去後に一致) の archived でない選択肢があれば
+  // 同じ名前 (スレッド編集と同じく大文字小文字を区別しない) の archived でない選択肢があれば
   // 追加せずにそれを選ぶ。追加・既存どちらも選択状態にする
   // (1 つだけ: 置き換え / 複数: 足す)
   const handleAddOption = (fieldId: string, label: string) => {
@@ -352,13 +352,19 @@ export function CheckpointPostScreen({
     }
     let updated: ThreadWithMeta;
     try {
-      updated = await updateThread(rkey, {
-        // 触っていないフィールドを落とさないよう、取り直した record を土台にする
-        ...stripRecordMeta(fresh),
-        fields: sanitizeFieldsForRecord(merged.fields),
-        // 編集は活動なので一覧の並びを進める (spread で古い値が入るため明示)
-        updatedAt: new Date().toISOString(),
-      });
+      updated = await updateThread(
+        rkey,
+        {
+          // 触っていないフィールドを落とさないよう、取り直した record を土台にする
+          // (ogImage もここで残る)
+          ...stripRecordMeta(fresh),
+          fields: sanitizeFieldsForRecord(merged.fields),
+          // 編集は活動なので一覧の並びを進める (spread で古い値が入るため明示)
+          updatedAt: new Date().toISOString(),
+        },
+        // 選択肢の追加は OG 画像に関係しないので作り直さない
+        { skipOgImage: true },
+      );
     } catch (e) {
       throw new Error(
         e instanceof Error
