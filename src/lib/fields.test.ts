@@ -6,6 +6,17 @@ import {
   convertTagGroupsToFields,
   copyFieldDefs,
   countFreeTags,
+  EMPTY_RANGE_INPUT,
+  effectiveRange,
+  filterPostsByRanges,
+  formatRangeBound,
+  hasRangeInput,
+  isRangeField,
+  numericValueOf,
+  parseRangeBound,
+  pruneRangeSelection,
+  rangeFilterRows,
+  setRangeBound,
   fieldFilterGroups,
   filterPostsByFieldsAndTags,
   freeTagChips,
@@ -34,6 +45,7 @@ import {
   toggleSelectOption,
   type EditableField,
   type FieldSelection,
+  type RangeSelection,
 } from "@/lib/fields";
 import { countTags, filterPostsByTags, groupTagCounts, tagKey } from "@/lib/tags";
 import type { FieldDef, FieldValue, TagGroup } from "@/lib/types";
@@ -1247,5 +1259,266 @@ describe("filterPostsByFieldsAndTags", () => {
     expect(
       filterPostsByFieldsAndTags(posts, [kind], { kind: ["hall", "room"] }, ["東京"]),
     ).toEqual([posts[0], posts[2]]);
+  });
+});
+
+describe("範囲絞り込み (#74)", () => {
+  const height: FieldDef = { id: "height", label: "高さ", type: "number" };
+  const oldNum: FieldDef = { id: "oldnum", label: "旧数値", type: "number", archived: true };
+
+  describe("isRangeField", () => {
+    it("number だけ。duration・select・text は対象外", () => {
+      expect(isRangeField(weight)).toBe(true);
+      expect(isRangeField(time)).toBe(false);
+      expect(isRangeField(kind)).toBe(false);
+      expect(isRangeField(memo)).toBe(false);
+    });
+  });
+
+  describe("parseRangeBound", () => {
+    it("number", () => {
+      expect(parseRangeBound("80", weight)).toBe(80);
+      expect(parseRangeBound(" 12.5 ", weight)).toBe(12.5);
+      expect(parseRangeBound("-5", weight)).toBe(-5);
+      expect(parseRangeBound("", weight)).toBeNull();
+      expect(parseRangeBound("  ", weight)).toBeNull();
+      expect(parseRangeBound("abc", weight)).toBe("invalid");
+      expect(parseRangeBound("1e3", weight)).toBe("invalid");
+      expect(parseRangeBound("1".repeat(33), weight)).toBe("invalid");
+    });
+    it("全角数字は NFKC 正規化してから解釈する", () => {
+      expect(parseRangeBound("８０", weight)).toBe(80);
+      expect(parseRangeBound("　１２．５　", weight)).toBe(12.5);
+      expect(parseRangeBound("　", weight)).toBeNull();
+    });
+    it("範囲項目でない def は常に invalid", () => {
+      expect(parseRangeBound("1", kind)).toBe("invalid");
+      expect(parseRangeBound("1", time)).toBe("invalid");
+      expect(parseRangeBound("", memo)).toBe("invalid");
+    });
+  });
+
+  describe("effectiveRange", () => {
+    it("両方空・入力なしなら null", () => {
+      expect(effectiveRange({ min: "", max: " " }, weight)).toBeNull();
+      expect(effectiveRange(undefined, weight)).toBeNull();
+    });
+    it("片側だけ", () => {
+      expect(effectiveRange({ min: "80", max: "" }, weight)).toEqual({ min: 80, max: null });
+    });
+    it("不正な側は無視する", () => {
+      expect(effectiveRange({ min: "80", max: "abc" }, weight)).toEqual({ min: 80, max: null });
+      expect(effectiveRange({ min: "abc", max: "abc" }, weight)).toBeNull();
+    });
+  });
+
+  describe("numericValueOf", () => {
+    it("number の値", () => {
+      expect(numericValueOf({ fields: [num("weight", "80.5")] }, weight)).toBe(80.5);
+    });
+    it("不正な decimal・値なし・tags のみの投稿は null", () => {
+      expect(numericValueOf({ fields: [num("weight", "1e3")] }, weight)).toBeNull();
+      expect(numericValueOf({ fields: [] }, weight)).toBeNull();
+      expect(numericValueOf({ tags: ["80"] }, weight)).toBeNull();
+    });
+    it("duration は対象外なので null", () => {
+      expect(numericValueOf({ fields: [dur("time", 90)] }, time)).toBeNull();
+    });
+  });
+
+  describe("setRangeBound", () => {
+    it("追加 / 片側だけ空に / 両方空でキー削除。入力は変更しない", () => {
+      const empty: RangeSelection = {};
+      const a = setRangeBound(empty, "weight", "min", "80");
+      expect(a).toEqual({ weight: { min: "80", max: "" } });
+      expect(empty).toEqual({});
+      const b = setRangeBound(a, "weight", "max", "90");
+      expect(b).toEqual({ weight: { min: "80", max: "90" } });
+      const c = setRangeBound(b, "weight", "min", "");
+      expect(c).toEqual({ weight: { min: "", max: "90" } });
+      expect(b).toEqual({ weight: { min: "80", max: "90" } });
+      expect(setRangeBound(c, "weight", "max", "")).toEqual({});
+    });
+    it("空白だけの入力は空として扱う", () => {
+      const a = setRangeBound({}, "weight", "min", "  ");
+      expect(a).toEqual({});
+      expect(hasRangeInput(a)).toBe(false);
+      expect(
+        setRangeBound({ weight: { min: "", max: "90" } }, "weight", "max", "  "),
+      ).toEqual({});
+      expect(
+        setRangeBound({ weight: { min: "80", max: "" } }, "weight", "max", "  "),
+      ).toEqual({ weight: { min: "80", max: "" } });
+    });
+  });
+
+  describe("pruneRangeSelection", () => {
+    it("定義に無い id・範囲項目でない id・archived・両方空を落とす", () => {
+      const ranges: RangeSelection = {
+        weight: { min: "1", max: "" },
+        gone: { min: "1", max: "" },
+        kind: { min: "1", max: "" },
+        time: { min: "1", max: "" },
+        oldnum: { min: "1", max: "" },
+        height: { min: "", max: "" },
+      };
+      expect(
+        pruneRangeSelection(ranges, [weight, kind, time, oldNum, height]),
+      ).toEqual({ weight: { min: "1", max: "" } });
+    });
+    it("変化が無ければ同じ参照", () => {
+      const ranges: RangeSelection = { weight: { min: "abc", max: "" } };
+      expect(pruneRangeSelection(ranges, [weight])).toBe(ranges);
+    });
+  });
+
+  describe("hasRangeInput", () => {
+    it("不正値でも true、空なら false", () => {
+      expect(hasRangeInput({})).toBe(false);
+      expect(hasRangeInput({ weight: { min: "", max: "" } })).toBe(false);
+      expect(hasRangeInput({ weight: { min: "", max: "abc" } })).toBe(true);
+    });
+  });
+
+  describe("filterPostsByRanges", () => {
+    const posts: Post[] = [
+      { fields: [num("weight", "70"), num("height", "150")] },
+      { fields: [num("weight", "80"), num("height", "170")] },
+      { fields: [num("weight", "90")] },
+      { fields: [num("weight", "100"), num("height", "180")] },
+      { fields: [] },
+    ];
+    const defs = [weight, height];
+
+    it("両端を含み、値の無い投稿は一致しない", () => {
+      expect(
+        filterPostsByRanges(posts, defs, { weight: { min: "80", max: "" } }),
+      ).toEqual([posts[1], posts[2], posts[3]]);
+      expect(
+        filterPostsByRanges(posts, defs, { weight: { min: "", max: "80" } }),
+      ).toEqual([posts[0], posts[1]]);
+      expect(
+        filterPostsByRanges(posts, defs, { weight: { min: "80", max: "90" } }),
+      ).toEqual([posts[1], posts[2]]);
+    });
+    it("項目間 AND", () => {
+      expect(
+        filterPostsByRanges(posts, defs, {
+          weight: { min: "80", max: "" },
+          height: { min: "160", max: "" },
+        }),
+      ).toEqual([posts[1], posts[3]]);
+    });
+    it("条件なし・不正入力だけなら同じ参照", () => {
+      expect(filterPostsByRanges(posts, defs, {})).toBe(posts);
+      expect(
+        filterPostsByRanges(posts, defs, { weight: { min: "abc", max: "" } }),
+      ).toBe(posts);
+    });
+    it("不正な側は無視して有効な側だけ当てる", () => {
+      expect(
+        filterPostsByRanges(posts, defs, { weight: { min: "95", max: "abc" } }),
+      ).toEqual([posts[3]]);
+    });
+  });
+
+  describe("rangeFilterRows", () => {
+    const posts: Post[] = [
+      { fields: [select("kind", ["hall"]), num("weight", "70"), num("height", "150")], tags: ["東京"] },
+      { fields: [select("kind", ["hall"]), num("weight", "80"), num("height", "170")] },
+      { fields: [select("kind", ["room"]), num("weight", "90")], tags: ["東京"] },
+      { fields: [select("kind", ["room"]), num("oldnum", "1")] },
+      { fields: [] },
+    ];
+    const unused: FieldDef = { id: "unused", label: "未使用", type: "number" };
+    const defs = [kind, height, time, oldNum, unused, weight];
+
+    it("定義順。archived・値なしで入力も空なら出ない。duration は出ない", () => {
+      const rows = rangeFilterRows(posts, defs, {}, [], {});
+      expect(rows.map((r) => r.field.id)).toEqual(["height", "weight"]);
+      expect(rows[0]).toMatchObject({
+        input: EMPTY_RANGE_INPUT,
+        active: false,
+        invalid: { min: false, max: false },
+        span: { min: 150, max: 170 },
+        count: 5,
+        withValue: 2,
+      });
+    });
+    it("入力があれば archived・値なしでも出る", () => {
+      const rows = rangeFilterRows(posts, defs, {}, [], {
+        oldnum: { min: "1", max: "" },
+        unused: { min: "", max: "x" },
+      });
+      expect(rows.map((r) => r.field.id)).toEqual(["height", "oldnum", "unused", "weight"]);
+      expect(rows[2]).toMatchObject({
+        span: null,
+        active: false,
+        invalid: { min: false, max: true },
+      });
+    });
+    it("span は全投稿基準、count は他条件 (select・タグ・他項目の範囲) を当て自項目の範囲で数える", () => {
+      const ranges: RangeSelection = {
+        weight: { min: "80", max: "" },
+        height: { min: "160", max: "" },
+      };
+      const rows = rangeFilterRows(posts, defs, { kind: ["hall"] }, [], ranges);
+      const w = rows.find((r) => r.field.id === "weight")!;
+      // hall かつ height >= 160 → posts[1] だけ。その中で weight >= 80 は 1
+      expect(w).toMatchObject({ span: { min: 70, max: 90 }, active: true, count: 1, withValue: 1 });
+      const h = rows.find((r) => r.field.id === "height")!;
+      // hall かつ weight >= 80 → posts[1]。height >= 160 は 1
+      expect(h).toMatchObject({ span: { min: 150, max: 170 }, count: 1, withValue: 1 });
+
+      const tagged = rangeFilterRows(posts, defs, {}, [tagKey("東京")], {
+        weight: { min: "80", max: "" },
+      });
+      // 東京 → posts[0], posts[2]。weight >= 80 は posts[2]
+      expect(tagged.find((r) => r.field.id === "weight")).toMatchObject({
+        count: 1,
+        withValue: 2,
+      });
+    });
+  });
+
+  describe("既存関数に ranges を渡す", () => {
+    const posts: Post[] = [
+      { fields: [select("kind", ["hall"]), num("weight", "70")], tags: ["東京"] },
+      { fields: [select("kind", ["hall"]), num("weight", "90")], tags: ["東京"] },
+      { fields: [select("kind", ["room"]), num("weight", "95")] },
+    ];
+    const defs = [kind, weight];
+    const ranges: RangeSelection = { weight: { min: "80", max: "" } };
+
+    it("fieldFilterGroups: 件数が範囲を反映し、省略時は従来どおり", () => {
+      const counts = (g: ReturnType<typeof fieldFilterGroups>) =>
+        Object.fromEntries(g[0].chips.map((c) => [c.optionId, c.count]));
+      expect(counts(fieldFilterGroups(posts, defs, {}, []))).toEqual({ hall: 2, room: 1 });
+      expect(counts(fieldFilterGroups(posts, defs, {}, [], ranges))).toEqual({ hall: 1, room: 1 });
+      expect(fieldFilterGroups(posts, defs, {}, [], {})).toEqual(
+        fieldFilterGroups(posts, defs, {}, []),
+      );
+    });
+    it("freeTagChips: facetCount が範囲を反映する", () => {
+      expect(freeTagChips(posts, defs, {}, [])[0].facetCount).toBe(2);
+      expect(freeTagChips(posts, defs, {}, [], ranges)[0].facetCount).toBe(1);
+    });
+    it("filterPostsByFieldsAndTags: 項目 → タグ → 範囲。すべて空なら同じ参照", () => {
+      expect(filterPostsByFieldsAndTags(posts, defs, {}, [], {})).toBe(posts);
+      expect(
+        filterPostsByFieldsAndTags(posts, defs, { kind: ["hall"] }, ["東京"], ranges),
+      ).toEqual([posts[1]]);
+      expect(filterPostsByFieldsAndTags(posts, defs, {}, [], ranges)).toEqual([
+        posts[1],
+        posts[2],
+      ]);
+    });
+  });
+
+  describe("formatRangeBound", () => {
+    it("String(n)", () => {
+      expect(formatRangeBound(12.5)).toBe("12.5");
+      expect(formatRangeBound(80)).toBe("80");
+    });
   });
 });

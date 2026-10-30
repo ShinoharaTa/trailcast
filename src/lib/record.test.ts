@@ -126,6 +126,14 @@ describe("isRecordFilterActive", () => {
       isRecordFilterActive({ ...f, tags: ["t"] }, { timeline: true }),
     ).toBe(true);
   });
+  it("範囲の生文字列だけで true (timeline でも、不正値でも)", () => {
+    const f: RecordFilter = {
+      ...EMPTY_RECORD_FILTER,
+      ranges: { dist: { min: "abc", max: "" } },
+    };
+    expect(isRecordFilterActive(f)).toBe(true);
+    expect(isRecordFilterActive(f, { timeline: true })).toBe(true);
+  });
 });
 
 describe("isPostUnrecorded / countUnrecorded", () => {
@@ -246,6 +254,7 @@ describe("applyRecordFilter", () => {
     const f: RecordFilter = {
       fields: {},
       tags: ["x"],
+      ranges: {},
       query: "none",
       unrecorded: true,
     };
@@ -265,6 +274,7 @@ describe("applyRecordFilter", () => {
     const f: RecordFilter = {
       fields: {},
       tags: ["x"],
+      ranges: {},
       query: "none",
       unrecorded: true,
     };
@@ -279,6 +289,26 @@ describe("applyRecordFilter", () => {
         { timeline: true },
       ),
     ).toBe(posts);
+  });
+  it("ranges は timeline でも効き、unrecorded・query と AND", () => {
+    const ps: PostLike[] = [
+      post({ text: "a", fields: [num("dist", "5")] }),
+      post({ text: "b", fields: [num("dist", "12")] }),
+      post({ text: "c", fields: [num("dist", "20")], tags: ["x"] }),
+      post({ text: "d", fields: [] }),
+    ];
+    const f: RecordFilter = {
+      ...EMPTY_RECORD_FILTER,
+      ranges: { dist: { min: "10", max: "" } },
+    };
+    expect(applyRecordFilter(ps, defs, f, { timeline: true })).toEqual([
+      ps[1],
+      ps[2],
+    ]);
+    expect(applyRecordFilter(ps, defs, { ...f, query: "c" })).toEqual([ps[2]]);
+    expect(applyRecordFilter(ps, defs, { ...f, tags: ["x"] })).toEqual([ps[2]]);
+    // 値の無い投稿は範囲に一致しないので、未記録とは両立しない
+    expect(applyRecordFilter(ps, defs, { ...f, unrecorded: true })).toEqual([]);
   });
 });
 

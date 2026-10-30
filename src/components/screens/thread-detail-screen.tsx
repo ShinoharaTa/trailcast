@@ -41,6 +41,8 @@ import {
   countFreeTags,
   initialFreeTagsForEdit,
   pruneFieldSelection,
+  pruneRangeSelection,
+  setRangeBound,
   toggleFieldOption,
   type FieldSelection,
 } from "@/lib/fields";
@@ -571,14 +573,23 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     },
     [],
   );
-  // タイムラインの絞り込みバーから解除するのは、タイムラインで効いている項目・タグだけ
+  const setRange = useCallback(
+    (fieldId: string, bound: "min" | "max", raw: string) => {
+      setFilter((prev) => ({
+        ...prev,
+        ranges: setRangeBound(prev.ranges, fieldId, bound, raw),
+      }));
+    },
+    [],
+  );
+  // タイムラインの絞り込みバーから解除するのは、タイムラインで効いている項目・タグ・範囲だけ
   const clearFilter = useCallback(() => {
-    setFilter((prev) => ({ ...prev, fields: {}, tags: [] }));
+    setFilter((prev) => ({ ...prev, fields: {}, tags: [], ranges: {} }));
   }, []);
 
   // 記録帳の行から、タイムラインのその投稿へ移る。
-  // 検索語・未記録はタイムラインに効かないので残す。項目・タグの条件でその投稿が
-  // 隠れるときだけ、項目・タグの絞り込みを外す
+  // 検索語・未記録はタイムラインに効かないので残す。項目・タグ・範囲の条件でその投稿が
+  // 隠れるときだけ、項目・タグ・範囲の絞り込みを外す
   const scrollToPost = useCallback(
     (uri: string) => {
       setView("timeline");
@@ -586,7 +597,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       setFilter((prev) =>
         post &&
         applyRecordFilter([post], defs, prev, { timeline: true }).length === 0
-          ? { ...prev, fields: {}, tags: [] }
+          ? { ...prev, fields: {}, tags: [], ranges: {} }
           : prev,
       );
       // タイムラインの描画を待ってからスクロールする
@@ -619,14 +630,18 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     });
   }, [freeTagCounts]);
   // 項目の選択も同じ理由で、定義・投稿から消えた選択肢を落とす。
+  // 範囲は非表示・削除した項目の入力を落とす。
   // 項目が無くなったら未記録 (項目に値が無い投稿) の絞り込みも意味を失うので外す
   useEffect(() => {
     setFilter((prev) => {
       const next = pruneFieldSelection(prev.fields, defs, posts);
+      const ranges = pruneRangeSelection(prev.ranges, defs);
       const unrecorded = defs.length === 0 ? false : prev.unrecorded;
-      return next === prev.fields && unrecorded === prev.unrecorded
+      return next === prev.fields &&
+        ranges === prev.ranges &&
+        unrecorded === prev.unrecorded
         ? prev
-        : { ...prev, fields: next, unrecorded };
+        : { ...prev, fields: next, ranges, unrecorded };
     });
   }, [posts, defs]);
 
@@ -1196,8 +1211,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           defs={defs}
           selection={filter.fields}
           tagKeys={filter.tags}
+          ranges={filter.ranges}
           onToggleOption={toggleFieldSelection}
           onToggleTag={toggleTagKey}
+          onRangeChange={setRange}
           onClear={clearFilter}
           matchedCount={visiblePosts.length}
           canEdit={isOwner}

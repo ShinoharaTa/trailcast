@@ -1,6 +1,12 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import {
+  useDeferredValue,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import type {
   FieldDef,
   PostWithMeta,
@@ -8,7 +14,11 @@ import type {
   ThreadWithMeta,
 } from "@/lib/types";
 import { effectiveSortOrder } from "@/lib/types";
-import { initialFreeTagsForEdit, toggleFieldOption } from "@/lib/fields";
+import {
+  initialFreeTagsForEdit,
+  setRangeBound,
+  toggleFieldOption,
+} from "@/lib/fields";
 import {
   EMPTY_RECORD_FILTER,
   applyRecordFilter,
@@ -42,7 +52,7 @@ function dateParts(iso: string): { md: string; year: string } | null {
 /**
  * 記録帳パネル。仕様は docs/record-mode.md §5.3。
  *
- * - 絞り込み (項目・自由タグ) はタイムラインと同じ filter を共有する
+ * - 絞り込み (項目・範囲・自由タグ) はタイムラインと同じ filter を共有する
  * - 検索語と未記録は記録帳だけで効く
  * - 行の日付・タイトルを押すとタイムラインのその投稿へ移る (編集・削除はタイムラインで行う)
  */
@@ -59,7 +69,8 @@ export function RecordLog({
   posts: PostWithMeta[];
   thread: ThreadWithMeta;
   filter: RecordFilter;
-  onFilterChange: (next: RecordFilter) => void;
+  /** 範囲の解除 (×) は下限・上限を続けて更新するので、関数での更新も受ける */
+  onFilterChange: Dispatch<SetStateAction<RecordFilter>>;
   onOpenPost: (uri: string) => void;
   canEdit?: boolean;
   onEditFields?: () => void;
@@ -78,6 +89,7 @@ export function RecordLog({
         applyRecordFilter(posts, defs, {
           fields: filter.fields,
           tags: filter.tags,
+          ranges: filter.ranges,
           unrecorded: filter.unrecorded,
           query: deferredQuery,
         }),
@@ -88,6 +100,7 @@ export function RecordLog({
       defs,
       filter.fields,
       filter.tags,
+      filter.ranges,
       filter.unrecorded,
       deferredQuery,
       sortOrder,
@@ -108,6 +121,12 @@ export function RecordLog({
         ? filter.tags.filter((k) => k !== key)
         : [...filter.tags, key],
     });
+  // 前の更新を引き継ぐよう関数で更新する (× で下限・上限を続けて空にするため)
+  const setRange = (fieldId: string, bound: "min" | "max", raw: string) =>
+    onFilterChange((prev) => ({
+      ...prev,
+      ranges: setRangeBound(prev.ranges, fieldId, bound, raw),
+    }));
   const clearAll = () => onFilterChange(EMPTY_RECORD_FILTER);
   const filtering = isRecordFilterActive(filter);
 
@@ -154,9 +173,11 @@ export function RecordLog({
           defs={defs}
           selection={filter.fields}
           tagKeys={filter.tags}
+          ranges={filter.ranges}
           onToggleOption={toggleOption}
           onToggleTag={toggleTag}
-          onClear={() => update({ fields: {}, tags: [] })}
+          onRangeChange={setRange}
+          onClear={() => update({ fields: {}, tags: [], ranges: {} })}
           matchedCount={rows.length}
           canEdit={canEdit}
           onEditFields={onEditFields}
