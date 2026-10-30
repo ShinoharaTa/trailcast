@@ -12,12 +12,14 @@
         "properties": {
           "title": {
             "type": "string",
-            "maxLength": 100,
+            "maxGraphemes": 100,
+            "maxLength": 1000,
             "description": "Thread title"
           },
           "description": {
             "type": "string",
-            "maxLength": 500,
+            "maxGraphemes": 500,
+            "maxLength": 5000,
             "description": "Thread description"
           },
           "visibility": {
@@ -62,7 +64,8 @@
               "properties": {
                 "label": {
                   "type": "string",
-                  "maxLength": 20,
+                  "maxGraphemes": 20,
+                  "maxLength": 200,
                   "description": "Group heading shown in the filter UI (e.g. 場所)"
                 },
                 "tags": {
@@ -70,7 +73,8 @@
                   "maxLength": 50,
                   "items": {
                     "type": "string",
-                    "maxLength": 64
+                    "maxGraphemes": 64,
+                    "maxLength": 640
                   },
                   "description": "Tags in this group, stored without the leading #"
                 }
@@ -86,13 +90,13 @@
           "tags": {
             "type": "array",
             "maxLength": 20,
-            "items": { "type": "string", "maxLength": 64 },
+            "items": { "type": "string", "maxGraphemes": 64, "maxLength": 640 },
             "description": "Tags classifying the thread itself (e.g. 旅行, オフ会), stored without the leading '#'. Not propagated to posts; used to filter threads on profile / dashboard."
           },
           "defaultTags": {
             "type": "array",
             "maxLength": 10,
-            "items": { "type": "string", "maxLength": 64 },
+            "items": { "type": "string", "maxGraphemes": 64, "maxLength": 640 },
             "description": "Tags pre-filled on new checkpoints in this thread (the author can remove them per post). Stored without the leading '#'."
           },
           "updatedAt": {
@@ -118,7 +122,7 @@
           "maxLength": 16,
           "description": "Stable opaque id, unique within the thread. Never derived from label."
         },
-        "label": { "type": "string", "maxLength": 20 },
+        "label": { "type": "string", "maxGraphemes": 20, "maxLength": 200 },
         "type": {
           "type": "string",
           "knownValues": ["select", "number", "duration", "text"]
@@ -135,7 +139,8 @@
         },
         "unit": {
           "type": "string",
-          "maxLength": 8,
+          "maxGraphemes": 8,
+          "maxLength": 80,
           "description": "number only (kg, km, 回)"
         },
         "scale": {
@@ -157,7 +162,8 @@
         "id": { "type": "string", "minLength": 1, "maxLength": 16 },
         "label": {
           "type": "string",
-          "maxLength": 64,
+          "maxGraphemes": 64,
+          "maxLength": 640,
           "description": "Shown in UI and used as the hashtag on cross-post (normalized by normalizeTag)"
         },
         "archived": { "type": "boolean" }

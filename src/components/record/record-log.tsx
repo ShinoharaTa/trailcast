@@ -1,6 +1,12 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import {
+  useDeferredValue,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import type {
   FieldDef,
   PostWithMeta,
@@ -8,7 +14,11 @@ import type {
   ThreadWithMeta,
 } from "@/lib/types";
 import { effectiveSortOrder } from "@/lib/types";
-import { initialFreeTagsForEdit, toggleFieldOption } from "@/lib/fields";
+import {
+  initialFreeTagsForEdit,
+  setRangeBound,
+  toggleFieldOption,
+} from "@/lib/fields";
 import {
   EMPTY_RECORD_FILTER,
   applyRecordFilter,
@@ -42,7 +52,7 @@ function dateParts(iso: string): { md: string; year: string } | null {
 /**
  * 記録帳パネル。仕様は docs/record-mode.md §5.3。
  *
- * - 絞り込み (項目・自由タグ) はタイムラインと同じ filter を共有する
+ * - 絞り込み (項目・範囲・自由タグ) はタイムラインと同じ filter を共有する
  * - 検索語と未記録は記録帳だけで効く
  * - 行の日付・タイトルを押すとタイムラインのその投稿へ移る (編集・削除はタイムラインで行う)
  */
@@ -54,15 +64,21 @@ export function RecordLog({
   onOpenPost,
   canEdit = false,
   onEditFields,
+  migrateCount = 0,
+  onOpenMigrate,
 }: {
   /** 絞り込み前の全投稿 (並び順は問わない) */
   posts: PostWithMeta[];
   thread: ThreadWithMeta;
   filter: RecordFilter;
-  onFilterChange: (next: RecordFilter) => void;
+  /** 範囲の解除 (×) は下限・上限を続けて更新するので、関数での更新も受ける */
+  onFilterChange: Dispatch<SetStateAction<RecordFilter>>;
   onOpenPost: (uri: string) => void;
   canEdit?: boolean;
   onEditFields?: () => void;
+  /** タグから記録項目へ書き換えられる自分の投稿の件数 (#62) */
+  migrateCount?: number;
+  onOpenMigrate?: () => void;
 }) {
   const defs = thread.fields ?? NO_FIELDS;
   const [sortOrder, setSortOrder] = useState<ThreadSortOrder>(() =>
@@ -78,6 +94,7 @@ export function RecordLog({
         applyRecordFilter(posts, defs, {
           fields: filter.fields,
           tags: filter.tags,
+          ranges: filter.ranges,
           unrecorded: filter.unrecorded,
           query: deferredQuery,
         }),
@@ -88,6 +105,7 @@ export function RecordLog({
       defs,
       filter.fields,
       filter.tags,
+      filter.ranges,
       filter.unrecorded,
       deferredQuery,
       sortOrder,
@@ -108,6 +126,12 @@ export function RecordLog({
         ? filter.tags.filter((k) => k !== key)
         : [...filter.tags, key],
     });
+  // 前の更新を引き継ぐよう関数で更新する (× で下限・上限を続けて空にするため)
+  const setRange = (fieldId: string, bound: "min" | "max", raw: string) =>
+    onFilterChange((prev) => ({
+      ...prev,
+      ranges: setRangeBound(prev.ranges, fieldId, bound, raw),
+    }));
   const clearAll = () => onFilterChange(EMPTY_RECORD_FILTER);
   const filtering = isRecordFilterActive(filter);
 
@@ -122,6 +146,8 @@ export function RecordLog({
   // 選択中なら件数 0 になっても解除できるように出す
   const showUnrecorded =
     defs.length > 0 && (unrecordedCount > 0 || filter.unrecorded);
+  // タグから記録項目への書き換えは所有者だけ (自分の投稿が対象のとき)
+  const showMigrate = defs.length > 0 && canEdit && migrateCount > 0;
 
   return (
     <div>
@@ -154,9 +180,11 @@ export function RecordLog({
           defs={defs}
           selection={filter.fields}
           tagKeys={filter.tags}
+          ranges={filter.ranges}
           onToggleOption={toggleOption}
           onToggleTag={toggleTag}
-          onClear={() => update({ fields: {}, tags: [] })}
+          onRangeChange={setRange}
+          onClear={() => update({ fields: {}, tags: [], ranges: {} })}
           matchedCount={rows.length}
           canEdit={canEdit}
           onEditFields={onEditFields}
@@ -164,30 +192,46 @@ export function RecordLog({
           className=""
         />
 
-        {showUnrecorded && (
+        {(showUnrecorded || showMigrate) && (
           <div className="px-1">
             <div className="mb-1.5 text-[11px] font-medium text-white/40">
               整理
             </div>
-            <button
-              type="button"
-              onClick={() => update({ unrecorded: !filter.unrecorded })}
-              aria-pressed={filter.unrecorded}
-              className={`flex items-center gap-1.5 rounded-full border border-dashed px-3.5 py-2 text-sm font-medium transition md:px-3 md:py-1 md:text-xs ${
-                filter.unrecorded
-                  ? "border-amber-400 bg-amber-400 text-amber-950"
-                  : "border-amber-400/40 text-amber-300 hover:bg-amber-400/10"
-              }`}
-            >
-              未記録
-              <span
-                className={`tabular-nums ${
-                  filter.unrecorded ? "text-amber-950/70" : "text-amber-300/60"
-                }`}
-              >
-                {unrecordedCount}
-              </span>
-            </button>
+            <div className="flex flex-wrap gap-1.5">
+              {showUnrecorded && (
+                <button
+                  type="button"
+                  onClick={() => update({ unrecorded: !filter.unrecorded })}
+                  aria-pressed={filter.unrecorded}
+                  className={`flex items-center gap-1.5 rounded-full border border-dashed px-3.5 py-2 text-sm font-medium transition md:px-3 md:py-1 md:text-xs ${
+                    filter.unrecorded
+                      ? "border-amber-400 bg-amber-400 text-amber-950"
+                      : "border-amber-400/40 text-amber-300 hover:bg-amber-400/10"
+                  }`}
+                >
+                  未記録
+                  <span
+                    className={`tabular-nums ${
+                      filter.unrecorded ? "text-amber-950/70" : "text-amber-300/60"
+                    }`}
+                  >
+                    {unrecordedCount}
+                  </span>
+                </button>
+              )}
+              {showMigrate && (
+                <button
+                  type="button"
+                  onClick={onOpenMigrate}
+                  className="flex items-center gap-1.5 rounded-full border border-dashed border-indigo-400/40 px-3.5 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-500/10 md:px-3 md:py-1 md:text-xs"
+                >
+                  タグを記録項目に書き換え
+                  <span className="tabular-nums text-indigo-300/60">
+                    {migrateCount}
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

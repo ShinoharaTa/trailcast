@@ -26,6 +26,7 @@ import {
   stripSelectedOptionTags,
   type PendingFieldOption,
 } from "@/lib/fields";
+import { locationToRecord } from "@/lib/location";
 import {
   parseAtUri,
   stripRecordMeta,
@@ -459,7 +460,7 @@ export function CheckpointPostScreen({
         thread: threadUri,
         text: text.trim() || undefined,
         images: blobs.length > 0 ? blobs : undefined,
-        location: location ?? undefined,
+        location: location ? locationToRecord(location) : undefined,
         tags: recordTags,
         fields: postFields,
         checkpointAt: checkpointIso,

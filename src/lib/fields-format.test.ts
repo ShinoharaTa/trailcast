@@ -4,8 +4,7 @@ import {
   UNKNOWN_OPTION_LABEL,
   formatDuration,
   formatResolvedValue,
-  joinSeconds,
-  splitSeconds,
+  parseDurationInput,
 } from "@/lib/fields-format";
 import type { FieldDef } from "@/lib/types";
 
@@ -75,20 +74,88 @@ describe("formatDuration", () => {
   });
 });
 
-describe("splitSeconds / joinSeconds", () => {
-  it("往復できる", () => {
-    expect(splitSeconds(3661)).toEqual({ h: "1", m: "1", s: "1" });
-    expect(joinSeconds(splitSeconds(3661))).toBe(3661);
-    expect(joinSeconds({ h: "", m: "1", s: "" })).toBe(60);
+describe("parseDurationInput", () => {
+  it("空・空白だけは null", () => {
+    expect(parseDurationInput("")).toBeNull();
+    expect(parseDurationInput("   ")).toBeNull();
   });
 
-  it("全部空なら null", () => {
-    expect(joinSeconds({ h: "", m: "", s: "" })).toBeNull();
+  it("h:mm:ss / m:ss", () => {
+    expect(parseDurationInput("1:23:45")).toBe(5025);
+    expect(parseDurationInput("23:45")).toBe(1425);
+    expect(parseDurationInput("0:00")).toBe(0);
+    expect(parseDurationInput("83:00")).toBe(4980);
   });
 
-  it("分・秒が 59 を超えたら invalid", () => {
-    expect(joinSeconds({ h: "0", m: "59", s: "59" })).toBe(3599);
-    expect(joinSeconds({ h: "", m: "60", s: "" })).toBe("invalid");
-    expect(joinSeconds({ h: "", m: "", s: "60" })).toBe("invalid");
+  it("コロン区切りの 2 つ目以降が 59 を超えたら invalid", () => {
+    expect(parseDurationInput("1:59:59")).toBe(7199);
+    expect(parseDurationInput("1:60:00")).toBe("invalid");
+    expect(parseDurationInput("1:00:60")).toBe("invalid");
+    expect(parseDurationInput("23:60")).toBe("invalid");
+  });
+
+  it("日本語の単位", () => {
+    expect(parseDurationInput("1時間23分45秒")).toBe(5025);
+    expect(parseDurationInput("83分")).toBe(4980);
+    expect(parseDurationInput("90秒")).toBe(90);
+    expect(parseDurationInput("1時間")).toBe(3600);
+    expect(parseDurationInput("1時間45秒")).toBe(3645);
+    expect(parseDurationInput("1 時間 23 分")).toBe(4980);
+  });
+
+  it("「半」は 30 分 / 30 秒", () => {
+    expect(parseDurationInput("1時間半")).toBe(5400);
+    expect(parseDurationInput("2分半")).toBe(150);
+    expect(parseDurationInput("1時間半10分")).toBe("invalid");
+    expect(parseDurationInput("1時間半30秒")).toBe("invalid");
+    expect(parseDurationInput("2分半10秒")).toBe("invalid");
+  });
+
+  it("英字の単位 (大文字小文字は無視)", () => {
+    expect(parseDurationInput("1h23m45s")).toBe(5025);
+    expect(parseDurationInput("83m")).toBe(4980);
+    expect(parseDurationInput("90s")).toBe(90);
+    expect(parseDurationInput("1H23M")).toBe(4980);
+  });
+
+  it("数字だけは分 (小数可、秒に四捨五入)", () => {
+    expect(parseDurationInput("0")).toBe(0);
+    expect(parseDurationInput("45")).toBe(2700);
+    expect(parseDurationInput("1.5")).toBe(90);
+    expect(parseDurationInput("0.01")).toBe(1);
+  });
+
+  it("全角は NFKC で揃える", () => {
+    expect(parseDurationInput("１：２３：４５")).toBe(5025);
+    expect(parseDurationInput("８３分")).toBe(4980);
+    expect(parseDurationInput(" ４５ ")).toBe(2700);
+  });
+
+  it("負数・その他は invalid", () => {
+    expect(parseDurationInput("-5")).toBe("invalid");
+    expect(parseDurationInput("abc")).toBe("invalid");
+    expect(parseDurationInput("時間")).toBe("invalid");
+    expect(parseDurationInput("1:2:3:4")).toBe("invalid");
+    expect(parseDurationInput("1.5.0")).toBe("invalid");
+    expect(parseDurationInput("::")).toBe("invalid");
+    expect(parseDurationInput("1 5")).toBe("invalid");
+    expect(parseDurationInput("1 : 23")).toBe("invalid");
+    expect(parseDurationInput("1時間0.5分")).toBe("invalid");
+    expect(parseDurationInput("1.5時間")).toBe("invalid");
+    expect(parseDurationInput("1.5h")).toBe("invalid");
+  });
+
+  it("合計秒が安全な整数に収まらないものは invalid", () => {
+    expect(parseDurationInput("99999999999999999999")).toBe("invalid");
+    expect(parseDurationInput("9007199254740991")).toBe("invalid");
+  });
+
+  it("formatDuration の出力を戻すと同じ秒になる", () => {
+    for (const seconds of [0, 1, 59, 60, 61, 1425, 3599, 3600, 5025, 36059]) {
+      expect(parseDurationInput(formatDuration(seconds))).toBe(seconds);
+    }
+    expect(parseDurationInput(formatDuration(Number.MAX_SAFE_INTEGER))).toBe(
+      Number.MAX_SAFE_INTEGER,
+    );
   });
 });

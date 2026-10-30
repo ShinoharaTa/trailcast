@@ -2,6 +2,7 @@
 //
 // 記録帳の絞り込みは タイムラインと同じ RecordFilter を共有する。
 // 検索語 (query) と未記録 (unrecorded) は記録帳だけで効き、タイムラインは見ない。
+// 項目・タグ・範囲は両方で効く。
 
 import type {
   FieldDef,
@@ -12,10 +13,12 @@ import type {
 } from "@/lib/types";
 import {
   filterPostsByFieldsAndTags,
+  hasRangeInput,
   initialFreeTagsForEdit,
   resolveFieldValues,
   type FieldSelection,
   type HasFieldValues,
+  type RangeSelection,
 } from "@/lib/fields";
 import { formatResolvedValue } from "@/lib/fields-format";
 
@@ -23,12 +26,12 @@ export type { ThreadView };
 
 export const THREAD_VIEWS: readonly ThreadView[] = ["timeline", "log", "review"];
 export const DEFAULT_THREAD_VIEW: ThreadView = "timeline";
-/** いま UI がある表示。ふりかえり (review) は 5b で足す */
-export const AVAILABLE_THREAD_VIEWS: readonly ThreadView[] = ["timeline", "log"];
+/** いま UI がある表示 */
+export const AVAILABLE_THREAD_VIEWS: readonly ThreadView[] = THREAD_VIEWS;
 
 /**
  * 初期表示。未設定・未知の値は "timeline"。
- * available に無い値 (5a 時点の "review") は "log" に落とす。
+ * available に無い値は "log" に落とす (いまは全表示に UI があるので、available を絞った呼び出し用)。
  */
 export function effectiveDefaultView(
   thread: Pick<ThreadRecord, "defaultView">,
@@ -61,6 +64,8 @@ export interface RecordFilter {
   fields: FieldSelection;
   /** tagKey */
   tags: string[];
+  /** number 項目の範囲 (入力欄の生文字列) */
+  ranges: RangeSelection;
   /** 記録帳のみ */
   query: string;
   /** 記録帳のみ */
@@ -70,16 +75,23 @@ export interface RecordFilter {
 export const EMPTY_RECORD_FILTER: RecordFilter = {
   fields: {},
   tags: [],
+  ranges: {},
   query: "",
   unrecorded: false,
 };
 
-/** 絞り込み中か。timeline: true なら fields / tags だけを見る */
+/** 絞り込み中か。timeline: true なら fields / tags / ranges だけを見る */
 export function isRecordFilterActive(
   f: RecordFilter,
   opts?: { timeline?: boolean },
 ): boolean {
-  if (Object.keys(f.fields).length > 0 || f.tags.length > 0) return true;
+  if (
+    Object.keys(f.fields).length > 0 ||
+    f.tags.length > 0 ||
+    hasRangeInput(f.ranges)
+  ) {
+    return true;
+  }
   if (opts?.timeline) return false;
   return f.unrecorded || parseQuery(f.query).length > 0;
 }
@@ -111,17 +123,21 @@ export function countUnrecorded(
   return posts.filter((p) => isPostUnrecorded(p, defs)).length;
 }
 
-/** 検索語の正規化。trim → toLocaleLowerCase → 空白で分割 (全角空白含む)。空なら [] */
+/**
+ * 検索語の正規化。NFKC → trim → toLocaleLowerCase → 空白で分割 (全角空白含む)。空なら []
+ * NFKC で全角英数は半角に、半角カナは全角になる (postSearchText と揃える)。
+ */
 export function parseQuery(query: string): string[] {
   return query
+    .normalize("NFKC")
     .trim()
     .toLocaleLowerCase()
-    .split(/[\s　]+/)
+    .split(/\s+/)
     .filter((w) => w.length > 0);
 }
 
 /**
- * 検索対象の文字列 (小文字)。本文、自由タグ、解決済みの項目値の表示文字列
+ * 検索対象の文字列 (NFKC → 小文字)。本文、自由タグ、解決済みの項目値の表示文字列
  * (formatResolvedValue)。項目名は含めない。
  * 要素は改行でつなぐ (検索語は空白を含まないので、要素をまたいで一致しない)。
  */
@@ -133,7 +149,7 @@ export function postSearchText(post: PostLike, defs: FieldDef[]): string {
     const text = formatResolvedValue(r);
     if (text) parts.push(text);
   }
-  return parts.join("\n").toLocaleLowerCase();
+  return parts.join("\n").normalize("NFKC").toLocaleLowerCase();
 }
 
 /** 全語を含む (AND, 部分一致)。query が空なら同じ参照 */
@@ -151,8 +167,8 @@ export function searchPosts<T extends PostLike>(
 }
 
 /**
- * 記録帳の絞り込み。順に unrecorded → fields → tags → query。
- * opts.timeline が true なら fields / tags のみ (タイムライン用)。
+ * 記録帳の絞り込み。順に unrecorded → fields → tags → ranges → query。
+ * opts.timeline が true なら fields / tags / ranges のみ (タイムライン用)。
  * 何も当てなければ同じ参照を返す。
  */
 export function applyRecordFilter<T extends PostLike>(
@@ -165,7 +181,13 @@ export function applyRecordFilter<T extends PostLike>(
   if (!opts?.timeline && filter.unrecorded) {
     out = out.filter((p) => isPostUnrecorded(p, defs));
   }
-  out = filterPostsByFieldsAndTags(out, defs, filter.fields, filter.tags);
+  out = filterPostsByFieldsAndTags(
+    out,
+    defs,
+    filter.fields,
+    filter.tags,
+    filter.ranges,
+  );
   if (!opts?.timeline) out = searchPosts(out, defs, filter.query);
   return out;
 }

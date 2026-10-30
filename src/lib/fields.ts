@@ -31,15 +31,15 @@ import {
 export const MAX_FIELDS = 30;
 /** 1 項目の選択肢数 (lexicon の maxLength と一致させる) */
 export const MAX_FIELD_OPTIONS = 50;
-/** 項目名の最大長 (grapheme 単位) */
+/** 項目名の最大長 (grapheme 単位。lexicon の maxGraphemes と一致させる) */
 export const MAX_FIELD_LABEL_LENGTH = 20;
-/** id の最大長 (lexicon の maxLength と一致させる) */
+/** id の最大長 (ASCII のみなので lexicon の maxLength (バイト) と一致させる) */
 export const MAX_FIELD_ID_LENGTH = 16;
-/** 単位の最大長 */
+/** 単位の最大長 (grapheme 単位。lexicon の maxGraphemes と一致させる) */
 export const MAX_FIELD_UNIT_LENGTH = 8;
-/** number の値 (10 進文字列) の最大長 */
+/** number の値 (10 進文字列) の最大長 (ASCII のみなので lexicon の maxLength (バイト) と一致させる) */
 export const MAX_NUMBER_VALUE_LENGTH = 32;
-/** text の値の最大長 (grapheme 単位) */
+/** text の値の最大長 (grapheme 単位。lexicon の maxGraphemes と一致させる) */
 export const MAX_TEXT_VALUE_LENGTH = 200;
 
 /** 絞り込み・集計で「値が無い」を表すキー。option id と衝突しない */
@@ -1081,7 +1081,7 @@ export interface FieldFilterGroup {
  * - 項目が archived か、全投稿を通して値が 1 件も無い (未設定だけ) 項目は、
  *   その項目の選択肢 (FIELD_UNSET 含む) が 1 つも選択されていなければ返さない。
  *   値の有無は他条件を当てる前の total で判定する
- * - count は「当該項目以外の選択 + タグ」で絞った投稿での件数 (ファセット方式)。
+ * - count は「当該項目以外の選択 + タグ + 範囲」で絞った投稿での件数 (ファセット方式)。
  *   項目内は OR なので、この数がそのチップを足したときに増える件数になる
  */
 export function fieldFilterGroups(
@@ -1089,15 +1089,17 @@ export function fieldFilterGroups(
   defs: FieldDef[],
   selection: FieldSelection,
   tagKeys: string[],
+  ranges: RangeSelection = {},
 ): FieldFilterGroup[] {
   const out: FieldFilterGroup[] = [];
   for (const def of defs) {
     if (def.type !== "select") continue;
     const others: FieldSelection = { ...selection };
     delete others[def.id];
-    const base = filterPostsByTags(
-      filterPostsByFields(posts, defs, others),
-      tagKeys,
+    const base = filterPostsByRanges(
+      filterPostsByTags(filterPostsByFields(posts, defs, others), tagKeys),
+      defs,
+      ranges,
     );
     const totals = new Map(
       countSelectOptions(posts, def).map((c) => [c.optionId, c.count]),
@@ -1145,13 +1147,13 @@ export function fieldFilterGroups(
 export interface FreeTagChip extends TagCount {
   active: boolean;
   disabled: boolean;
-  /** 項目の選択で絞った投稿に、このタグを足したときの件数 */
+  /** 項目の選択と範囲で絞った投稿に、このタグを足したときの件数 */
   facetCount: number;
 }
 
 /**
  * 自由タグのチップ。並びは countFreeTags (件数順)。
- * facetCount = countWithTagAdded(filterPostsByFields(posts, defs, selection), tagKeys, key)
+ * facetCount = countWithTagAdded(filterPostsByRanges(filterPostsByFields(posts, defs, selection), defs, ranges), tagKeys, key)
  * disabled = !active && facetCount === 0
  */
 export function freeTagChips(
@@ -1159,8 +1161,13 @@ export function freeTagChips(
   defs: FieldDef[],
   selection: FieldSelection,
   tagKeys: string[],
+  ranges: RangeSelection = {},
 ): FreeTagChip[] {
-  const base = filterPostsByFields(posts, defs, selection);
+  const base = filterPostsByRanges(
+    filterPostsByFields(posts, defs, selection),
+    defs,
+    ranges,
+  );
   return countFreeTags(posts, defs).map((t) => {
     const active = tagKeys.includes(t.key);
     const facetCount = countWithTagAdded(base, tagKeys, t.key);
@@ -1168,15 +1175,216 @@ export function freeTagChips(
   });
 }
 
-/** 項目 → タグの順で絞る。両方空なら同じ参照を返す */
+/** 項目 → タグ → 範囲の順で絞る。すべて空なら同じ参照を返す */
 export function filterPostsByFieldsAndTags<T extends HasFieldValues>(
   posts: T[],
   defs: FieldDef[],
   selection: FieldSelection,
   tagKeys: string[],
+  ranges: RangeSelection = {},
 ): T[] {
-  return filterPostsByTags(
-    filterPostsByFields(posts, defs, selection),
-    tagKeys,
+  return filterPostsByRanges(
+    filterPostsByTags(filterPostsByFields(posts, defs, selection), tagKeys),
+    defs,
+    ranges,
   );
+}
+
+// ─── 範囲絞り込み (#74) ───────────────────────────────────────
+// 仕様は docs/record-mode.md §3.1〜3.2。対象は number 項目だけ (duration は対象外)。
+
+/** 入力欄の生文字列。解釈は読み取り側 (effectiveRange) で行う */
+export interface RangeInput {
+  min: string;
+  max: string;
+}
+/** 項目 id → 入力。両方空のキーは持たない */
+export type RangeSelection = Record<string, RangeInput>;
+export const EMPTY_RANGE_INPUT: RangeInput = { min: "", max: "" };
+
+/** 範囲で絞れる項目か (number のみ) */
+export function isRangeField(def: FieldDef): boolean {
+  return def.type === "number";
+}
+
+/**
+ * 境界 1 つを数値にする。NFKC 正規化 (全角数字 → 半角) と trim の後に空なら null、
+ * 解釈できなければ "invalid"。DECIMAL_PATTERN かつ MAX_NUMBER_VALUE_LENGTH 以内なら Number()。
+ * 範囲項目でない def には常に "invalid"
+ */
+export function parseRangeBound(
+  raw: string,
+  def: FieldDef,
+): number | null | "invalid" {
+  if (!isRangeField(def)) return "invalid";
+  const s = raw.normalize("NFKC").trim();
+  if (!s) return null;
+  return isValidDecimal(s) ? Number(s) : "invalid";
+}
+
+/** 解釈できた境界だけ。両方 null なら null (= 条件にしない)。不正な側は無視する */
+export function effectiveRange(
+  input: RangeInput | undefined,
+  def: FieldDef,
+): { min: number | null; max: number | null } | null {
+  if (!input) return null;
+  const bound = (raw: string) => {
+    const v = parseRangeBound(raw, def);
+    return v === "invalid" ? null : v;
+  };
+  const min = bound(input.min);
+  const max = bound(input.max);
+  return min === null && max === null ? null : { min, max };
+}
+
+/** 投稿のその項目の数値。number 項目の有効な 10 進文字列だけ。無ければ null */
+export function numericValueOf(
+  post: HasFieldValues,
+  def: FieldDef,
+): number | null {
+  if (!isRangeField(def)) return null;
+  const value = resolveFieldValues(post, [def])[0]?.value;
+  return isValidDecimal(value) ? Number(value) : null;
+}
+
+/**
+ * 境界を更新した新しい選択。trim 後に空ならその端は空にし、両方空になったキーは削除。
+ * 入力は変更しない
+ */
+export function setRangeBound(
+  ranges: RangeSelection,
+  fieldId: string,
+  bound: "min" | "max",
+  raw: string,
+): RangeSelection {
+  const next: RangeInput = {
+    ...(ranges[fieldId] ?? EMPTY_RANGE_INPUT),
+    [bound]: raw.trim() ? raw : "",
+  };
+  const out: RangeSelection = { ...ranges };
+  if (next.min || next.max) out[fieldId] = next;
+  else delete out[fieldId];
+  return out;
+}
+
+/**
+ * 定義に無い・範囲項目でない・archived の項目 id と、両方空のキーを落とす。
+ * 項目を非表示・削除したときに、見えない条件で 0 件のまま抜けられなくなるのを防ぐ。
+ * 変化が無ければ同じ参照を返す (setState の無駄な更新を避ける)
+ */
+export function pruneRangeSelection(
+  ranges: RangeSelection,
+  defs: FieldDef[],
+): RangeSelection {
+  const defById = new Map(defs.map((d) => [d.id, d]));
+  const out: RangeSelection = {};
+  let changed = false;
+  for (const [fieldId, input] of Object.entries(ranges)) {
+    const def = defById.get(fieldId);
+    if (!def || !isRangeField(def) || def.archived || (!input.min && !input.max)) {
+      changed = true;
+      continue;
+    }
+    out[fieldId] = input;
+  }
+  return changed ? out : ranges;
+}
+
+/** 生文字列が 1 つでも入っているか (不正値でも true。クリアボタンの表示に使う) */
+export function hasRangeInput(ranges: RangeSelection): boolean {
+  return Object.values(ranges).some((r) => Boolean(r.min || r.max));
+}
+
+/**
+ * 範囲で絞る。effectiveRange が null の項目は条件にしない。項目間 AND。
+ * 値の無い投稿は一致しない。両端を含む。条件が無ければ同じ参照を返す
+ */
+export function filterPostsByRanges<T extends HasFieldValues>(
+  posts: T[],
+  defs: FieldDef[],
+  ranges: RangeSelection,
+): T[] {
+  const conditions = defs.flatMap((def) => {
+    const range = effectiveRange(ranges[def.id], def);
+    return range ? [{ def, ...range }] : [];
+  });
+  if (conditions.length === 0) return posts;
+  return posts.filter((post) =>
+    conditions.every(({ def, min, max }) => {
+      const v = numericValueOf(post, def);
+      if (v === null) return false;
+      return (min === null || v >= min) && (max === null || v <= max);
+    }),
+  );
+}
+
+export interface RangeFilterRow {
+  field: FieldDef;
+  /** 無ければ EMPTY_RANGE_INPUT */
+  input: RangeInput;
+  /** effectiveRange !== null */
+  active: boolean;
+  /** parseRangeBound === "invalid" */
+  invalid: { min: boolean; max: boolean };
+  /** 全投稿での値の最小・最大 (placeholder 用)。値が無ければ null */
+  span: { min: number; max: number } | null;
+  /** 他条件 (select・タグ・他項目の範囲) を当てた上で、この範囲に一致する件数 */
+  count: number;
+  /** 他条件を当てた上で、値を持つ投稿数 */
+  withValue: number;
+}
+
+/**
+ * 絞り込みバーの範囲行。定義順。対象は範囲項目のうち
+ * 「archived でなく、全投稿で値を持つ投稿が 1 件以上」か「入力が空でない」もの。
+ * count / withValue は select・タグ・当該項目以外の範囲で絞った投稿で数える (ファセット方式)
+ */
+export function rangeFilterRows(
+  posts: HasFieldValues[],
+  defs: FieldDef[],
+  selection: FieldSelection,
+  tagKeys: string[],
+  ranges: RangeSelection,
+): RangeFilterRow[] {
+  const out: RangeFilterRow[] = [];
+  let filtered: HasFieldValues[] | null = null;
+  for (const def of defs) {
+    if (!isRangeField(def)) continue;
+    const input = ranges[def.id] ?? EMPTY_RANGE_INPUT;
+    const hasInput = Boolean(input.min || input.max);
+    const values = posts
+      .map((p) => numericValueOf(p, def))
+      .filter((v): v is number => v !== null);
+    if (!hasInput && (def.archived || values.length === 0)) continue;
+
+    filtered ??= filterPostsByTags(
+      filterPostsByFields(posts, defs, selection),
+      tagKeys,
+    );
+    const others: RangeSelection = { ...ranges };
+    delete others[def.id];
+    const base = filterPostsByRanges(filtered, defs, others);
+    const own: RangeSelection = hasInput ? { [def.id]: input } : {};
+    out.push({
+      field: def,
+      input,
+      active: effectiveRange(input, def) !== null,
+      invalid: {
+        min: parseRangeBound(input.min, def) === "invalid",
+        max: parseRangeBound(input.max, def) === "invalid",
+      },
+      span:
+        values.length > 0
+          ? { min: Math.min(...values), max: Math.max(...values) }
+          : null,
+      count: filterPostsByRanges(base, defs, own).length,
+      withValue: base.filter((p) => numericValueOf(p, def) !== null).length,
+    });
+  }
+  return out;
+}
+
+/** 入力欄・placeholder 用の表記 */
+export function formatRangeBound(value: number): string {
+  return String(value);
 }

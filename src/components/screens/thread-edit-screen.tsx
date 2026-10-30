@@ -601,6 +601,7 @@ export function ThreadEditScreen({
               [
                 { view: "timeline", label: "タイムライン" },
                 { view: "log", label: "記録帳" },
+                { view: "review", label: "ふりかえり" },
               ] as const
             ).map((o) => (
               <button

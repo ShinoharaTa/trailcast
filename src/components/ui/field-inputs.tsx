@@ -10,11 +10,7 @@ import {
   toggleSelectOption,
 } from "@/lib/fields";
 import { MAX_TAG_LENGTH, normalizeTag } from "@/lib/tags";
-import {
-  joinSeconds,
-  splitSeconds,
-  type DurationParts,
-} from "@/lib/fields-format";
+import { formatDuration, parseDurationInput } from "@/lib/fields-format";
 import type { FieldDef, FieldValue } from "@/lib/types";
 
 const inputClass =
@@ -27,7 +23,7 @@ export interface FieldInputsProps {
   onChange: (values: FieldValue[]) => void;
   disabled?: boolean;
   /**
-   * 不正な入力 (decimal に合わない・長すぎる数値、59 を超える分・秒) や
+   * 不正な入力 (decimal に合わない・長すぎる数値、解析できない時間) や
    * 「＋ 追加」に追加していない入力が残っているかが変わったときに呼ぶ。
    * 呼び出し側は false の間、送信ボタンを無効にする
    */
@@ -55,18 +51,16 @@ export function FieldInputs({
   // 「＋ 追加」で入力中の項目 id と、その入力値
   const [addingFieldId, setAddingFieldId] = useState<string | null>(null);
   const [optionDraft, setOptionDraft] = useState("");
-  // 時間は「時・分・秒」の文字列で持つ。初期値は values から作る
-  const [durations, setDurations] = useState<Record<string, DurationParts>>(
-    () => {
-      const out: Record<string, DurationParts> = {};
-      for (const v of values) {
-        if (v.$type === "net.shino3.trailcast.post#durationValue") {
-          out[v.field] = splitSeconds(v.seconds);
-        }
+  // 時間は入力された文字列のまま持つ (正規化して書き換えない)。初期値は values から作る
+  const [durations, setDurations] = useState<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const v of values) {
+      if (v.$type === "net.shino3.trailcast.post#durationValue") {
+        out[v.field] = formatDuration(v.seconds);
       }
-      return out;
-    },
-  );
+    }
+    return out;
+  });
 
   const fieldsValid = defs.every((def) => {
     if (def.type === "number") {
@@ -78,8 +72,7 @@ export function FieldInputs({
       );
     }
     if (def.type === "duration") {
-      const parts = durations[def.id];
-      return !parts || joinSeconds(parts) !== "invalid";
+      return parseDurationInput(durations[def.id] ?? "") !== "invalid";
     }
     return true;
   });
@@ -153,16 +146,9 @@ export function FieldInputs({
     cancelAddOption();
   };
 
-  const changeDuration = (
-    fieldId: string,
-    key: keyof DurationParts,
-    raw: string,
-  ) => {
-    const digits = raw.replace(/\D/g, "");
-    const parts = { ...(durations[fieldId] ?? { h: "", m: "", s: "" }) };
-    parts[key] = digits;
-    setDurations((prev) => ({ ...prev, [fieldId]: parts }));
-    const seconds = joinSeconds(parts);
+  const changeDuration = (fieldId: string, raw: string) => {
+    setDurations((prev) => ({ ...prev, [fieldId]: raw }));
+    const seconds = parseDurationInput(raw);
     setValue(
       fieldId,
       typeof seconds === "number"
@@ -346,36 +332,23 @@ export function FieldInputs({
 
             {def.type === "duration" &&
               (() => {
-                const parts = durations[def.id] ?? { h: "", m: "", s: "" };
-                const invalid = joinSeconds(parts) === "invalid";
-                const units: [keyof DurationParts, string][] = [
-                  ["h", "時"],
-                  ["m", "分"],
-                  ["s", "秒"],
-                ];
+                const raw = durations[def.id] ?? "";
+                const invalid = parseDurationInput(raw) === "invalid";
                 return (
                   <>
-                    <div className="flex items-center gap-2">
-                      {units.map(([key, unit]) => (
-                        <span key={key} className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={parts[key]}
-                            disabled={disabled}
-                            aria-label={`${def.label} (${unit})`}
-                            onChange={(e) =>
-                              changeDuration(def.id, key, e.target.value)
-                            }
-                            className={`w-14 text-right ${inputClass}`}
-                          />
-                          <span className="text-sm text-white/50">{unit}</span>
-                        </span>
-                      ))}
-                    </div>
+                    <input
+                      type="text"
+                      inputMode="text"
+                      value={raw}
+                      disabled={disabled}
+                      placeholder="1:23:45 / 83分"
+                      aria-label={def.label}
+                      onChange={(e) => changeDuration(def.id, e.target.value)}
+                      className={`w-40 ${inputClass}`}
+                    />
                     {invalid && (
                       <p className="mt-1 text-[11px] text-red-400">
-                        分と秒は 0〜59 で入力してください
+                        時間の形式で入力してください（例: 1:23:45、83分）
                       </p>
                     )}
                   </>

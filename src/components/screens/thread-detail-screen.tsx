@@ -41,8 +41,12 @@ import {
   countFreeTags,
   initialFreeTagsForEdit,
   pruneFieldSelection,
+  pruneRangeSelection,
+  setRangeBound,
   toggleFieldOption,
+  type FieldSelection,
 } from "@/lib/fields";
+import { parseLocation } from "@/lib/location";
 import {
   AVAILABLE_THREAD_VIEWS,
   EMPTY_RECORD_FILTER,
@@ -56,6 +60,9 @@ import { FieldFilterBar } from "@/components/ui/field-filter-bar";
 import { PostFieldValues, PostTags } from "@/components/ui/post-field-values";
 import { RecordTabs, ViewSwitch } from "@/components/record/view-switch";
 import { RecordLog } from "@/components/record/record-log";
+import { RecordReview } from "@/components/record/record-review";
+import { FieldMigratePanel } from "@/components/record/field-migrate-panel";
+import { planFieldMigrations } from "@/lib/fields-migrate";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -83,13 +90,16 @@ type ModalKind =
   | "checkpoint-edit"
   | "bsky-import"
   | "thread-edit"
-  | "thread-edit-fields";
+  | "thread-edit-fields"
+  | "fields-migrate";
 
 /** thread.fields が無いときの defs。毎 render で新しい配列を作らず参照を固定する */
 const NO_FIELDS: FieldDef[] = [];
 
-function modalMaxWidth(kind: ModalKind): "lg" | "2xl" | "3xl" {
+function modalMaxWidth(kind: ModalKind): "md" | "lg" | "2xl" | "3xl" {
   switch (kind) {
+    case "fields-migrate":
+      return "md";
     case "thread-edit":
     case "thread-edit-fields":
     case "checkpoint-post":
@@ -527,7 +537,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   // タグは比較用の tagKey で保持する。検索語・未記録は記録帳だけで効く (タイムラインは見ない)
   const [filter, setFilter] = useState<RecordFilter>(EMPTY_RECORD_FILTER);
 
-  // 表示 (タイムライン / 記録帳)。初期値はスレッドの defaultView。
+  // 表示 (タイムライン / 記録帳 / ふりかえり)。初期値はスレッドの defaultView。
   // refresh() で thread が入れ替わっても上書きしないよう、初期化したスレッドの uri を持つ。
   // 描画前に決めて、既定が記録帳のスレッドでタイムラインが一瞬見えないようにする。
   // スレッドが変わったら絞り込みも初期化する (前のスレッドの検索語・未記録を持ち越さない)
@@ -541,6 +551,12 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   }, [thread]);
 
   const threadTagCounts = useMemo(() => countTags(posts), [posts]);
+  // タグから記録項目へ書き換えられる自分の投稿 (#62)。所有者の判定は early return の
+  // 後なので myDid 基準で計算する (参加者・未ログインでは記録帳に入口を出さない)
+  const migratePlans = useMemo(
+    () => planFieldMigrations(posts, defs, myDid),
+    [posts, defs, myDid],
+  );
   // 絞り込みバーの自由タグ (freeTagChips) と同じ集合。選択の掃除に使う
   const freeTagCounts = useMemo(
     () => countFreeTags(posts, defs),
@@ -568,14 +584,23 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     },
     [],
   );
-  // タイムラインの絞り込みバーから解除するのは、タイムラインで効いている項目・タグだけ
+  const setRange = useCallback(
+    (fieldId: string, bound: "min" | "max", raw: string) => {
+      setFilter((prev) => ({
+        ...prev,
+        ranges: setRangeBound(prev.ranges, fieldId, bound, raw),
+      }));
+    },
+    [],
+  );
+  // タイムラインの絞り込みバーから解除するのは、タイムラインで効いている項目・タグ・範囲だけ
   const clearFilter = useCallback(() => {
-    setFilter((prev) => ({ ...prev, fields: {}, tags: [] }));
+    setFilter((prev) => ({ ...prev, fields: {}, tags: [], ranges: {} }));
   }, []);
 
   // 記録帳の行から、タイムラインのその投稿へ移る。
-  // 検索語・未記録はタイムラインに効かないので残す。項目・タグの条件でその投稿が
-  // 隠れるときだけ、項目・タグの絞り込みを外す
+  // 検索語・未記録はタイムラインに効かないので残す。項目・タグ・範囲の条件でその投稿が
+  // 隠れるときだけ、項目・タグ・範囲の絞り込みを外す
   const scrollToPost = useCallback(
     (uri: string) => {
       setView("timeline");
@@ -583,7 +608,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       setFilter((prev) =>
         post &&
         applyRecordFilter([post], defs, prev, { timeline: true }).length === 0
-          ? { ...prev, fields: {}, tags: [] }
+          ? { ...prev, fields: {}, tags: [], ranges: {} }
           : prev,
       );
       // タイムラインの描画を待ってからスクロールする
@@ -598,6 +623,13 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     [posts, defs],
   );
 
+  // ふりかえりの分布から、その選択肢だけで絞った記録帳へ移る。
+  // 絞り込みは置き換える (検索語・未記録も外す)。期間は記録帳に無いので持ち越さない
+  const jumpToLog = useCallback((next: { fields: FieldSelection }) => {
+    setFilter({ ...EMPTY_RECORD_FILTER, fields: next.fields });
+    setView("log");
+  }, []);
+
   // スレッドの切り替えや投稿の削除・編集で消えたタグ (選択肢扱いになったタグを含む)
   // が選択に残り続けると「絞り込んでいるのに 0 件」の状態から抜けられなくなるため、
   // 絞り込みバーに出ない自由タグは都度落とす。
@@ -609,14 +641,18 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     });
   }, [freeTagCounts]);
   // 項目の選択も同じ理由で、定義・投稿から消えた選択肢を落とす。
+  // 範囲は非表示・削除した項目の入力を落とす。
   // 項目が無くなったら未記録 (項目に値が無い投稿) の絞り込みも意味を失うので外す
   useEffect(() => {
     setFilter((prev) => {
       const next = pruneFieldSelection(prev.fields, defs, posts);
+      const ranges = pruneRangeSelection(prev.ranges, defs);
       const unrecorded = defs.length === 0 ? false : prev.unrecorded;
-      return next === prev.fields && unrecorded === prev.unrecorded
+      return next === prev.fields &&
+        ranges === prev.ranges &&
+        unrecorded === prev.unrecorded
         ? prev
-        : { ...prev, fields: next, unrecorded };
+        : { ...prev, fields: next, ranges, unrecorded };
     });
   }, [posts, defs]);
 
@@ -632,6 +668,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
   // モーダル状態（URL には現れないローカル state）
   const [modal, setModal] = useState<ModalKind | null>(null);
+  // 書き換えパネルの閉じる操作。実行中は閉じずに停止にするため、パネルが握る
+  const migrateCloseRef = useRef<(() => void) | null>(null);
   const [editingPost, setEditingPost] = useState<PostWithMeta | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -1152,15 +1190,26 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         {view !== "timeline" && (
           <>
             <RecordTabs view={view} onChange={setView} />
-            <RecordLog
-              posts={posts}
-              thread={thread}
-              filter={filter}
-              onFilterChange={setFilter}
-              onOpenPost={scrollToPost}
-              canEdit={isOwner}
-              onEditFields={() => setModal("thread-edit-fields")}
-            />
+            {view === "log" && (
+              <RecordLog
+                posts={posts}
+                thread={thread}
+                filter={filter}
+                onFilterChange={setFilter}
+                onOpenPost={scrollToPost}
+                canEdit={isOwner}
+                onEditFields={() => setModal("thread-edit-fields")}
+                migrateCount={migratePlans.length}
+                onOpenMigrate={() => setModal("fields-migrate")}
+              />
+            )}
+            {view === "review" && (
+              <RecordReview
+                posts={posts}
+                thread={thread}
+                onJumpToLog={jumpToLog}
+              />
+            )}
           </>
         )}
 
@@ -1177,8 +1226,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           defs={defs}
           selection={filter.fields}
           tagKeys={filter.tags}
+          ranges={filter.ranges}
           onToggleOption={toggleFieldSelection}
           onToggleTag={toggleTagKey}
+          onRangeChange={setRange}
           onClear={clearFilter}
           matchedCount={visiblePosts.length}
           canEdit={isOwner}
@@ -1227,7 +1278,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               </div>
             </div>
 
-            {group.posts.map((cp, i) => (
+            {group.posts.map((cp, i) => {
+              // record 上は number (旧) か decimal string。読めなければ出さない
+              const loc = parseLocation(cp.location);
+              return (
               <div key={cp.uri} data-post-uri={cp.uri} className="group relative">
                 {/* 2 件目以降は従来どおり小さな○。先頭 post の位置は DateBadge に
                     重なるので ○ は描画しない。 */}
@@ -1240,10 +1294,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 {multiAuthor && (
                   <PostAuthorChip did={parseAtUri(cp.uri).repo} navigate={navigate} />
                 )}
-                {cp.location && (
+                {loc && (
                   <span className="flex items-center gap-1 text-white/40">
                     <PinIcon className="size-3" />
-                    {cp.location.latitude.toFixed(4)}, {cp.location.longitude.toFixed(4)}
+                    {loc.latitude.toFixed(4)}, {loc.longitude.toFixed(4)}
                   </span>
                 )}
                 {cp.sourceRef && (
@@ -1327,7 +1381,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               />
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>,
           );
           return nodes;
@@ -1430,7 +1485,15 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
       {/* Modals */}
       {modal && modal !== "bsky-import" && (
-        <Modal open onClose={closeModal} maxWidth={modalMaxWidth(modal)}>
+        <Modal
+          open
+          onClose={
+            modal === "fields-migrate"
+              ? () => migrateCloseRef.current?.()
+              : closeModal
+          }
+          maxWidth={modalMaxWidth(modal)}
+        >
           {modal === "share" && <ShareScreen threadUri={thread.uri} />}
           {modal === "checkpoint-post" && (
             <CheckpointPostScreen
@@ -1469,6 +1532,16 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               onRequestDelete={() => {
                 setModal(null);
                 setConfirmTarget({ type: "thread" });
+              }}
+            />
+          )}
+          {modal === "fields-migrate" && (
+            <FieldMigratePanel
+              plans={migratePlans}
+              requestCloseRef={migrateCloseRef}
+              onClose={(r) => {
+                closeModal();
+                if (r && r.succeeded > 0) void refresh();
               }}
             />
           )}

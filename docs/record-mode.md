@@ -65,7 +65,7 @@
 |---|---|---|---|---|
 | **4** | `feature/fields-filter` | タイムラインの絞り込みを「select 項目 + 自由タグ」に置き換え。`groupTagCounts` 経路の廃止 | #63/#65/#66 | 中 |
 | **5a** | `feature/record-mode-log` | 「タイムライン / 記録」切り替え、記録帳（検索・絞り込み・一覧・未記録チップ）、既定表示の保存（lexicon `defaultView`） | 4 | 中 |
-| **5b** | `feature/record-review-stats` | ふりかえり: 期間切替、KPI、select の件数・割合、number/duration の合計/平均/最大最小 | 5a | 中 |
+| **5b** | `feature/record-review-stats` | ふりかえり: 期間切替、KPI、select の件数・割合、number の合計/平均/最大最小（duration は対象外、D-11） | 5a | 中 |
 | **5c** | `feature/record-review-charts` | ふりかえりのグラフ: 月別（件数 / 数値の合計・平均）、数値の推移、ヒートマップ。SVG 手書き | 5b | 中 |
 
 - issue: 4 = #60、5a = #72、5b = #73、5c = #61。各 PR 本文に `Closes #<それぞれ>`、5a/5b は加えて `Refs #61`。
@@ -81,14 +81,20 @@
 ### 3.1 絞り込みの意味論
 - select 項目: **項目内 OR、項目間 AND**（`filterPostsByFields` のまま）。
 - 自由タグ: **AND**（`filterPostsByTags` のまま）。
-- 項目 × タグ × 検索 × 未記録: すべて AND。
+- 範囲（#74）: number 項目だけ（duration は対象外）。**両端を含み、項目間 AND**。
+  範囲を入れた項目に値を持たない投稿は一致しない。不正な入力の側は無視する（`filterPostsByRanges`）。
+  タイムラインと記録帳の両方で効く。
+  archived の項目の範囲入力は prune で落とす（select は選択肢単位の archived があるため残す）。
+- 項目 × タグ × 範囲 × 検索 × 未記録: すべて AND。
 - 「自由タグ」= `initialFreeTagsForEdit(post, defs)`。選択肢と一致したタグは
   項目側のチップにだけ出す（二重に出さない）。
 
 ### 3.2 チップの件数と無効化（ファセット方式）
 モックに合わせ、件数は「**その項目以外の条件**を当てた上での該当数」にする。
 - 項目内が OR なので、この数 = そのチップを足したときに増える件数。
-- 自由タグも同じ考え（`countWithTagAdded(項目で絞った posts, tagKeys, key)`）。
+- 自由タグも同じ考え（`countWithTagAdded(項目と範囲で絞った posts, tagKeys, key)`）。
+- 範囲も「他条件」に含める（select チップ・自由タグ・他項目の範囲）。範囲の行の件数は
+  select・タグ・他項目の範囲を当てた上で、その範囲に一致する件数（`rangeFilterRows`）。
 - 表示: `total`（全投稿での件数）> 0 のチップだけ出す。選択中は total に関係なく出す。
 - 無効化: 未選択かつファセット件数 0。
 - archived の選択肢は非 archived の後ろに並べ、`title="入力画面では非表示の選択肢"`、
@@ -315,24 +321,26 @@ export function defaultViewForRecord(view: ThreadView): ThreadView | undefined;
 export interface RecordFilter {
   fields: FieldSelection;   // PR4
   tags: string[];           // tagKey
+  ranges: RangeSelection;   // #74。入力欄の生文字列。両モードで効く
   query: string;            // 記録帳のみ
   unrecorded: boolean;      // 記録帳のみ
 }
 export const EMPTY_RECORD_FILTER: RecordFilter;
 export function isRecordFilterActive(f: RecordFilter, opts?: { timeline?: boolean }): boolean;
-  // timeline: true なら fields / tags だけを見る
+  // timeline: true なら fields / tags / ranges だけを見る
 
 /** 記録項目が 1 つでも定義され、かつ値が 1 つも解決できない投稿（archived 項目の値も「記録あり」） */
 export function isPostUnrecorded(post: HasFieldValues, defs: FieldDef[]): boolean;
 export function countUnrecorded(posts: HasFieldValues[], defs: FieldDef[]): number;
 
 /**
- * 検索語の正規化。trim → toLocaleLowerCase → 空白で分割（全角空白含む）。空なら []
+ * 検索語の正規化。normalize("NFKC") → trim → toLocaleLowerCase → 空白で分割（全角空白含む）。空なら []
+ * NFKC で全角英数は半角（ＮＡＮＩＣＡ → nanica）、半角カナは全角（ｶﾌｪ → カフェ）に揃う
  */
 export function parseQuery(query: string): string[];
 
 /**
- * 検索対象の文字列（小文字）。本文、自由タグ、解決済みの項目値の表示文字列
+ * 検索対象の文字列（normalize("NFKC") → 小文字。parseQuery と同じ正規化）。本文、自由タグ、解決済みの項目値の表示文字列
  * （formatResolvedValue）、項目名は含めない。
  */
 export function postSearchText(post: PostWithMetaLike, defs: FieldDef[]): string;
@@ -341,8 +349,8 @@ export function postSearchText(post: PostWithMetaLike, defs: FieldDef[]): string
 export function searchPosts<T extends PostLike>(posts: T[], defs: FieldDef[], query: string): T[];
 
 /**
- * 記録帳の絞り込み。順に unrecorded → fields → tags → query。
- * opts.timeline が true なら fields / tags のみ（タイムライン用）。
+ * 記録帳の絞り込み。順に unrecorded → fields → tags → ranges → query。
+ * opts.timeline が true なら fields / tags / ranges のみ（タイムライン用）。
  */
 export function applyRecordFilter<T extends PostLike>(
   posts: T[], defs: FieldDef[], filter: RecordFilter, opts?: { timeline?: boolean },
@@ -467,7 +475,7 @@ export interface Period { key: PeriodKey; label: string }   // "全期間" "直�
 /** 固定 3 つ + 投稿がある年（新しい順、最大 5）。投稿が 0 件なら固定 3 つだけ */
 export function availablePeriods(posts: { checkpointAt: string }[], now: Date): Period[];
 
-/** [from, to) をローカル時刻で。all は両方 null。3m = now の 3 か月前の同時刻から、1y 同様、y:N = その年 */
+/** [from, to) をローカル時刻で。all は両方 null。3m = now の 3 か月前の同時刻から、1y 同様（どちらも to は null = 未来日時の投稿も含む）、y:N = その年 */
 export function periodRange(key: PeriodKey, now: Date): { from: Date | null; to: Date | null };
 export function filterByPeriod<T extends { checkpointAt: string }>(posts: T[], key: PeriodKey, now: Date): T[];
 
@@ -500,9 +508,9 @@ export interface NumericCard extends NumericSummary {
   /** 時系列（checkpointAt 昇順）。推移グラフ（5c）用 */
   series: { at: string; value: number }[];
 }
-export function numericCard(posts: PostLike[], def: FieldDef): NumericCard;   // number / duration 共通
+export function numericCard(posts: PostLike[], def: FieldDef): NumericCard;   // number だけ。duration を含む他の型は count 0（§8 D-11）
 
-/** number は scale 桁で丸め（scale 未設定は 1 桁）、duration は formatDuration。null は "—" */
+/** number を scale 桁で丸める（scale 未設定は 1 桁）。null は "—" */
 export function formatStat(value: number | null, def: FieldDef): string;
 ```
 
@@ -511,18 +519,18 @@ export function formatStat(value: number | null, def: FieldDef): string;
 1. 期間チップ（`availablePeriods`）。初期値 `"all"`。state は `RecordReview` 内（記録帳と共有しない）。
 2. KPI 4 枚（モックの `.kpis`、2 列 × 2 行 on mobile）:
    「記録」count 件 / 「活動日」activeDays 日 / 「月あたり」perMonth（小数 1 桁）/
-   「1 日最多」busiestDay.count 件（下に日付 `M/D`）。
+   「1 日最多」busiestDay.count 件（下に日付 `M/D`。期間内の投稿が複数年にまたがるときは `YYYY/M/D`）。
 3. select 項目ごとの節（`optionShares`）: 見出し = `field.label`、副題「複数選択は延べ数」
-   （`multiple` のときのみ）。横棒（モックの `.bar`、`fill` は単色 indigo）+ 右に「N件 P%」。
+   （`multiple` のときのみ。単一選択でも件数の合計が期間内の投稿数を超えるときは「延べ数」）。横棒（モックの `.bar`、`fill` は単色 indigo）+ 右に「N件 P%」。
    上位 8 件、残りは「ほか n 件を表示」で展開。末尾に未設定（unset > 0 のとき、点線）。
    **棒を押すと記録帳へ**: `onJumpToLog({ fields: { [field.id]: [optionId] } })`
    → 親が `filter` をそれだけに置き換え、`view = "log"`。期間は持ち越さない（記録帳に
    期間が無いため。画面に「期間は記録帳に引き継がれません」とは書かない）。
-4. number / duration 項目ごとのカード（`numericCard`）: 見出し = label（+ unit）。
-   行に 件数 / 合計 / 平均 / 最大 / 最小（duration は 最長 / 最速 と表記）。count 0 なら
-   「この期間の記録はありません」。
+4. number 項目ごとのカード（`numericCard`）: 見出し = label（+ unit）。
+   行に 件数 / 合計 / 平均 / 最大 / 最小。count 0 なら「この期間の記録はありません」。
 5. 項目が無いスレッドは 1・2 だけ。
-- text 項目は出さない。archived 項目は値が 1 件以上あるときだけ出す。
+- text / duration 項目は出さない（duration は集計対象外、§8 D-11）。duration しか数値系の
+  項目が無いスレッドでは数値の節は出ない。archived 項目は値が 1 件以上あるときだけ出す。
 - `thread-detail-screen`: `available` を `THREAD_VIEWS` に、`defaultView: "review"` で
   ふりかえりが開く。
 
@@ -531,18 +539,18 @@ export function formatStat(value: number | null, def: FieldDef): string;
 - [ ] 期間「直近3か月」で件数・分布が変わり、「全期間」で戻る。年チップは投稿のある年だけ出る。
 - [ ] 分布の棒を押すと記録帳がその選択肢で絞られた状態で開く。
 - [ ] number 項目で `12.5` と `7` の 2 件 → 合計 19.5、平均 9.8（scale 1）、最大 12.5、最小 7。
-- [ ] duration 項目は `m:ss` / `h:mm:ss` で、最速 = 最小。
+- [ ] duration 項目はカード・推移・月別の指標に出ない。
 - [ ] 項目の無いスレッドで KPI だけ出て落ちない。投稿 0 件で落ちない。
 - [ ] `defaultView: "review"` で開くとふりかえりが初期表示。
 
 ### 6.5 テストケース（`review.test.ts`）
-- `periodRange` / `filterByPeriod`: all / 3m の境界（ちょうど 3 か月前は含む、now は含む）/ y:2025 の 1/1 00:00 と 12/31 23:59:59 / 不正日付は除外。
+- `periodRange` / `filterByPeriod`: all / 3m の境界（ちょうど 3 か月前は含む、now と未来の投稿も含む）/ y:2025 の 1/1 00:00 と 12/31 23:59:59 / 不正日付は除外。
 - `availablePeriods`: 年の並び（新しい順）/ 最大 5 / 投稿 0 件。
 - `dayKey` / `monthKey`: JST の日付跨ぎ（`2026-06-30T23:30:00+09:00` → `2026-06-30`、UTC 換算で日が変わるケース）。
 - `reviewKpis`: 同日 3 件 → activeDays 1、busiestDay / 1 件だけ → spanMonths 1, perMonth = 1 / 0 件 → null。
 - `optionShares`: 降順・同数は定義順 / 分母に未設定を含む / count 0 は含まない / multiple の延べ数 / archived。
-- `numericCard`: series が昇順 / 不正な decimal を除外 / duration の秒 / count 0 → null。
-- `formatStat`: scale 0/1/3、duration、null。
+- `numericCard`: series が昇順 / 不正な decimal を除外 / duration は count 0 / count 0 → null。
+- `formatStat`: scale 0/1/3、null。
 
 ---
 
@@ -576,7 +584,7 @@ export function monthKeysBetween(from: Date, to: Date): string[];
 
 export type MonthlyMetric =
   | { kind: "count" }
-  | { kind: "sum" | "avg"; fieldId: string };      // number / duration 項目
+  | { kind: "sum" | "avg"; fieldId: string };      // number 項目（duration は値が全部 null）
 
 export interface MonthlyPoint { month: string; value: number | null }  // count は 0、sum/avg は値が無い月は null
 /**
@@ -598,22 +606,25 @@ export function sparklineLayout(values: number[], opts: { width: number; height:
 /** 直近 weeks 週（今日を含む週の土曜まで）。日曜始まり。 */
 export interface HeatmapCell { day: string; count: number; week: number; dow: number }
 export function heatmapCells(posts: { checkpointAt: string }[], now: Date, weeks?: number): { cells: HeatmapCell[]; monthLabels: { week: number; label: string }[] };
+/** 描くセル。今日（now のローカル日付）より後の日は除く */
+export function visibleHeatmapCells(cells: HeatmapCell[], now: Date): HeatmapCell[];
 /** 0 / 1 / 2 / 3+ の 4 段階 */
 export function heatLevel(count: number): 0 | 1 | 2 | 3;
 ```
 
 ### 7.4 UI
 - **月別**（KPI の下）: 見出し「月ごとの記録」+ 右に指標セレクト（`<select>`）:
-  「件数」+ number/duration 項目ごとに「<label> 合計」「<label> 平均」。初期値 件数。
+  「件数」+ number 項目ごとに「<label> 合計」「<label> 平均」。初期値 件数（duration は出さない、§8 D-11）。
   `barLayout` を `<svg>` に描く。棒は indigo 単色、棒の上に値（件数は整数、sum/avg は
   `formatStat`）。横幅 = 月数 × 44px、`overflow-x: auto` の容器、**初期スクロール位置は右端**
   （最新月が見える）。
 - **ヒートマップ**（月別の下）: 見出し「活動した日 <small>直近 26 週</small>」。
   期間チップに依存せず常に直近 26 週（§8 D-3）。11px の角丸セル、14px ピッチ、
   曜日ラベルは 日/火/木/土。セルに `<title>YYYY/M/D n件</title>`。色は
-  `rgba(129,140,248,.45/.7)` / `#a5b4fc`、0 件は `white/5`。
-- **推移**: 5b の number/duration カードに `Sparkline`（高さ 90px、最新 30 件、
-  左下「30回前」右下「最新」のラベル。件数が 30 未満なら「N回前」）。1 件以下なら描かない。
+  `rgba(129,140,248,.45/.7)` / `#a5b4fc`、0 件は `white/5`。今日より後の日（今週の残り）の
+  セルは描かない（`visibleHeatmapCells`）。
+- **推移**: 5b の number カードに `Sparkline`（高さ 90px、最新 30 件、右下に「最新」の
+  ラベル）。カードの見出しの右に「直近 N 回」（N は描いた点の数、最大 30）。1 件以下なら描かない。
 - `prefers-reduced-motion` は関係なし（アニメーション無し）。
 
 ### 7.5 受け入れ条件
@@ -629,6 +640,7 @@ export function heatLevel(count: number): 0 | 1 | 2 | 3;
 - `barLayout`: top の切り上げ（7 → 10、0 → 5）/ null は h 0 / 幅 = n × (barWidth+gap) + padLeft。
 - `sparklineLayout`: 1 件 / 同値のみ（min == max で 0 除算しない）/ limit 切り詰めが最新側。
 - `heatmapCells`: セル数 = weeks × 7 / 先頭が日曜 / 今日が含まれる / monthLabels は各月の最初の週に 1 つ。
+- `visibleHeatmapCells`: 今日より後の日を除く（今日は含む）/ 今日が土曜なら全部残る。
 - `heatLevel`: 0/1/2/3/10。
 
 ---
@@ -646,9 +658,11 @@ export function heatLevel(count: number): 0 | 1 | 2 | 3;
 - **D-8** 既定表示 `defaultView` はスレッド record（所有者設定、全閲覧者に効く）。既定値なら書かない。
 - **D-9** select の割合の分母は期間内の投稿数（未設定を含む）。multiple は延べ数。
 - **D-10** 絞り込みバーに、archived な項目と値が 1 件も無い項目は出さない（その項目を選択中なら出す）。自由タグの選択は絞り込みバーに出るもの（`countFreeTags`）を基準に掃除する。
+- **D-11** duration はふりかえりの集計対象外（2026-10-28 ユーザー判断、#85）。数値カード・推移・月別の指標に出さない。
 
 ### 決定（ユーザー判断済み 2026-10-27、すべて推薦どおり）
 - **U-1** number / duration の範囲絞り込みは今回入れない。別 issue。
+  → #74 で number のみ実装（duration は対象外）。
 - **U-2** 閲覧者が最後に選んだ表示は端末に記憶しない（localStorage を使わない）。
 - **U-3** ふりかえりの期間チップは「全期間 / 直近3か月 / 直近1年 / 年ごと（最大 5）」。
 - **U-4** PR5 は 5a / 5b / 5c の 3 分割。
