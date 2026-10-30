@@ -42,6 +42,7 @@ import {
   initialFreeTagsForEdit,
   pruneFieldSelection,
   toggleFieldOption,
+  type FieldSelection,
 } from "@/lib/fields";
 import {
   AVAILABLE_THREAD_VIEWS,
@@ -56,6 +57,7 @@ import { FieldFilterBar } from "@/components/ui/field-filter-bar";
 import { PostFieldValues, PostTags } from "@/components/ui/post-field-values";
 import { RecordTabs, ViewSwitch } from "@/components/record/view-switch";
 import { RecordLog } from "@/components/record/record-log";
+import { RecordReview } from "@/components/record/record-review";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -527,7 +529,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   // タグは比較用の tagKey で保持する。検索語・未記録は記録帳だけで効く (タイムラインは見ない)
   const [filter, setFilter] = useState<RecordFilter>(EMPTY_RECORD_FILTER);
 
-  // 表示 (タイムライン / 記録帳)。初期値はスレッドの defaultView。
+  // 表示 (タイムライン / 記録帳 / ふりかえり)。初期値はスレッドの defaultView。
   // refresh() で thread が入れ替わっても上書きしないよう、初期化したスレッドの uri を持つ。
   // 描画前に決めて、既定が記録帳のスレッドでタイムラインが一瞬見えないようにする。
   // スレッドが変わったら絞り込みも初期化する (前のスレッドの検索語・未記録を持ち越さない)
@@ -597,6 +599,13 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     },
     [posts, defs],
   );
+
+  // ふりかえりの分布から、その選択肢だけで絞った記録帳へ移る。
+  // 絞り込みは置き換える (検索語・未記録も外す)。期間は記録帳に無いので持ち越さない
+  const jumpToLog = useCallback((next: { fields: FieldSelection }) => {
+    setFilter({ ...EMPTY_RECORD_FILTER, fields: next.fields });
+    setView("log");
+  }, []);
 
   // スレッドの切り替えや投稿の削除・編集で消えたタグ (選択肢扱いになったタグを含む)
   // が選択に残り続けると「絞り込んでいるのに 0 件」の状態から抜けられなくなるため、
@@ -1152,15 +1161,24 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         {view !== "timeline" && (
           <>
             <RecordTabs view={view} onChange={setView} />
-            <RecordLog
-              posts={posts}
-              thread={thread}
-              filter={filter}
-              onFilterChange={setFilter}
-              onOpenPost={scrollToPost}
-              canEdit={isOwner}
-              onEditFields={() => setModal("thread-edit-fields")}
-            />
+            {view === "log" && (
+              <RecordLog
+                posts={posts}
+                thread={thread}
+                filter={filter}
+                onFilterChange={setFilter}
+                onOpenPost={scrollToPost}
+                canEdit={isOwner}
+                onEditFields={() => setModal("thread-edit-fields")}
+              />
+            )}
+            {view === "review" && (
+              <RecordReview
+                posts={posts}
+                thread={thread}
+                onJumpToLog={jumpToLog}
+              />
+            )}
           </>
         )}
 

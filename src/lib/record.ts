@@ -23,12 +23,12 @@ export type { ThreadView };
 
 export const THREAD_VIEWS: readonly ThreadView[] = ["timeline", "log", "review"];
 export const DEFAULT_THREAD_VIEW: ThreadView = "timeline";
-/** いま UI がある表示。ふりかえり (review) は 5b で足す */
-export const AVAILABLE_THREAD_VIEWS: readonly ThreadView[] = ["timeline", "log"];
+/** いま UI がある表示 */
+export const AVAILABLE_THREAD_VIEWS: readonly ThreadView[] = THREAD_VIEWS;
 
 /**
  * 初期表示。未設定・未知の値は "timeline"。
- * available に無い値 (5a 時点の "review") は "log" に落とす。
+ * available に無い値は "log" に落とす (いまは全表示に UI があるので、available を絞った呼び出し用)。
  */
 export function effectiveDefaultView(
   thread: Pick<ThreadRecord, "defaultView">,

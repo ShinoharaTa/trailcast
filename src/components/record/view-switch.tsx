@@ -40,7 +40,7 @@ export function ViewSwitch({
         <button
           type="button"
           aria-pressed={record}
-          // 記録の中のタブは今は記録帳だけ (ふりかえりは 5b で足す)
+          // 記録の中のタブは記録帳から開く
           onClick={() => {
             if (!record) onChange("log");
           }}
@@ -53,7 +53,7 @@ export function ViewSwitch({
   );
 }
 
-/** 「記録」の中のタブ「記録帳 / ふりかえり」。ふりかえりは 5b で足す */
+/** 「記録」の中のタブ「記録帳 / ふりかえり」 */
 export function RecordTabs({
   view,
   onChange,
@@ -63,6 +63,7 @@ export function RecordTabs({
 }) {
   const tabs: { view: ThreadView; label: string }[] = [
     { view: "log", label: "記録帳" },
+    { view: "review", label: "ふりかえり" },
   ];
   return (
     <div
