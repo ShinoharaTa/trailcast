@@ -34,12 +34,12 @@
           "location": {
             "type": "object",
             "properties": {
-              "latitude": { "type": "number" },
-              "longitude": { "type": "number" },
-              "altitude": { "type": "number" }
+              "latitude": { "type": "string", "maxLength": 32 },
+              "longitude": { "type": "string", "maxLength": 32 },
+              "altitude": { "type": "string", "maxLength": 32 }
             },
             "required": ["latitude", "longitude"],
-            "description": "Device GPS location"
+            "description": "Device GPS location. WGS84 decimal degrees as decimal strings (e.g. \"35.6812362\"). Records written before 2026-10 may hold JSON numbers instead; readers must accept both"
           },
           "tags": {
             "type": "array",

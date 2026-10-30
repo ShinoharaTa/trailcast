@@ -85,7 +85,42 @@ const ASCII_ONLY_STRINGS = new Set([
   "numberValue.value",
   "durationValue.field",
   "textValue.field",
+  "post.location.latitude",
+  "post.location.longitude",
+  "post.location.altitude",
 ]);
+
+/** atproto lexicon 仕様の型 (number は無い) */
+const LEXICON_TYPES = new Set([
+  "boolean",
+  "integer",
+  "string",
+  "bytes",
+  "cid-link",
+  "blob",
+  "array",
+  "object",
+  "params",
+  "token",
+  "ref",
+  "union",
+  "unknown",
+  "record",
+]);
+
+describe("lexicon の型", () => {
+  it("type は lexicon 仕様の型のみ", () => {
+    for (const [path, n] of NODES) {
+      expect(LEXICON_TYPES.has(n.type as string), `${path}: ${String(n.type)}`).toBe(true);
+    }
+  });
+
+  it("location の 3 プロパティは string", () => {
+    for (const key of ["latitude", "longitude", "altitude"]) {
+      expect(node(`post.location.${key}`).type, key).toBe("string");
+    }
+  });
+});
 
 describe("lexicon の string 長", () => {
   const strings = [...NODES].filter(([, n]) => n.type === "string");
