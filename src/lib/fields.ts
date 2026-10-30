@@ -31,15 +31,15 @@ import {
 export const MAX_FIELDS = 30;
 /** 1 項目の選択肢数 (lexicon の maxLength と一致させる) */
 export const MAX_FIELD_OPTIONS = 50;
-/** 項目名の最大長 (grapheme 単位) */
+/** 項目名の最大長 (grapheme 単位。lexicon の maxGraphemes と一致させる) */
 export const MAX_FIELD_LABEL_LENGTH = 20;
-/** id の最大長 (lexicon の maxLength と一致させる) */
+/** id の最大長 (ASCII のみなので lexicon の maxLength (バイト) と一致させる) */
 export const MAX_FIELD_ID_LENGTH = 16;
-/** 単位の最大長 */
+/** 単位の最大長 (grapheme 単位。lexicon の maxGraphemes と一致させる) */
 export const MAX_FIELD_UNIT_LENGTH = 8;
-/** number の値 (10 進文字列) の最大長 */
+/** number の値 (10 進文字列) の最大長 (ASCII のみなので lexicon の maxLength (バイト) と一致させる) */
 export const MAX_NUMBER_VALUE_LENGTH = 32;
-/** text の値の最大長 (grapheme 単位) */
+/** text の値の最大長 (grapheme 単位。lexicon の maxGraphemes と一致させる) */
 export const MAX_TEXT_VALUE_LENGTH = 200;
 
 /** 絞り込み・集計で「値が無い」を表すキー。option id と衝突しない */

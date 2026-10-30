@@ -44,7 +44,9 @@ import {
   pruneRangeSelection,
   setRangeBound,
   toggleFieldOption,
+  type FieldSelection,
 } from "@/lib/fields";
+import { parseLocation } from "@/lib/location";
 import {
   AVAILABLE_THREAD_VIEWS,
   EMPTY_RECORD_FILTER,
@@ -58,6 +60,7 @@ import { FieldFilterBar } from "@/components/ui/field-filter-bar";
 import { PostFieldValues, PostTags } from "@/components/ui/post-field-values";
 import { RecordTabs, ViewSwitch } from "@/components/record/view-switch";
 import { RecordLog } from "@/components/record/record-log";
+import { RecordReview } from "@/components/record/record-review";
 import { FieldMigratePanel } from "@/components/record/field-migrate-panel";
 import { planFieldMigrations } from "@/lib/fields-migrate";
 import { HomeLink } from "@/components/ui/home-link";
@@ -534,7 +537,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   // タグは比較用の tagKey で保持する。検索語・未記録は記録帳だけで効く (タイムラインは見ない)
   const [filter, setFilter] = useState<RecordFilter>(EMPTY_RECORD_FILTER);
 
-  // 表示 (タイムライン / 記録帳)。初期値はスレッドの defaultView。
+  // 表示 (タイムライン / 記録帳 / ふりかえり)。初期値はスレッドの defaultView。
   // refresh() で thread が入れ替わっても上書きしないよう、初期化したスレッドの uri を持つ。
   // 描画前に決めて、既定が記録帳のスレッドでタイムラインが一瞬見えないようにする。
   // スレッドが変わったら絞り込みも初期化する (前のスレッドの検索語・未記録を持ち越さない)
@@ -619,6 +622,13 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     },
     [posts, defs],
   );
+
+  // ふりかえりの分布から、その選択肢だけで絞った記録帳へ移る。
+  // 絞り込みは置き換える (検索語・未記録も外す)。期間は記録帳に無いので持ち越さない
+  const jumpToLog = useCallback((next: { fields: FieldSelection }) => {
+    setFilter({ ...EMPTY_RECORD_FILTER, fields: next.fields });
+    setView("log");
+  }, []);
 
   // スレッドの切り替えや投稿の削除・編集で消えたタグ (選択肢扱いになったタグを含む)
   // が選択に残り続けると「絞り込んでいるのに 0 件」の状態から抜けられなくなるため、
@@ -1180,17 +1190,26 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         {view !== "timeline" && (
           <>
             <RecordTabs view={view} onChange={setView} />
-            <RecordLog
-              posts={posts}
-              thread={thread}
-              filter={filter}
-              onFilterChange={setFilter}
-              onOpenPost={scrollToPost}
-              canEdit={isOwner}
-              onEditFields={() => setModal("thread-edit-fields")}
-              migrateCount={migratePlans.length}
-              onOpenMigrate={() => setModal("fields-migrate")}
-            />
+            {view === "log" && (
+              <RecordLog
+                posts={posts}
+                thread={thread}
+                filter={filter}
+                onFilterChange={setFilter}
+                onOpenPost={scrollToPost}
+                canEdit={isOwner}
+                onEditFields={() => setModal("thread-edit-fields")}
+                migrateCount={migratePlans.length}
+                onOpenMigrate={() => setModal("fields-migrate")}
+              />
+            )}
+            {view === "review" && (
+              <RecordReview
+                posts={posts}
+                thread={thread}
+                onJumpToLog={jumpToLog}
+              />
+            )}
           </>
         )}
 
@@ -1259,7 +1278,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               </div>
             </div>
 
-            {group.posts.map((cp, i) => (
+            {group.posts.map((cp, i) => {
+              // record 上は number (旧) か decimal string。読めなければ出さない
+              const loc = parseLocation(cp.location);
+              return (
               <div key={cp.uri} data-post-uri={cp.uri} className="group relative">
                 {/* 2 件目以降は従来どおり小さな○。先頭 post の位置は DateBadge に
                     重なるので ○ は描画しない。 */}
@@ -1272,10 +1294,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 {multiAuthor && (
                   <PostAuthorChip did={parseAtUri(cp.uri).repo} navigate={navigate} />
                 )}
-                {cp.location && (
+                {loc && (
                   <span className="flex items-center gap-1 text-white/40">
                     <PinIcon className="size-3" />
-                    {cp.location.latitude.toFixed(4)}, {cp.location.longitude.toFixed(4)}
+                    {loc.latitude.toFixed(4)}, {loc.longitude.toFixed(4)}
                   </span>
                 )}
                 {cp.sourceRef && (
@@ -1359,7 +1381,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               />
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>,
           );
           return nodes;

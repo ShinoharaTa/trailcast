@@ -26,12 +26,12 @@ export type { ThreadView };
 
 export const THREAD_VIEWS: readonly ThreadView[] = ["timeline", "log", "review"];
 export const DEFAULT_THREAD_VIEW: ThreadView = "timeline";
-/** いま UI がある表示。ふりかえり (review) は 5b で足す */
-export const AVAILABLE_THREAD_VIEWS: readonly ThreadView[] = ["timeline", "log"];
+/** いま UI がある表示 */
+export const AVAILABLE_THREAD_VIEWS: readonly ThreadView[] = THREAD_VIEWS;
 
 /**
  * 初期表示。未設定・未知の値は "timeline"。
- * available に無い値 (5a 時点の "review") は "log" に落とす。
+ * available に無い値は "log" に落とす (いまは全表示に UI があるので、available を絞った呼び出し用)。
  */
 export function effectiveDefaultView(
   thread: Pick<ThreadRecord, "defaultView">,
@@ -123,17 +123,21 @@ export function countUnrecorded(
   return posts.filter((p) => isPostUnrecorded(p, defs)).length;
 }
 
-/** 検索語の正規化。trim → toLocaleLowerCase → 空白で分割 (全角空白含む)。空なら [] */
+/**
+ * 検索語の正規化。NFKC → trim → toLocaleLowerCase → 空白で分割 (全角空白含む)。空なら []
+ * NFKC で全角英数は半角に、半角カナは全角になる (postSearchText と揃える)。
+ */
 export function parseQuery(query: string): string[] {
   return query
+    .normalize("NFKC")
     .trim()
     .toLocaleLowerCase()
-    .split(/[\s　]+/)
+    .split(/\s+/)
     .filter((w) => w.length > 0);
 }
 
 /**
- * 検索対象の文字列 (小文字)。本文、自由タグ、解決済みの項目値の表示文字列
+ * 検索対象の文字列 (NFKC → 小文字)。本文、自由タグ、解決済みの項目値の表示文字列
  * (formatResolvedValue)。項目名は含めない。
  * 要素は改行でつなぐ (検索語は空白を含まないので、要素をまたいで一致しない)。
  */
@@ -145,7 +149,7 @@ export function postSearchText(post: PostLike, defs: FieldDef[]): string {
     const text = formatResolvedValue(r);
     if (text) parts.push(text);
   }
-  return parts.join("\n").toLocaleLowerCase();
+  return parts.join("\n").normalize("NFKC").toLocaleLowerCase();
 }
 
 /** 全語を含む (AND, 部分一致)。query が空なら同じ参照 */

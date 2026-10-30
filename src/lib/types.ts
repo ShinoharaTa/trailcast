@@ -151,12 +151,19 @@ export interface Location {
   altitude?: number;
 }
 
+/** record 上の位置。#64 以降は decimal string、それ以前の record は number */
+export interface LocationRecord {
+  latitude: string | number;
+  longitude: string | number;
+  altitude?: string | number;
+}
+
 export interface PostRecord {
   thread: string; // at-uri
   text?: string;
   images?: BlobRef[];
   imageUrls?: string[];
-  location?: Location;
+  location?: LocationRecord;
   /**
    * 絞り込み・集計用のタグ。先頭の `#` は含めずに保存し、比較は
    * 大文字小文字を区別しない。既存レコードとの後方互換のため optional。

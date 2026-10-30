@@ -149,12 +149,12 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
   "properties": {
     "id":       { "type": "string", "minLength": 1, "maxLength": 16,
                   "description": "Stable opaque id, unique within the thread. Never derived from label." },
-    "label":    { "type": "string", "maxLength": 20 },
+    "label":    { "type": "string", "maxGraphemes": 20, "maxLength": 200 },
     "type":     { "type": "string", "knownValues": ["select", "number", "duration", "text"] },
     "multiple": { "type": "boolean", "description": "select only. true = checkboxes, false/absent = radio" },
     "options":  { "type": "array", "maxLength": 50, "items": { "type": "ref", "ref": "#fieldOption" },
                   "description": "select only" },
-    "unit":     { "type": "string", "maxLength": 8, "description": "number only (kg, km, 回)" },
+    "unit":     { "type": "string", "maxGraphemes": 8, "maxLength": 80, "description": "number only (kg, km, 回)" },
     "scale":    { "type": "integer", "minimum": 0, "maximum": 3,
                   "description": "number only. Decimal digits accepted in the input UI (display hint)" },
     "archived": { "type": "boolean", "description": "Hidden from the input UI; existing values still resolve" }
@@ -165,7 +165,7 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
   "required": ["id", "label"],
   "properties": {
     "id":       { "type": "string", "minLength": 1, "maxLength": 16 },
-    "label":    { "type": "string", "maxLength": 64,
+    "label":    { "type": "string", "maxGraphemes": 64, "maxLength": 640,
                   "description": "Shown in UI and used as the hashtag on cross-post (normalized by normalizeTag)" },
     "archived": { "type": "boolean" }
   }
@@ -201,9 +201,11 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
                                    "seconds": {"type":"integer","minimum":0} } },
 "textValue":     { "type": "object", "required": ["field", "text"],
                    "properties": { "field": {"type":"string","maxLength":16},
-                                   "text": {"type":"string","maxLength":200} } }
+                                   "text": {"type":"string","maxGraphemes":200,"maxLength":2000} } }
 ```
 
+- 人が書く string は `maxGraphemes`（書記素数）で上限を決め、`maxLength`（UTF-8 バイト）は
+  その 10 倍にしてある（#64）。id 系と `numberValue.value` は ASCII 固定なので `maxLength` のみ。
 - union なので各要素は `$type: "net.shino3.trailcast.post#numberValue"` を持つ。
   他クライアントは thread 定義を見なくても値の型が分かる。
 - `numberValue.value` を **decimal string** にしたのは lexicon に float が無いため。
@@ -277,7 +279,7 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
 |---|---|---|---|---|
 | 1 | `feature/fields-lexicon` | lexicon 2 本の追加、`types.ts`（FieldDef / FieldValue 型, PostRecord/ThreadRecord に optional 追加）、`src/lib/fields.ts` 純関数群（id 生成、sanitize、`resolveFieldValues` with tag fallback、`countSelect` / `aggregateNumber` / `filterByFields`、`convertTagGroupsToFields`）、`docs/architecture.md` 更新。テストランナー（vitest）もここで導入（§10 U-4） | — | 中 |
 | 2 | `feature/fields-thread-edit` | スレッド編集画面にフィールド定義エディタ（追加・改名・archived・select の options・number の unit/scale・multiple）、「タググループを変換」ボタン、「他スレッドからコピー」 | 1 | 中〜大 |
-| 3 | `feature/fields-post-input` | 投稿・編集画面に型別入力（select = ラジオ/チェックのチップ、number = 数値 + 単位、duration = h/m/s）。クロスポストに option label を合流 | 1 | 中 |
+| 3 | `feature/fields-post-input` | 投稿・編集画面に型別入力（select = ラジオ/チェックのチップ、number = 数値 + 単位、duration = h/m/s → #85 で自由入力 1 欄に変更。解析は `parseDurationInput`（`fields-format.ts`）。形式は `1:23:45` / `83分` / `1h23m` / 数字だけは分）。クロスポストに option label を合流 | 1 | 中 |
 | 4 | `feature/fields-filter` | thread-detail の `TagFilterBar` を「select フィールド + 自由タグ」構成に置き換え（`groupTagCounts` 経路の廃止）。fallback 込み | 1, 2 | 中 |
 | 5 | （別仕様）記録帳 / ふりかえり | 絞り込み一覧・集計の表示モード。number/duration の合計/平均/最大最小 | 1, 4 | 大 |
 | 6 | `feature/fields-migrate-posts` | 所有者の旧 post を fields に書き換える任意ツール（設定 or スレッド編集から） | 1, 2 | 小〜中 |

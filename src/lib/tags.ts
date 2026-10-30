@@ -17,7 +17,7 @@ import type { TagEntry, TagGroup } from "@/lib/types";
  */
 export const MAX_TAGS_PER_POST = 50;
 
-/** タグ 1 件の最大長 (grapheme 単位)。lexicon の maxLength は UTF-8 バイト長。書記素数との乖離は #64 で対応 */
+/** タグ 1 件の最大長 (grapheme 単位。lexicon の maxGraphemes と一致させる) */
 export const MAX_TAG_LENGTH = 64;
 
 /** 個人辞書に保持するタグ件数の上限 (lexicon の maxLength と一致させる) */
@@ -223,7 +223,7 @@ export const MAX_TAG_GROUPS = 50;
 /** 1 グループに入れられるタグの上限 (lexicon の maxLength と一致させる) */
 export const MAX_TAGS_PER_GROUP = 50;
 
-/** グループ見出しの最大長 (grapheme 単位) */
+/** グループ見出しの最大長 (grapheme 単位。lexicon の maxGraphemes と一致させる) */
 export const MAX_TAG_GROUP_LABEL_LENGTH = 20;
 
 /**
