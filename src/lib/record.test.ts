@@ -168,6 +168,12 @@ describe("parseQuery", () => {
     expect(parseQuery("")).toEqual([]);
     expect(parseQuery(" 　 ")).toEqual([]);
   });
+  it("全角英数を半角・小文字にする (NFKC)", () => {
+    expect(parseQuery("ＮＡＮＩＣＡ　１２")).toEqual(["nanica", "12"]);
+  });
+  it("半角カナを全角にする (NFKC)", () => {
+    expect(parseQuery("ｶﾌｪ ﾊﾟﾝ")).toEqual(["カフェ", "パン"]);
+  });
 });
 
 describe("postSearchText / searchPosts", () => {
@@ -205,6 +211,23 @@ describe("postSearchText / searchPosts", () => {
   });
   it("空 query は同じ参照", () => {
     expect(searchPosts(posts, defs, "  ")).toBe(posts);
+  });
+  it("全角英数・半角カナは NFKC で揃えて一致する", () => {
+    const wide = [
+      post({ text: "NANICA に行った" }),
+      post({ text: "ｶﾌｪ で休憩" }),
+      post({ text: "カフェ巡り", tags: ["ＴＯＫＹＯ"] }),
+    ];
+    expect(searchPosts(wide, defs, "ＮＡＮＩＣＡ")).toEqual([wide[0]]);
+    expect(searchPosts(wide, defs, "nanica")).toEqual([wide[0]]);
+    expect(searchPosts(wide, defs, "ｶﾌｪ")).toEqual([wide[1], wide[2]]);
+    expect(searchPosts(wide, defs, "カフェ")).toEqual([wide[1], wide[2]]);
+    expect(searchPosts(wide, defs, "tokyo")).toEqual([wide[2]]);
+    expect(postSearchText(wide[1], defs)).toBe("カフェ で休憩");
+  });
+  it("全角空白区切りも AND", () => {
+    expect(searchPosts(posts, defs, "赤坂　ホール")).toEqual([posts[0]]);
+    expect(searchPosts(posts, defs, "赤坂　ルーム")).toEqual([]);
   });
 });
 
