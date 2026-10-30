@@ -1503,6 +1503,9 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               tagGroups={thread.tagGroups}
               defaultTags={thread.defaultTags}
               fields={thread.fields}
+              isOwner={isOwner}
+              // 投稿前に選択肢を書き込んだら、投稿に失敗しても定義は反映しておく
+              onThreadUpdated={setThread}
               onSubmitted={onModalSubmitted}
             />
           )}

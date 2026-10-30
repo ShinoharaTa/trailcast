@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PlusIcon, PinIcon, CloseIcon, HashIcon } from "@/components/ui/icons";
 import { createPost, uploadImage } from "@/lib/pds/posts";
+import { getThread, updateThread } from "@/lib/pds/threads";
 import { getAgent } from "@/lib/atp-agent";
 import { processSelectedImage, type PreparedImage } from "@/lib/image-process";
 import { buildCrosspostText, buildEmbedImages } from "@/lib/bsky-crosspost";
@@ -12,12 +13,29 @@ import { FieldInputs } from "@/components/ui/field-inputs";
 import { recordTagUsage } from "@/lib/pds/tags";
 import { sanitizeTagsForRecord, type TagCount } from "@/lib/tags";
 import {
+  MAX_FIELD_OPTIONS,
+  appendPendingOptions,
   buildNewPostFields,
   crosspostTagsFor,
+  findOptionByLabel,
+  generateFieldId,
+  mergePendingOptions,
+  remapSelectValues,
+  sanitizeFieldsForRecord,
+  selectedPendingOptions,
   stripSelectedOptionTags,
+  type PendingFieldOption,
 } from "@/lib/fields";
 import { locationToRecord } from "@/lib/location";
-import type { FieldDef, FieldValue, Location, TagGroup } from "@/lib/types";
+import {
+  parseAtUri,
+  stripRecordMeta,
+  type FieldDef,
+  type FieldValue,
+  type Location,
+  type TagGroup,
+  type ThreadWithMeta,
+} from "@/lib/types";
 
 const MAX_IMAGES = 4;
 const MAX_TEXT = 200;
@@ -73,6 +91,10 @@ export interface CheckpointPostScreenProps {
   defaultTags?: string[];
   /** スレッド (所有者) の記録項目の定義。参加者もこの定義で入力する */
   fields?: FieldDef[];
+  /** スレッドの所有者か。所有者だけ select に選択肢をその場で追加できる */
+  isOwner?: boolean;
+  /** 投稿前に選択肢を thread.fields に書き込んだあと、書き込み後のスレッドで呼ぶ */
+  onThreadUpdated?: (thread: ThreadWithMeta) => void;
   onSubmitted: () => void;
 }
 
@@ -83,6 +105,8 @@ export function CheckpointPostScreen({
   tagGroups,
   defaultTags,
   fields,
+  isOwner,
+  onThreadUpdated,
   onSubmitted,
 }: CheckpointPostScreenProps) {
   const handle = useAuthStore((s) => s.handle);
@@ -90,7 +114,13 @@ export function CheckpointPostScreen({
   const [tags, setTags] = useState<string[]>(() => [...(defaultTags ?? [])]);
   const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
   const [fieldsValid, setFieldsValid] = useState(true);
-  const inputDefs = (fields ?? []).filter((d) => !d.archived);
+  // 投稿画面で追加した選択肢 (所有者のみ)。投稿するまで thread.fields には書かない。
+  // 入力・投稿の組み立ては、定義の末尾に足した defs で既存の選択肢と同じように扱う
+  const [pendingOptions, setPendingOptions] = useState<PendingFieldOption[]>(
+    [],
+  );
+  const defs = mergePendingOptions(fields ?? [], pendingOptions);
+  const inputDefs = defs.filter((d) => !d.archived);
   // タグ欄は既定で畳む (#35)。「とにかく記録する」ときに邪魔にならないように。
   // 既定タグがあれば触らなくても付くので、開くのは足したい/外したいときだけ。
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -254,17 +284,130 @@ export function CheckpointPostScreen({
     setLocationError(null);
   };
 
+  // 同じ名前 (スレッド編集と同じく大文字小文字を区別しない) の選択肢があれば
+  // 追加せずにそれを選ぶ。archived なら投稿時に archived を外す予定にする。
+  // 追加・既存どちらも選択状態にする (1 つだけ: 置き換え / 複数: 足す)
+  const handleAddOption = (fieldId: string, label: string) => {
+    const def = defs.find((d) => d.id === fieldId);
+    if (!def || def.type !== "select") return;
+    const existing = findOptionByLabel(def.options ?? [], label);
+    let optionId: string;
+    if (existing) {
+      optionId = existing.id;
+      if (existing.archived) {
+        setPendingOptions((prev) => [
+          ...prev,
+          {
+            fieldId,
+            option: { id: existing.id, label: existing.label },
+            unarchive: true,
+          },
+        ]);
+      }
+    } else {
+      if ((def.options?.length ?? 0) >= MAX_FIELD_OPTIONS) return;
+      optionId = generateFieldId();
+      setPendingOptions((prev) => [
+        ...prev,
+        { fieldId, option: { id: optionId, label } },
+      ]);
+    }
+    setFieldValues((prev) => {
+      const current = prev.find((v) => v.field === fieldId);
+      const selected =
+        current?.$type === "net.shino3.trailcast.post#selectValue"
+          ? current.options
+          : [];
+      const next: FieldValue = {
+        $type: "net.shino3.trailcast.post#selectValue",
+        field: fieldId,
+        options: def.multiple
+          ? selected.includes(optionId)
+            ? selected
+            : [...selected, optionId]
+          : [optionId],
+      };
+      return current
+        ? prev.map((v) => (v.field === fieldId ? next : v))
+        : [...prev, next];
+    });
+  };
+
   // 記録項目のあるスレッドでは未入力でも `fields: []` を書く (タグ fallback を止める)
-  const recordFields = buildNewPostFields(fields ?? [], fieldValues);
+  const recordFields = buildNewPostFields(defs, fieldValues);
+
+  /**
+   * 選んだ追加待ちの選択肢を thread.fields に書き込む。選ばれていないものは捨てる。
+   * 書き込み直前にスレッドを取り直して足し、書き込み後の定義と値を返す。
+   * 項目が消えた・非表示になった等で足せないときは Error を投げる (投稿しない)。
+   */
+  const writePendingOptions = async (): Promise<{
+    defs: FieldDef[];
+    values: FieldValue[];
+  }> => {
+    const toWrite = selectedPendingOptions(pendingOptions, fieldValues);
+    if (toWrite.length === 0) return { defs, values: fieldValues };
+    // 書き込めるのは所有者の repo だけ。UI で出し分けているが念のため止める
+    if (!isOwner) {
+      throw new Error("選択肢を追加できるのはスレッドの所有者だけです");
+    }
+    const { repo, rkey } = parseAtUri(threadUri);
+    const fresh = await getThread(repo, rkey);
+    const merged = appendPendingOptions(fresh.fields ?? [], toWrite);
+    if (!merged.ok) {
+      // 取り直した定義で画面を最新にしてから止める
+      onThreadUpdated?.(fresh);
+      const label =
+        defs.find((d) => d.id === merged.fieldId)?.label ?? "記録項目";
+      throw new Error(
+        merged.reason === "full"
+          ? `「${label}」の選択肢が上限 (${MAX_FIELD_OPTIONS} 件) に達しているため追加できませんでした`
+          : merged.reason === "archived"
+            ? `「${label}」は非表示になっているため選択肢を追加できませんでした`
+            : `「${label}」がスレッドから削除されているため選択肢を追加できませんでした`,
+      );
+    }
+    let updated: ThreadWithMeta;
+    try {
+      updated = await updateThread(
+        rkey,
+        {
+          // 触っていないフィールドを落とさないよう、取り直した record を土台にする
+          // (ogImage もここで残る)
+          ...stripRecordMeta(fresh),
+          fields: sanitizeFieldsForRecord(merged.fields),
+          // 編集は活動なので一覧の並びを進める (spread で古い値が入るため明示)
+          updatedAt: new Date().toISOString(),
+        },
+        // 選択肢の追加は OG 画像に関係しないので作り直さない
+        { skipOgImage: true },
+      );
+    } catch (e) {
+      throw new Error(
+        e instanceof Error
+          ? `選択肢を保存できませんでした: ${e.message}`
+          : "選択肢を保存できませんでした",
+      );
+    }
+    // 書き込めたら追加待ちは定義に移ったので消す (投稿に失敗して再送しても二重に足さない)
+    const values = remapSelectValues(fieldValues, merged.idMap);
+    setPendingOptions([]);
+    setFieldValues(values);
+    onThreadUpdated?.(updated);
+    return { defs: updated.fields ?? [], values };
+  };
 
   const handleSubmit = async () => {
     if (!threadUri) return;
     setSubmitting(true);
     setError(null);
     try {
+      const { defs: postDefs, values: postValues } =
+        await writePendingOptions();
+      const postFields = buildNewPostFields(postDefs, postValues);
       // 選択した option の label は tags に書かない (fields 側が正)
       const recordTags = sanitizeTagsForRecord(
-        stripSelectedOptionTags(tags, recordFields, fields ?? []),
+        stripSelectedOptionTags(tags, postFields, postDefs),
       );
 
       // 画像はすでに縮小 + 圧縮済みの Blob を保持しているのでそのままアップロード。
@@ -297,8 +440,8 @@ export function CheckpointPostScreen({
           body: text,
           // 自由タグ + 選択した option の label をハッシュタグにする
           tags: crosspostTagsFor(
-            { tags: recordTags, fields: recordFields },
-            fields ?? [],
+            { tags: recordTags, fields: postFields },
+            postDefs,
           ),
         });
         const res = await agent.post({
@@ -319,7 +462,7 @@ export function CheckpointPostScreen({
         images: blobs.length > 0 ? blobs : undefined,
         location: location ? locationToRecord(location) : undefined,
         tags: recordTags,
-        fields: recordFields,
+        fields: postFields,
         checkpointAt: checkpointIso,
         sourceRef,
         createdAt,
@@ -364,6 +507,7 @@ export function CheckpointPostScreen({
           onChange={setFieldValues}
           onValidityChange={setFieldsValid}
           disabled={submitting}
+          onAddOption={isOwner ? handleAddOption : undefined}
         />
 
         {tagsOpen ? (

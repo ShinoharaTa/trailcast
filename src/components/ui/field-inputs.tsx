@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react";
 import {
   DECIMAL_PATTERN,
+  MAX_FIELD_OPTIONS,
   MAX_NUMBER_VALUE_LENGTH,
   MAX_TEXT_VALUE_LENGTH,
+  isBlankOptionLabel,
   toggleSelectOption,
 } from "@/lib/fields";
+import { MAX_TAG_LENGTH, normalizeTag } from "@/lib/tags";
 import { formatDuration, parseDurationInput } from "@/lib/fields-format";
 import type { FieldDef, FieldValue } from "@/lib/types";
 
@@ -20,11 +23,16 @@ export interface FieldInputsProps {
   onChange: (values: FieldValue[]) => void;
   disabled?: boolean;
   /**
-   * 不正な入力 (decimal に合わない・長すぎる数値、解析できない時間) の有無が
-   * 変わったときに呼ぶ。
+   * 不正な入力 (decimal に合わない・長すぎる数値、解析できない時間) や
+   * 「＋ 追加」に追加していない入力が残っているかが変わったときに呼ぶ。
    * 呼び出し側は false の間、送信ボタンを無効にする
    */
   onValidityChange?: (valid: boolean) => void;
+  /**
+   * 渡したときだけ select の末尾に「＋ 追加」を出す (投稿画面の所有者用)。
+   * label は normalizeTag 済み。重複の判定と選択は呼び出し側で行う
+   */
+  onAddOption?: (fieldId: string, label: string) => void;
 }
 
 /**
@@ -38,7 +46,11 @@ export function FieldInputs({
   onChange,
   disabled,
   onValidityChange,
+  onAddOption,
 }: FieldInputsProps) {
+  // 「＋ 追加」で入力中の項目 id と、その入力値
+  const [addingFieldId, setAddingFieldId] = useState<string | null>(null);
+  const [optionDraft, setOptionDraft] = useState("");
   // 時間は入力された文字列のまま持つ (正規化して書き換えない)。初期値は values から作る
   const [durations, setDurations] = useState<Record<string, string>>(() => {
     const out: Record<string, string> = {};
@@ -50,7 +62,7 @@ export function FieldInputs({
     return out;
   });
 
-  const valid = defs.every((def) => {
+  const fieldsValid = defs.every((def) => {
     if (def.type === "number") {
       const v = values.find((x) => x.field === def.id);
       return (
@@ -64,6 +76,17 @@ export function FieldInputs({
     }
     return true;
   });
+  // 「＋ 追加」の入力欄に文字が残っている間は送信させない (追加し忘れを防ぐ)
+  // (入力欄が出ていないとき = 項目が消えた・上限に達したときは数えない)
+  const draftPending =
+    Boolean(onAddOption) &&
+    !isBlankOptionLabel(optionDraft) &&
+    defs.some(
+      (d) =>
+        d.id === addingFieldId &&
+        (d.options?.length ?? 0) < MAX_FIELD_OPTIONS,
+    );
+  const valid = fieldsValid && !draftPending;
   useEffect(() => {
     onValidityChange?.(valid);
   }, [valid, onValidityChange]);
@@ -109,6 +132,18 @@ export function FieldInputs({
           }
         : null,
     );
+  };
+
+  const cancelAddOption = () => {
+    setAddingFieldId(null);
+    setOptionDraft("");
+  };
+
+  const submitAddOption = (fieldId: string) => {
+    const label = normalizeTag(optionDraft);
+    if (!label || !onAddOption) return;
+    onAddOption(fieldId, label);
+    cancelAddOption();
   };
 
   const changeDuration = (fieldId: string, raw: string) => {
@@ -170,6 +205,69 @@ export function FieldInputs({
                         </button>
                       );
                     })}
+                    {onAddOption &&
+                      (def.options?.length ?? 0) < MAX_FIELD_OPTIONS &&
+                      (addingFieldId === def.id ? (
+                        <>
+                          <span className="flex w-full items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={optionDraft}
+                              onChange={(e) => setOptionDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                // IME 変換中の Enter は変換確定なので無視する
+                                if (e.nativeEvent.isComposing) return;
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  submitAddOption(def.id);
+                                } else if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  cancelAddOption();
+                                }
+                              }}
+                              disabled={disabled}
+                              autoFocus
+                              maxLength={MAX_TAG_LENGTH}
+                              placeholder="選択肢の名前"
+                              aria-label={`${def.label}に選択肢を追加`}
+                              className={`min-w-0 flex-1 py-1.5 text-base md:text-sm ${inputClass}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => submitAddOption(def.id)}
+                              disabled={disabled || isBlankOptionLabel(optionDraft)}
+                              className="shrink-0 rounded-full bg-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-200 transition hover:bg-indigo-500/30 disabled:opacity-40"
+                            >
+                              追加
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelAddOption}
+                              disabled={disabled}
+                              className="shrink-0 rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:bg-white/10 disabled:opacity-50"
+                            >
+                              キャンセル
+                            </button>
+                          </span>
+                          {draftPending && (
+                            <p className="w-full text-[11px] text-amber-200/70">
+                              追加を押してください
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddingFieldId(def.id);
+                            setOptionDraft("");
+                          }}
+                          disabled={disabled}
+                          className="rounded-full border border-dashed border-white/15 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:border-white/25 hover:bg-white/5 disabled:opacity-50"
+                        >
+                          ＋ 追加
+                        </button>
+                      ))}
                   </div>
                 );
               })()}

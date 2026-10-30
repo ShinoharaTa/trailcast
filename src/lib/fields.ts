@@ -728,6 +728,155 @@ export function restoreBlankLabel(
   return saved !== undefined && isBlank(label) ? saved : label;
 }
 
+// ─── 投稿画面からの選択肢追加 (所有者のみ) ─────────────────────
+
+/**
+ * 投稿画面で追加した、まだ thread.fields に書いていない選択肢。
+ * `unarchive` は同じ名前の archived の選択肢を戻す予定 (option.id は既存の id)
+ */
+export interface PendingFieldOption {
+  fieldId: string;
+  option: FieldOption;
+  unarchive?: boolean;
+}
+
+/**
+ * 同じ名前の選択肢。archived でないものを優先し、無ければ archived のもの。
+ * 比較はスレッド編集の optionLabelTaken と同じ (normalizeTag 後に tagKey 一致)。
+ */
+export function findOptionByLabel(
+  options: FieldOption[],
+  label: string,
+): FieldOption | undefined {
+  const key = optionLabelKey(label);
+  if (key === null) return undefined;
+  const matches = options.filter((o) => optionLabelKey(o.label) === key);
+  return matches.find((o) => !o.archived) ?? matches[0];
+}
+
+/**
+ * 追加待ちの選択肢を反映した定義。入力・投稿の組み立てに使う。
+ * 新規は末尾に足し、unarchive は既存の選択肢の archived を外す。
+ */
+export function mergePendingOptions(
+  defs: FieldDef[],
+  pending: PendingFieldOption[],
+): FieldDef[] {
+  if (pending.length === 0) return defs;
+  return defs.map((def) => {
+    const mine = pending.filter((p) => p.fieldId === def.id);
+    if (mine.length === 0) return def;
+    const unarchive = new Set(
+      mine.filter((p) => p.unarchive).map((p) => p.option.id),
+    );
+    const added = mine.filter((p) => !p.unarchive).map((p) => p.option);
+    return {
+      ...def,
+      options: [
+        ...(def.options ?? []).map((o) =>
+          unarchive.has(o.id) ? { id: o.id, label: o.label } : o,
+        ),
+        ...added,
+      ],
+    };
+  });
+}
+
+/** 追加待ちのうち、values で実際に選ばれているもの。選ばれていないものは書かない */
+export function selectedPendingOptions(
+  pending: PendingFieldOption[],
+  values: FieldValue[],
+): PendingFieldOption[] {
+  const selected = new Set<string>();
+  for (const v of values) {
+    if (v.$type !== VALUE_TYPES.select) continue;
+    for (const id of v.options) selected.add(`${v.field}\u0000${id}`);
+  }
+  return pending.filter((p) =>
+    selected.has(`${p.fieldId}\u0000${p.option.id}`),
+  );
+}
+
+export type AppendPendingOptionsResult =
+  | {
+      ok: true;
+      fields: FieldDef[];
+      /** 追加待ちの option id → 書き込み後の option id (既存を使うときは既存の id) */
+      idMap: Map<string, string>;
+    }
+  | {
+      ok: false;
+      /** missing: 項目が無い / archived: 項目が非表示 / full: 選択肢数の上限 */
+      reason: "missing" | "archived" | "full";
+      fieldId: string;
+    };
+
+/**
+ * 書き込み直前に取り直した thread.fields に、追加待ちの選択肢を足す。
+ * - 項目が無い・archived なら失敗 (投稿しない)
+ * - 取り直した定義に同じ名前の archived でない選択肢があればそれを使う
+ *   (別の端末で先に追加・再表示された場合など)
+ * - unarchive の選択肢が取り直した定義にあれば、その archived を外して使う
+ * - 同じ名前の archived の選択肢があれば、その archived を外して使う
+ * - それ以外は末尾に足す。選択肢数が MAX_FIELD_OPTIONS に達していれば失敗
+ *   (archived を外すだけなら選択肢数は増えないので上限で止めない)
+ * 戻り値は未サニタイズ。保存前に必ず sanitizeFieldsForRecord を通すこと。
+ */
+export function appendPendingOptions(
+  fresh: FieldDef[],
+  pending: PendingFieldOption[],
+): AppendPendingOptionsResult {
+  // select の options だけ複製して足す (引数の定義は書き換えない)
+  const fields = fresh.map((d) =>
+    d.type === "select" ? { ...d, options: [...(d.options ?? [])] } : d,
+  );
+  const idMap = new Map<string, string>();
+  for (const p of pending) {
+    const def = fields.find((d) => d.id === p.fieldId);
+    if (!def || def.type !== "select") {
+      return { ok: false, reason: "missing", fieldId: p.fieldId };
+    }
+    if (def.archived) {
+      return { ok: false, reason: "archived", fieldId: p.fieldId };
+    }
+    const options = (def.options ??= []);
+    const byLabel = findOptionByLabel(options, p.option.label);
+    const existing =
+      byLabel && !byLabel.archived
+        ? byLabel
+        : ((p.unarchive
+            ? options.find((o) => o.id === p.option.id)
+            : undefined) ?? byLabel);
+    if (existing) {
+      const i = options.indexOf(existing);
+      if (existing.archived) options[i] = { id: existing.id, label: existing.label };
+      idMap.set(p.option.id, existing.id);
+      continue;
+    }
+    if (options.length >= MAX_FIELD_OPTIONS) {
+      return { ok: false, reason: "full", fieldId: p.fieldId };
+    }
+    options.push({ id: p.option.id, label: p.option.label });
+    idMap.set(p.option.id, p.option.id);
+  }
+  return { ok: true, fields, idMap };
+}
+
+/** select の値の option id を idMap で置き換える (重複は 1 件にまとめる) */
+export function remapSelectValues(
+  values: FieldValue[],
+  idMap: Map<string, string>,
+): FieldValue[] {
+  return values.map((v) =>
+    v.$type === VALUE_TYPES.select
+      ? {
+          ...v,
+          options: [...new Set(v.options.map((id) => idMap.get(id) ?? id))],
+        }
+      : v,
+  );
+}
+
 // ─── 絞り込み / 集計 ──────────────────────────────────────────
 
 /**
