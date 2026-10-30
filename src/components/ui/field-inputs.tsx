@@ -87,7 +87,7 @@ export function FieldInputs({
   // (入力欄が出ていないとき = 項目が消えた・上限に達したときは数えない)
   const draftPending =
     Boolean(onAddOption) &&
-    optionDraft.trim() !== "" &&
+    !isBlankOptionLabel(optionDraft) &&
     defs.some(
       (d) =>
         d.id === addingFieldId &&
