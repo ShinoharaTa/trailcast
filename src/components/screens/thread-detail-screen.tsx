@@ -61,6 +61,8 @@ import { PostFieldValues, PostTags } from "@/components/ui/post-field-values";
 import { RecordTabs, ViewSwitch } from "@/components/record/view-switch";
 import { RecordLog } from "@/components/record/record-log";
 import { RecordReview } from "@/components/record/record-review";
+import { FieldMigratePanel } from "@/components/record/field-migrate-panel";
+import { planFieldMigrations } from "@/lib/fields-migrate";
 import { HomeLink } from "@/components/ui/home-link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -88,13 +90,16 @@ type ModalKind =
   | "checkpoint-edit"
   | "bsky-import"
   | "thread-edit"
-  | "thread-edit-fields";
+  | "thread-edit-fields"
+  | "fields-migrate";
 
 /** thread.fields が無いときの defs。毎 render で新しい配列を作らず参照を固定する */
 const NO_FIELDS: FieldDef[] = [];
 
-function modalMaxWidth(kind: ModalKind): "lg" | "2xl" | "3xl" {
+function modalMaxWidth(kind: ModalKind): "md" | "lg" | "2xl" | "3xl" {
   switch (kind) {
+    case "fields-migrate":
+      return "md";
     case "thread-edit":
     case "thread-edit-fields":
     case "checkpoint-post":
@@ -546,6 +551,12 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   }, [thread]);
 
   const threadTagCounts = useMemo(() => countTags(posts), [posts]);
+  // タグから記録項目へ書き換えられる自分の投稿 (#62)。所有者の判定は early return の
+  // 後なので myDid 基準で計算する (参加者・未ログインでは記録帳に入口を出さない)
+  const migratePlans = useMemo(
+    () => planFieldMigrations(posts, defs, myDid),
+    [posts, defs, myDid],
+  );
   // 絞り込みバーの自由タグ (freeTagChips) と同じ集合。選択の掃除に使う
   const freeTagCounts = useMemo(
     () => countFreeTags(posts, defs),
@@ -657,6 +668,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
   // モーダル状態（URL には現れないローカル state）
   const [modal, setModal] = useState<ModalKind | null>(null);
+  // 書き換えパネルの閉じる操作。実行中は閉じずに停止にするため、パネルが握る
+  const migrateCloseRef = useRef<(() => void) | null>(null);
   const [editingPost, setEditingPost] = useState<PostWithMeta | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -1186,6 +1199,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 onOpenPost={scrollToPost}
                 canEdit={isOwner}
                 onEditFields={() => setModal("thread-edit-fields")}
+                migrateCount={migratePlans.length}
+                onOpenMigrate={() => setModal("fields-migrate")}
               />
             )}
             {view === "review" && (
@@ -1470,7 +1485,15 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
       {/* Modals */}
       {modal && modal !== "bsky-import" && (
-        <Modal open onClose={closeModal} maxWidth={modalMaxWidth(modal)}>
+        <Modal
+          open
+          onClose={
+            modal === "fields-migrate"
+              ? () => migrateCloseRef.current?.()
+              : closeModal
+          }
+          maxWidth={modalMaxWidth(modal)}
+        >
           {modal === "share" && <ShareScreen threadUri={thread.uri} />}
           {modal === "checkpoint-post" && (
             <CheckpointPostScreen
@@ -1506,6 +1529,16 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               onRequestDelete={() => {
                 setModal(null);
                 setConfirmTarget({ type: "thread" });
+              }}
+            />
+          )}
+          {modal === "fields-migrate" && (
+            <FieldMigratePanel
+              plans={migratePlans}
+              requestCloseRef={migrateCloseRef}
+              onClose={(r) => {
+                closeModal();
+                if (r && r.succeeded > 0) void refresh();
               }}
             />
           )}

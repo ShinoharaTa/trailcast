@@ -263,11 +263,9 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
 - 全フィールドが「未設定」。記録帳では「未設定」チップで拾える、ふりかえりでは
   件数に「未設定 n」を出す。削除も補完もしない。
 
-### 任意の書き換え（PR 6、後回し可）
-- 所有者の自分の post について、fallback で解決した値を `fields` に書き、
-  対応した tag を `tags` から外す（自由タグはそのまま）。進捗付きで 1 件ずつ
-  putRecord。参加者 post は対象外。
-- 改名した後も旧 post が追従するのが利点。急がない。
+### 任意の書き換え（#62）
+- 仕様は [remaining-spec.md §3](./remaining-spec.md)（記録帳の「整理」行から、自分の post だけを
+  プレビュー → 1 件ずつ書き換え）。実装は `src/lib/fields-migrate.ts`。
 
 ### tagIndex（個人辞書）
 - select の値は tagIndex に **入れない**（辞書は自由タグ用）。変換で tags から
