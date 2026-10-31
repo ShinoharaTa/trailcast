@@ -3,3 +3,6 @@
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
   Permissions-Policy: geolocation=(self)
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json
