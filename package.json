@@ -15,6 +15,7 @@
     "db:schema:remote": "npx wrangler d1 execute trailcast-index --remote --file=db/schema.sql",
     "og:test": "tsx scripts/og-test.ts",
     "og:build": "tsx scripts/og-default-build.ts",
+    "icons:build": "tsx scripts/icons-build.ts",
     "lint": "eslint src",
     "tauri": "tauri",
     "test": "vitest run"
