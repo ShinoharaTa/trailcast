@@ -31,13 +31,28 @@ function useVisualViewport(enabled: boolean): VisualViewportBox | null {
     if (!enabled) return;
     const vv = window.visualViewport;
     if (!vv) return;
-    const update = () => setBox({ height: vv.height, offsetTop: vv.offsetTop });
+    const update = () => {
+      // ピンチズーム中は visual viewport に合わせるとずれるのでフォールバック表示に戻す
+      if (vv.scale > 1.01) {
+        setBox(null);
+        return;
+      }
+      const height = vv.height;
+      const offsetTop = vv.offsetTop;
+      setBox((prev) =>
+        prev && prev.height === height && prev.offsetTop === offsetTop
+          ? prev
+          : { height, offsetTop },
+      );
+    };
     update();
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
     return () => {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
+      // 閉じたあとに古い値が次回の初回描画に残らないようにする
+      setBox(null);
     };
   }, [enabled]);
 
