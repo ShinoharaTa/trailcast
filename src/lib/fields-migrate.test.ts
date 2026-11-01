@@ -92,15 +92,6 @@ describe("planFieldMigration", () => {
     ]);
   });
 
-  it("fields: [] を持つ投稿は対象外", () => {
-    expect(planFieldMigration(post({ tags: ["ホール"], fields: [] }), defs)).toBeNull();
-  });
-
-  it("fields を持つ投稿は tags に選択肢名が残っていても対象外", () => {
-    const p = post({ tags: ["ホール"], fields: [select("result", ["ok"])] });
-    expect(planFieldMigration(p, defs)).toBeNull();
-  });
-
   it("一致するタグが無い投稿は対象外 (fields: [] を書かない)", () => {
     expect(planFieldMigration(post({ tags: ["東京"] }), defs)).toBeNull();
     expect(planFieldMigration(post({}), defs)).toBeNull();
@@ -168,6 +159,166 @@ describe("planFieldMigration", () => {
         JSON.stringify(expected),
       );
     }
+  });
+});
+
+describe("planFieldMigration (fields あり, #104)", () => {
+  const tagsDef: FieldDef = {
+    id: "tags",
+    label: "分類",
+    type: "select",
+    multiple: true,
+    options: [
+      { id: "solved", label: "解けた" },
+      { id: "hint", label: "ヒント" },
+      { id: "old", label: "旧", archived: true },
+    ],
+  };
+  const all = [tagsDef, result];
+
+  it("fields: [] + 一致 1 件 (multiple) を書き、タグを外す。自由タグは残る", () => {
+    const out = planFieldMigration(post({ tags: ["解けた", "東京"], fields: [] }), all);
+    expect(out?.fields).toEqual([select("tags", ["solved"])]);
+    expect(out?.tags).toEqual(["東京"]);
+    expect(out?.movedTags).toEqual(["解けた"]);
+    expect(out?.moved).toEqual([{ field: tagsDef, labels: ["解けた"] }]);
+  });
+
+  it("multiple は既存の選択 + 一致 (定義順) を書く", () => {
+    const p = post({
+      tags: ["ヒント", "解けた"],
+      fields: [select("result", ["ok"]), select("tags", ["hint"])],
+    });
+    const out = planFieldMigration(p, all);
+    expect(out?.fields).toEqual([select("result", ["ok"]), select("tags", ["hint", "solved"])]);
+    expect(out?.tags).toBeUndefined();
+    expect(out?.movedTags).toEqual(["ヒント", "解けた"]);
+    expect(out?.moved).toEqual([{ field: tagsDef, labels: ["解けた", "ヒント"] }]);
+  });
+
+  it("single で値なし + 一致 1 件なら書く (値なし / options: [] の両方)", () => {
+    for (const fields of [[], [select("result", [])]]) {
+      const out = planFieldMigration(post({ tags: ["成功", "夜"], fields }), all);
+      expect(out?.fields).toEqual([select("result", ["ok"])]);
+      expect(out?.tags).toEqual(["夜"]);
+      expect(out?.movedTags).toEqual(["成功"]);
+    }
+  });
+
+  it("single で別の値があれば null (上書きしない)", () => {
+    const p = post({ tags: ["成功"], fields: [select("result", ["ng"])] });
+    expect(planFieldMigration(p, all)).toBeNull();
+  });
+
+  it("single に 2 件一致すれば null (決めない)", () => {
+    expect(planFieldMigration(post({ tags: ["成功", "失敗"], fields: [] }), all)).toBeNull();
+  });
+
+  it("single をスキップしても他の項目は書く。スキップした項目のタグは残る", () => {
+    const p = post({ tags: ["成功", "失敗", "解けた"], fields: [] });
+    const out = planFieldMigration(p, all);
+    expect(out?.fields).toEqual([select("tags", ["solved"])]);
+    expect(out?.tags).toEqual(["成功", "失敗"]);
+    expect(out?.moved.map((m) => m.field.id)).toEqual(["tags"]);
+  });
+
+  it("一致する選択肢が archived なら null", () => {
+    expect(planFieldMigration(post({ tags: ["旧"], fields: [] }), all)).toBeNull();
+  });
+
+  it("項目が archived なら null", () => {
+    const archived = [{ ...tagsDef, archived: true }];
+    expect(planFieldMigration(post({ tags: ["解けた"], fields: [] }), archived)).toBeNull();
+  });
+
+  it("既に選択済みの選択肢と同名のタグは tags から外すだけ (fields は変わらない)", () => {
+    const fields = [select("result", ["ok"])];
+    const out = planFieldMigration(post({ tags: ["成功", "東京"], fields }), all);
+    expect(out?.fields).toEqual(fields);
+    expect(out?.tags).toEqual(["東京"]);
+    expect(out?.movedTags).toEqual(["成功"]);
+    expect(out?.moved).toEqual([{ field: result, labels: ["成功"] }]);
+  });
+
+  it("single で選択済みと同名のタグは外し、別の一致は残す", () => {
+    const fields = [select("result", ["ok"])];
+    const out = planFieldMigration(post({ tags: ["成功", "失敗"], fields }), all);
+    expect(out?.fields).toEqual(fields);
+    expect(out?.tags).toEqual(["失敗"]);
+  });
+
+  it("一致するタグが無い・タグが無いなら null", () => {
+    expect(planFieldMigration(post({ tags: ["東京"], fields: [] }), all)).toBeNull();
+    expect(planFieldMigration(post({ fields: [] }), all)).toBeNull();
+  });
+
+  it("大文字小文字違いのタグも一致し、元の表記で movedTags に入る", () => {
+    const en: FieldDef = {
+      id: "day",
+      label: "日",
+      type: "select",
+      multiple: true,
+      options: [{ id: "d2", label: "Day2" }],
+    };
+    const out = planFieldMigration(post({ tags: ["day2", "free"], fields: [] }), [en]);
+    expect(out?.fields).toEqual([select("day", ["d2"])]);
+    expect(out?.tags).toEqual(["free"]);
+    expect(out?.movedTags).toEqual(["day2"]);
+  });
+
+  it("触らない 1 つだけの select に複数入っていても絞らない", () => {
+    const fields = [select("result", ["ok", "ng"])];
+    const out = planFieldMigration(post({ tags: ["解けた"], fields }), all);
+    expect(out?.fields).toEqual([select("result", ["ok", "ng"]), select("tags", ["solved"])]);
+  });
+
+  describe("既存の fields に理解できない値があれば null", () => {
+    const memo: FieldDef = { id: "memo", label: "メモ", type: "text" };
+    const defs2 = [tagsDef, result, memo];
+    const cases: [string, FieldValue[]][] = [
+      ["定義に無い項目 (ghost field)", [select("ghost", ["x"])]],
+      ["single の未知の選択肢 id", [select("result", ["zzz"])]],
+      [
+        "text の前後空白",
+        [{ $type: "net.shino3.trailcast.post#textValue", field: "memo", text: " 夜 " }],
+      ],
+      ["書き換える multiple の未知の選択肢 id", [select("tags", ["zzz"])]],
+      ["書き換えない multiple の未知の選択肢 id", [select("tags", ["hint", "zzz"])]],
+      [
+        "未知の $type",
+        [{ $type: "net.shino3.trailcast.post#unknown", field: "memo" } as unknown as FieldValue],
+      ],
+      ["同じ項目の重複", [select("result", ["ok"]), select("result", ["ok"])]],
+    ];
+    for (const [name, fields] of cases) {
+      it(name, () => {
+        const p = post({ tags: ["解けた", "ヒント", "成功"], fields });
+        expect(planFieldMigration(p, defs2)).toBeNull();
+      });
+    }
+
+    it("理解できる値だけなら対象 (text もそのまま残る)", () => {
+      const text: FieldValue = {
+        $type: "net.shino3.trailcast.post#textValue",
+        field: "memo",
+        text: "夜",
+      };
+      const out = planFieldMigration(post({ tags: ["解けた"], fields: [text] }), defs2);
+      expect(out?.fields).toEqual([text, select("tags", ["solved"])]);
+    });
+  });
+
+  it("タグは normalizeTag してから突合する (#解けた も一致)", () => {
+    const out = planFieldMigration(post({ tags: ["#解けた", " 東京 "], fields: [] }), all);
+    expect(out?.fields).toEqual([select("tags", ["solved"])]);
+    expect(out?.tags).toEqual(["東京"]);
+    expect(out?.movedTags).toEqual(["#解けた"]);
+  });
+
+  it("planFieldMigrations でも他人の repo の投稿は除く", () => {
+    const mine = post({ tags: ["解けた"], fields: [] });
+    const theirs = post({ tags: ["解けた"], fields: [], repo: OTHER });
+    expect(planFieldMigrations([mine, theirs], all, ME).map((p) => p.post)).toEqual([mine]);
   });
 });
 
