@@ -434,6 +434,8 @@ export function initialFreeTagsForEdit(
  *   外したものは、その label と tagKey が一致するタグを tags から外す
  * - UI では選ばれたままなのに sanitize で落ちたもの (1 つだけの項目に旧タグが
  *   2 つ以上一致していた場合など) は、元のタグを tags に戻す。データを消さないため
+ * - 書く fields で選ばれている選択肢の label と tagKey が一致するタグも tags から
+ *   外す (新規投稿の stripSelectedOptionTags と同じ規則。fields 側が正)
  *
  * `tags` はタグ欄の値 (initialFreeTagsForEdit で外した後でも、元の post.tags でもよい)。
  * 項目が無いスレッドでは fields は元の投稿のまま触らない。
@@ -498,15 +500,18 @@ export function buildEditedPostFields(
   );
   return {
     fields,
-    tags: sanitizeTagsForRecord([
-      ...restored,
-      ...tags.filter((t) => !removeKeys.has(tagKey(t))),
-    ]),
+    tags: sanitizeTagsForRecord(
+      stripSelectedOptionTags(
+        [...restored, ...tags.filter((t) => !removeKeys.has(tagKey(t)))],
+        fields,
+        defs,
+      ),
+    ),
   };
 }
 
 /**
- * 新規投稿の tags から、選んだ選択肢の label と tagKey が一致するタグを外す。
+ * 投稿の tags から、選んだ選択肢の label と tagKey が一致するタグを外す。
  * 選択の値は fields 側にだけ書く (tags との二重書きを避ける)。
  * `fields` は sanitizePostFieldsForRecord 済みのものを渡す。
  */

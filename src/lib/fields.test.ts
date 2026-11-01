@@ -979,6 +979,34 @@ describe("buildEditedPostFields", () => {
     ).toEqual({ fields: [text("memo", "雨"), num("weight", "1")], tags: undefined });
   });
 
+  it("fields を持つ post で、選んだ選択肢と同名のタグを入れても tags から外す (#107)", () => {
+    const post: Post = { fields: [select("kind", ["hall"])], tags: ["東京"] };
+    expect(
+      buildEditedPostFields(post, [kind], [select("kind", ["hall"])], ["東京", "HALL", "ホール"]),
+    ).toEqual({ fields: [select("kind", ["hall"])], tags: ["東京", "HALL"] });
+  });
+
+  it("選んでいない選択肢と同名のタグ・自由タグは残す (#107)", () => {
+    const post: Post = { fields: [select("kind", ["hall"])], tags: [] };
+    expect(
+      buildEditedPostFields(post, [kind], [select("kind", ["hall"])], ["ルーム", "雨"]),
+    ).toEqual({ fields: [select("kind", ["hall"])], tags: ["ルーム", "雨"] });
+  });
+
+  it("tags から読み取っていた post で、別の項目の選んだ選択肢と同名のタグも外す (#107)", () => {
+    const post: Post = { tags: ["ホール", "東京"] };
+    const values = [
+      ...fieldValuesFromResolved(resolveFieldValues(post, [kind, result])),
+      select("result", ["ok"]),
+    ];
+    expect(
+      buildEditedPostFields(post, [kind, result], values, ["東京", "成功"]),
+    ).toEqual({
+      fields: [select("kind", ["hall"]), select("result", ["ok"])],
+      tags: ["東京"],
+    });
+  });
+
   it("入力できる項目が無いスレッドでは fields を触らない", () => {
     const post: Post = { fields: [num("x", "1")], tags: ["ホール"] };
     expect(buildEditedPostFields(post, [], [], ["ホール", "ホール"])).toEqual({

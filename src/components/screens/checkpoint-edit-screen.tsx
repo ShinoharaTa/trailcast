@@ -8,6 +8,7 @@ import type {
   PostWithMeta,
   Location,
   TagGroup,
+  ThreadWithMeta,
 } from "@/lib/types";
 import { parseAtUri,
   stripRecordMeta,
@@ -25,6 +26,7 @@ import {
 import { locationToSave, parseLocation } from "@/lib/location";
 import { recordTagUsage } from "@/lib/pds/tags";
 import { tagKey, type TagCount } from "@/lib/tags";
+import { usePendingOptions } from "@/lib/use-pending-options";
 
 const MAX_TEXT = 200;
 
@@ -50,6 +52,10 @@ export interface CheckpointEditScreenProps {
   tagGroups?: TagGroup[];
   /** スレッド (所有者) の記録項目の定義 */
   fields?: FieldDef[];
+  /** スレッドの所有者か。所有者だけ select に選択肢をその場で追加できる */
+  isOwner?: boolean;
+  /** 保存前に選択肢を thread.fields に書き込んだあと、書き込み後のスレッドで呼ぶ */
+  onThreadUpdated?: (thread: ThreadWithMeta) => void;
   onSubmitted: () => void;
   onCancel: () => void;
 }
@@ -60,6 +66,8 @@ export function CheckpointEditScreen({
   excludeTagKeys,
   tagGroups,
   fields,
+  isOwner,
+  onThreadUpdated,
   onSubmitted,
   onCancel,
 }: CheckpointEditScreenProps) {
@@ -72,7 +80,16 @@ export function CheckpointEditScreen({
   const [fieldValues, setFieldValues] = useState<FieldValue[]>(() =>
     fieldValuesFromResolved(resolveFieldValues(post, fields ?? [])),
   );
-  const inputDefs = (fields ?? []).filter((d) => !d.archived);
+  // 編集画面で追加した選択肢 (所有者のみ)。保存するまで thread.fields には書かない
+  const { defs, handleAddOption, writePendingOptions } = usePendingOptions({
+    threadUri: post.thread,
+    fields,
+    isOwner,
+    onThreadUpdated,
+    fieldValues,
+    setFieldValues,
+  });
+  const inputDefs = defs.filter((d) => !d.archived);
   const [fieldsValid, setFieldsValid] = useState(true);
   const [checkpointAt, setCheckpointAt] = useState(post.checkpointAt);
   const [location, setLocation] = useState<Location | null>(() =>
@@ -87,12 +104,15 @@ export function CheckpointEditScreen({
     setSaving(true);
     setError(null);
     try {
+      // 追加した選択肢を先にスレッドへ書く。失敗したら投稿は保存しない (入力は残す)
+      const { defs: postDefs, values: postValues } =
+        await writePendingOptions();
       // 項目があるスレッドでは、タグから読み取っていた選択を fields に移し、
-      // そのタグを tags から外す。項目が無ければ fields は元のまま
+      // そのタグと選んだ選択肢と同名のタグを tags から外す。項目が無ければ fields は元のまま
       const { fields: recordFields, tags: recordTags } = buildEditedPostFields(
         post,
-        fields ?? [],
-        fieldValues,
+        postDefs,
+        postValues,
         tags,
       );
       await updatePost(post.rkey, {
@@ -157,6 +177,7 @@ export function CheckpointEditScreen({
           onChange={setFieldValues}
           onValidityChange={setFieldsValid}
           disabled={saving}
+          onAddOption={handleAddOption}
         />
 
         <TagInput

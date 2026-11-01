@@ -29,7 +29,7 @@ export interface FieldInputsProps {
    */
   onValidityChange?: (valid: boolean) => void;
   /**
-   * 渡したときだけ select の末尾に「＋ 追加」を出す (投稿画面の所有者用)。
+   * 渡したときだけ select の末尾に「＋ 追加」を出す (投稿・編集画面の所有者用)。
    * label は normalizeTag 済み。重複の判定と選択は呼び出し側で行う
    */
   onAddOption?: (fieldId: string, label: string) => void;

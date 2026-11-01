@@ -1624,6 +1624,9 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               excludeTagKeys={classificationKeys}
               tagGroups={thread.tagGroups}
               fields={thread.fields}
+              isOwner={isOwner}
+              // 保存前に選択肢を書き込んだら、保存に失敗しても定義は反映しておく
+              onThreadUpdated={setThread}
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
             />
