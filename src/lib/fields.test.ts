@@ -32,6 +32,7 @@ import {
   fieldDefsDirty,
   isBlankOptionLabel,
   optionLabelTaken,
+  optionCandidatesFromTags,
   orderFields,
   countSelectOptions,
   crosspostTagsFor,
@@ -464,6 +465,54 @@ describe("optionLabelTaken", () => {
   it("exceptId の選択肢自身は除く。空になる名前は重複扱いしない", () => {
     expect(optionLabelTaken(options, "ROOM", "b")).toBe(false);
     expect(optionLabelTaken(options, "#")).toBe(false);
+  });
+});
+
+describe("optionCandidatesFromTags", () => {
+  const tags = [
+    { tag: "解けた", key: "解けた", count: 5 },
+    { tag: "Room", key: "room", count: 3 },
+    { tag: "周遊", key: "周遊", count: 1 },
+  ];
+
+  it("同じ名前 (大文字小文字違い) の選択肢があるタグは除く", () => {
+    expect(
+      optionCandidatesFromTags(tags, [{ id: "a", label: "ROOM" }]).map(
+        (t) => t.tag,
+      ),
+    ).toEqual(["解けた", "周遊"]);
+  });
+
+  it("archived の選択肢と同名のタグも除く", () => {
+    const options = [{ id: "a", label: "解けた", archived: true }];
+    expect(optionCandidatesFromTags(tags, options).map((t) => t.tag)).toEqual([
+      "Room",
+      "周遊",
+    ]);
+  });
+
+  it("選択肢が空なら全件を入力順のまま返す", () => {
+    expect(optionCandidatesFromTags(tags, [])).toEqual(tags);
+  });
+
+  it("並びは入力順を保つ", () => {
+    const reversed = [...tags].reverse();
+    expect(
+      optionCandidatesFromTags(reversed, [{ id: "a", label: "Room" }]).map(
+        (t) => t.tag,
+      ),
+    ).toEqual(["周遊", "解けた"]);
+  });
+
+  it("先頭 MAX_FIELD_OPTIONS 件までに絞る", () => {
+    const many = Array.from({ length: MAX_FIELD_OPTIONS + 5 }, (_, i) => ({
+      tag: `t${i}`,
+      key: `t${i}`,
+      count: 100 - i,
+    }));
+    const out = optionCandidatesFromTags(many, []);
+    expect(out).toHaveLength(MAX_FIELD_OPTIONS);
+    expect(out[0].tag).toBe("t0");
   });
 });
 

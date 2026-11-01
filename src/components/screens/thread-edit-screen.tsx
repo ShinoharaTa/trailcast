@@ -48,6 +48,7 @@ import {
   MAX_FIELDS,
   MAX_FIELD_LABEL_LENGTH,
   MAX_FIELD_OPTIONS,
+  optionCandidatesFromTags,
   MAX_FIELD_UNIT_LENGTH,
   convertTagGroupsToFields,
   copyFieldDefs,
@@ -707,6 +708,10 @@ export function ThreadEditScreen({
                     key={f.id}
                     field={f}
                     error={fieldErrors.get(f.id)}
+                    tagCandidates={optionCandidatesFromTags(
+                      threadTags ?? [],
+                      f.options,
+                    )}
                     canMoveUp={!f.archived && i > 0}
                     canMoveDown={
                       !f.archived &&
@@ -1047,6 +1052,7 @@ const moveButtonClass =
 function FieldCard({
   field,
   error,
+  tagCandidates,
   canMoveUp,
   canMoveDown,
   onChange,
@@ -1057,6 +1063,8 @@ function FieldCard({
   field: EditableField;
   /** 保存を止める不備 (fieldDefErrors) */
   error?: "label" | "options";
+  /** 選択肢に追加できるスレッド内のタグ (optionCandidatesFromTags) */
+  tagCandidates: TagCount[];
   canMoveUp: boolean;
   canMoveDown: boolean;
   onChange: (patch: Partial<EditableField>) => void;
@@ -1111,13 +1119,15 @@ function FieldCard({
     onChange({ options: field.options.filter((o) => o.id !== id) });
   };
 
-  const addOption = () => {
-    const label = normalizeTag(optionDraft);
-    if (!label || field.options.length >= MAX_FIELD_OPTIONS) return;
+  // 追加できたら true。入力欄からの追加はそのときだけ入力を空にする
+  // (タグのチップから足したときは書きかけの入力を残す)
+  const addOption = (draft: string): boolean => {
+    const label = normalizeTag(draft);
+    if (!label || field.options.length >= MAX_FIELD_OPTIONS) return false;
     // 同じ名前 (大文字小文字を区別しない、archived 含む) の選択肢は追加しない
     if (optionLabelTaken(field.options, label)) {
       setDuplicateOptionId("new");
-      return;
+      return false;
     }
     setDuplicateOptionId(null);
     onChange({
@@ -1126,7 +1136,7 @@ function FieldCard({
         { id: generateFieldId(), label, archived: false, saved: false },
       ],
     });
-    setOptionDraft("");
+    return true;
   };
 
   return (
@@ -1333,7 +1343,7 @@ function FieldCard({
               // IME 変換中の Enter は変換確定なので無視する
               if (e.nativeEvent.isComposing || e.key !== "Enter") return;
               e.preventDefault();
-              addOption();
+              if (addOption(optionDraft)) setOptionDraft("");
             }}
             disabled={field.options.length >= MAX_FIELD_OPTIONS}
             placeholder="＋ 選択肢を追加（Enter）"
@@ -1351,6 +1361,29 @@ function FieldCard({
               選択肢を1つ以上追加してください
             </p>
           )}
+          {tagCandidates.length > 0 &&
+            field.options.length < MAX_FIELD_OPTIONS && (
+              // スレッドで使ってきた自由タグを、入力せずワンタップで
+              // 選択肢にできるようにする (#103)
+              <div className="mt-2">
+                <div className="mb-1 text-[11px] text-white/35">
+                  このスレッドのタグから追加
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {tagCandidates.map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => addOption(t.tag)}
+                      className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-white/60 transition hover:bg-indigo-500/20 hover:text-indigo-200"
+                    >
+                      + #{t.tag}
+                      <span className="ml-1 text-white/30">{t.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
         </div>
       )}
 
