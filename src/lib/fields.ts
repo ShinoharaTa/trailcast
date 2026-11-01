@@ -526,6 +526,19 @@ export function stripSelectedOptionTags(
   return tags.filter((t) => !keys.has(tagKey(t)));
 }
 
+/**
+ * 分類 (select の選択肢) に使っている label の tagKey。タグ候補・使用履歴から除外するのに使う。
+ * archived の項目・選択肢も含める (resolveFieldValues の fallback が archived も一致させるため)。
+ */
+export function selectOptionTagKeys(defs: FieldDef[]): Set<string> {
+  const keys = new Set<string>();
+  for (const def of defs) {
+    if (def.type !== "select") continue;
+    for (const opt of def.options ?? []) keys.add(tagKey(opt.label));
+  }
+  return keys;
+}
+
 // ─── 移行 ────────────────────────────────────────────────────
 
 /**

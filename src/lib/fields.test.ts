@@ -45,6 +45,7 @@ import {
   toFieldDef,
   sanitizeFieldsForRecord,
   sanitizePostFieldsForRecord,
+  selectOptionTagKeys,
   stripSelectedOptionTags,
   summarizeDuration,
   summarizeNumber,
@@ -53,7 +54,13 @@ import {
   type FieldSelection,
   type RangeSelection,
 } from "@/lib/fields";
-import { countTags, filterPostsByTags, groupTagCounts, tagKey } from "@/lib/tags";
+import {
+  countTags,
+  filterPostsByTags,
+  groupTagCounts,
+  tagKey,
+  tagsForUsage,
+} from "@/lib/tags";
 import type { FieldDef, FieldValue, TagGroup } from "@/lib/types";
 
 type Post = { tags?: string[]; fields?: FieldValue[] };
@@ -1705,5 +1712,66 @@ describe("投稿画面からの選択肢追加", () => {
     expect(
       remapSelectValues([select("place", ["tokyo", "p1"]), num("result", "1")], idMap),
     ).toEqual([select("place", ["tokyo"]), num("result", "1")]);
+  });
+});
+
+describe("selectOptionTagKeys", () => {
+  it("select の選択肢の tagKey を返し、select 以外は無視する", () => {
+    const defs: FieldDef[] = [
+      {
+        id: "result",
+        label: "結果",
+        type: "select",
+        options: [
+          { id: "ok", label: "解けた" },
+          { id: "ng", label: "Failed" },
+        ],
+      },
+      { id: "time", label: "時間", type: "duration" },
+      { id: "memo", label: "メモ", type: "text" },
+    ];
+    expect([...selectOptionTagKeys(defs)].sort()).toEqual(["failed", "解けた"].sort());
+  });
+
+  it("archived の項目・選択肢も含める", () => {
+    const defs: FieldDef[] = [
+      {
+        id: "a",
+        label: "A",
+        type: "select",
+        archived: true,
+        options: [{ id: "x", label: "旧" }],
+      },
+      {
+        id: "b",
+        label: "B",
+        type: "select",
+        options: [
+          { id: "y", label: "現" },
+          { id: "z", label: "退役", archived: true },
+        ],
+      },
+    ];
+    expect([...selectOptionTagKeys(defs)].sort()).toEqual(["旧", "現", "退役"].sort());
+  });
+
+  it("項目をまたいで同名の選択肢は 1 件にまとめる (大文字小文字は区別しない)", () => {
+    const defs: FieldDef[] = [
+      { id: "a", label: "A", type: "select", options: [{ id: "x", label: "Tokyo" }] },
+      { id: "b", label: "B", type: "select", options: [{ id: "y", label: "TOKYO" }] },
+    ];
+    expect([...selectOptionTagKeys(defs)]).toEqual(["tokyo"]);
+  });
+});
+
+describe("tagsForUsage", () => {
+  it("exclude の tagKey に一致するタグを外す (大文字小文字は区別しない)", () => {
+    expect(tagsForUsage(["Tokyo", "雨", "解けた"], new Set(["tokyo", "解けた"]))).toEqual([
+      "雨",
+    ]);
+  });
+
+  it("exclude なしなら正規化だけして、重複は残す", () => {
+    expect(tagsForUsage(["#雨", "雨", "  "])).toEqual(["雨", "雨"]);
   });
 });

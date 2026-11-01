@@ -85,6 +85,8 @@ export interface CheckpointPostScreenProps {
   threadTitle: string;
   /** このスレッドで既に使われているタグ。タグ候補の上位に出す */
   threadTags?: TagCount[];
+  /** 候補に出さず、タグ辞書にも数えないタグの tagKey (記録項目の選択肢名) */
+  excludeTagKeys?: ReadonlySet<string>;
   /** スレッドのタググループ。候補の最上段に見出し付きで出す */
   tagGroups?: TagGroup[];
   /** スレッド設定の既定タグ。初期値として入れる (外せる) */
@@ -102,6 +104,7 @@ export function CheckpointPostScreen({
   threadUri,
   threadTitle,
   threadTags,
+  excludeTagKeys,
   tagGroups,
   defaultTags,
   fields,
@@ -468,7 +471,7 @@ export function CheckpointPostScreen({
         createdAt,
       });
       // タグ辞書はサジェスト用のキャッシュなので、失敗しても投稿は成功扱い。
-      if (recordTags) await recordTagUsage(recordTags);
+      if (recordTags) await recordTagUsage(recordTags, { exclude: excludeTagKeys });
       onSubmitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : "投稿に失敗しました");
@@ -515,6 +518,7 @@ export function CheckpointPostScreen({
             value={tags}
             onChange={setTags}
             threadTags={threadTags}
+            excludeKeys={excludeTagKeys}
             tagGroups={tagGroups}
             disabled={submitting}
             hint={

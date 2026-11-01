@@ -21,6 +21,7 @@ import {
   dedupeTags,
   normalizeTag,
   tagKey,
+  tagsForUsage,
 } from "@/lib/tags";
 
 // 辞書はタグ入力欄を開くたびに読むため、DID をキーにしてセッション内で
@@ -82,12 +83,15 @@ export async function getTagIndex(): Promise<TagEntry[]> {
  * 同じタグが複数回現れればその回数だけ加算されるので、複数投稿の
  * 一括インポートも 1 回の呼び出しで正しく数えられる。
  *
+ * `exclude` の tagKey に一致するタグ (分類に使っている選択肢名) は反映しない。
+ *
  * 呼び出し側から見て失敗しても害がないよう、例外は投げず false を返す。
  */
-export async function recordTagUsage(tags: string[]): Promise<boolean> {
-  const applied = tags
-    .map(normalizeTag)
-    .filter((t): t is string => t !== null);
+export async function recordTagUsage(
+  tags: string[],
+  opts?: { exclude?: ReadonlySet<string> },
+): Promise<boolean> {
+  const applied = tagsForUsage(tags, opts?.exclude);
   if (applied.length === 0) return true;
   if (!hasActiveSession()) return false;
 

@@ -83,6 +83,8 @@ export interface ThreadEditScreenProps {
   thread: ThreadWithMeta;
   /** タグ絞り込みグループの入力サジェスト用。スレッド内で使用中のタグ */
   threadTags?: TagCount[];
+  /** 既定タグの候補に出さないタグの tagKey (記録項目の選択肢名) */
+  excludeTagKeys?: ReadonlySet<string>;
   onSubmitted: () => void;
   onCancel: () => void;
   onRequestDelete?: () => void;
@@ -96,6 +98,7 @@ export interface ThreadEditScreenProps {
 export function ThreadEditScreen({
   thread,
   threadTags,
+  excludeTagKeys,
   onSubmitted,
   onCancel,
   onRequestDelete,
@@ -512,6 +515,7 @@ export function ThreadEditScreen({
           value={defaultTags}
           onChange={setDefaultTags}
           threadTags={threadTags}
+          excludeKeys={excludeTagKeys}
           disabled={submitting}
           hint="このスレッドの新しいチェックポイントに最初から入ります。投稿ごとに外せます"
         />

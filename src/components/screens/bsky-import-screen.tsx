@@ -61,6 +61,11 @@ export interface BlueskyImportScreenProps {
   threadUri: string;
   /** スレッド設定の既定タグ。取り込んだ投稿にも付ける */
   defaultTags?: string[];
+  /**
+   * タグ辞書に数えないタグの tagKey (記録項目の選択肢名)。投稿の tags 自体は変えない
+   * (fields を書かないインポート投稿は、読み取り時に tags から選択肢として扱われるため)
+   */
+  excludeTagKeys?: ReadonlySet<string>;
   onSubmitted: () => void;
 }
 
@@ -83,6 +88,7 @@ export function BlueskyImportScreen({
   onClose,
   threadUri,
   defaultTags,
+  excludeTagKeys,
   onSubmitted,
 }: BlueskyImportScreenProps) {
   const { did } = useAuthStore();
@@ -332,7 +338,7 @@ export function BlueskyImportScreen({
         });
       }
       // 辞書更新はサジェスト用なので、まとめて 1 回だけ・失敗は無視する
-      if (importedTags.length > 0) await recordTagUsage(importedTags);
+      if (importedTags.length > 0) await recordTagUsage(importedTags, { exclude: excludeTagKeys });
       onSubmitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : "インポートに失敗しました");
