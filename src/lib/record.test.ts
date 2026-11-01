@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_RECORD_FILTER,
   NO_TEXT_TITLE,
+  THREAD_VIEWS,
+  THREAD_VIEW_LABELS,
   applyRecordFilter,
   countUnrecorded,
   defaultViewForRecord,
@@ -78,6 +80,15 @@ describe("effectiveDefaultView", () => {
     expect(effectiveDefaultView({ defaultView: "log" }, ["timeline", "log"])).toBe(
       "log",
     );
+  });
+});
+
+describe("THREAD_VIEW_LABELS", () => {
+  it("全表示に空でない表示名がある", () => {
+    for (const v of THREAD_VIEWS) {
+      expect(THREAD_VIEW_LABELS[v]).toBeTruthy();
+    }
+    expect(Object.keys(THREAD_VIEW_LABELS).sort()).toEqual([...THREAD_VIEWS].sort());
   });
 });
 

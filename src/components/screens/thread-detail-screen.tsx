@@ -16,8 +16,14 @@ import type {
 } from "@/lib/types";
 import { parseAtUri, buildAtUri, NSID_THREAD,
   effectiveSortOrder,
+  stripRecordMeta,
 } from "@/lib/types";
-import { getThread, deleteThread, listPostsForThread } from "@/lib/pds/threads";
+import {
+  getThread,
+  deleteThread,
+  listPostsForThread,
+  updateThread,
+} from "@/lib/pds/threads";
 import { deletePost, refreshFromSource } from "@/lib/pds/posts";
 import {
   createBookmark,
@@ -50,7 +56,9 @@ import { parseLocation } from "@/lib/location";
 import {
   AVAILABLE_THREAD_VIEWS,
   EMPTY_RECORD_FILTER,
+  THREAD_VIEW_LABELS,
   applyRecordFilter,
+  defaultViewForRecord,
   effectiveDefaultView,
   isRecordFilterActive,
   type RecordFilter,
@@ -854,6 +862,75 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const coverUrl = useBlobUrl(threadDidForBlobs, thread?.coverImage);
   const pdsUrl = usePdsUrl(threadDidForBlobs);
 
+  // 詳細から「いまの表示を既定にする」(所有者のみ)。保存中 / 直後 2 秒の完了表示 / 失敗
+  const [defaultViewSave, setDefaultViewSave] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const defaultViewSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  useEffect(
+    () => () => {
+      if (defaultViewSavedTimerRef.current) {
+        clearTimeout(defaultViewSavedTimerRef.current);
+      }
+    },
+    [],
+  );
+  // 表示やスレッドが変わったら、前の表示の完了・失敗を持ち越さない。
+  // 保存中は戻さない (戻すとボタンが押せるようになり二重に書き込める)
+  const threadUri = thread?.uri;
+  const currentThreadUriRef = useRef(threadUri);
+  useEffect(() => {
+    currentThreadUriRef.current = threadUri;
+    if (defaultViewSavedTimerRef.current) {
+      clearTimeout(defaultViewSavedTimerRef.current);
+      defaultViewSavedTimerRef.current = null;
+    }
+    setDefaultViewSave((s) => (s === "saving" ? s : "idle"));
+  }, [view, threadUri]);
+
+  const saveDefaultView = async () => {
+    if (!thread || defaultViewSave === "saving") return;
+    setDefaultViewSave("saving");
+    const startedUri = thread.uri;
+    try {
+      // 触っていないフィールドを古い値で上書きしないよう、取り直した record を土台にする
+      const { repo, rkey } = parseAtUri(startedUri);
+      const fresh = await getThread(repo, rkey);
+      const updated = await updateThread(
+        rkey,
+        {
+          ...stripRecordMeta(fresh),
+          defaultView: defaultViewForRecord(view),
+          // 表示の設定は活動ではないので一覧の並びを動かさない (OG backfill と同じ)。
+          // 未設定なら createdAt を入れて updateThread の自動スタンプ (now) を避ける
+          updatedAt: fresh.updatedAt ?? fresh.createdAt,
+        },
+        { skipOgImage: true },
+      );
+      // 保存中に別のスレッドへ移っていたら、今のスレッドを上書きしない
+      if (currentThreadUriRef.current !== startedUri) {
+        setDefaultViewSave("idle");
+        return;
+      }
+      setThread(updated);
+      setDefaultViewSave("saved");
+      if (defaultViewSavedTimerRef.current) {
+        clearTimeout(defaultViewSavedTimerRef.current);
+      }
+      defaultViewSavedTimerRef.current = setTimeout(() => {
+        defaultViewSavedTimerRef.current = null;
+        setDefaultViewSave("idle");
+      }, 2000);
+    } catch (e) {
+      console.error("Failed to save default view:", e);
+      setDefaultViewSave(
+        currentThreadUriRef.current === startedUri ? "error" : "idle",
+      );
+    }
+  };
+
   const executeDeleteThread = async () => {
     if (!thread) return;
     setConfirmTarget(null);
@@ -1186,6 +1263,35 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       {/* Timeline / 記録 */}
       <div className="mx-auto max-w-3xl px-4 pt-10 pb-28 sm:px-5">
         <ViewSwitch view={view} onChange={setView} />
+
+        {/* 終了したスレッドでも変えられる (編集画面と同じ扱い) */}
+        {defaultViewSave === "saved" ? (
+          <div
+            role="status"
+            className="-mt-4 mb-4 text-right text-[11px] text-white/40"
+          >
+            既定の表示にしました
+          </div>
+        ) : (
+          isOwner &&
+          view !== effectiveDefaultView(thread, AVAILABLE_THREAD_VIEWS) && (
+            <div className="-mt-4 mb-4 text-right">
+              <button
+                type="button"
+                onClick={saveDefaultView}
+                disabled={defaultViewSave === "saving"}
+                className="text-[11px] text-indigo-300 transition hover:text-indigo-200 disabled:opacity-50"
+              >
+                「{THREAD_VIEW_LABELS[view]}」を既定の表示にする
+              </button>
+              {defaultViewSave === "error" && (
+                <div role="alert" className="text-[11px] text-red-400">
+                  既定の表示を保存できませんでした
+                </div>
+              )}
+            </div>
+          )
+        )}
 
         {view !== "timeline" && (
           <>
