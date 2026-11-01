@@ -33,6 +33,7 @@ import {
   isBlankOptionLabel,
   optionLabelTaken,
   optionCandidatesFromTags,
+  OPTION_CANDIDATE_LIMIT,
   orderFields,
   countSelectOptions,
   crosspostTagsFor,
@@ -504,15 +505,15 @@ describe("optionCandidatesFromTags", () => {
     ).toEqual(["周遊", "解けた"]);
   });
 
-  it("先頭 MAX_FIELD_OPTIONS 件までに絞る", () => {
-    const many = Array.from({ length: MAX_FIELD_OPTIONS + 5 }, (_, i) => ({
-      tag: `t${i}`,
-      key: `t${i}`,
-      count: 100 - i,
-    }));
+  it("先頭 OPTION_CANDIDATE_LIMIT 件までに絞る", () => {
+    const many = Array.from(
+      { length: OPTION_CANDIDATE_LIMIT + 5 },
+      (_, i) => ({ tag: `t${i}`, key: `t${i}`, count: 100 - i }),
+    );
     const out = optionCandidatesFromTags(many, []);
-    expect(out).toHaveLength(MAX_FIELD_OPTIONS);
+    expect(out).toHaveLength(OPTION_CANDIDATE_LIMIT);
     expect(out[0].tag).toBe("t0");
+    expect(out.at(-1)?.tag).toBe(`t${OPTION_CANDIDATE_LIMIT - 1}`);
   });
 });
 

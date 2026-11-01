@@ -697,10 +697,13 @@ export function optionLabelTaken(
   );
 }
 
+/** スレッド編集で出す「このスレッドのタグから追加」候補の最大件数 */
+export const OPTION_CANDIDATE_LIMIT = 50;
+
 /**
  * スレッド内のタグから、選択肢に追加できる候補を返す (#103)。
  * 同じ名前 (normalizeTag 後に tagKey 一致、archived 含む) の選択肢があるタグは除く。
- * 並びは入力順 (件数順) のまま、先頭 MAX_FIELD_OPTIONS 件まで。
+ * 並びは入力順 (件数順) のまま、先頭 OPTION_CANDIDATE_LIMIT 件まで。
  */
 export function optionCandidatesFromTags(
   tags: TagCount[],
@@ -708,7 +711,7 @@ export function optionCandidatesFromTags(
 ): TagCount[] {
   return tags
     .filter((t) => !optionLabelTaken(options, t.tag))
-    .slice(0, MAX_FIELD_OPTIONS);
+    .slice(0, OPTION_CANDIDATE_LIMIT);
 }
 
 /** 項目名の空判定。trim して空なら空 */

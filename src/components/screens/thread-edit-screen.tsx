@@ -1375,10 +1375,13 @@ function FieldCard({
                       key={t.key}
                       type="button"
                       onClick={() => addOption(t.tag)}
-                      className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-white/60 transition hover:bg-indigo-500/20 hover:text-indigo-200"
+                      aria-label={`選択肢に ${t.tag} を追加`}
+                      className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-white/60 transition hover:bg-indigo-500/20 hover:text-indigo-200 disabled:opacity-40"
                     >
                       + #{t.tag}
-                      <span className="ml-1 text-white/30">{t.count}</span>
+                      <span aria-hidden className="ml-1 text-white/30">
+                        {t.count}
+                      </span>
                     </button>
                   ))}
                 </div>
