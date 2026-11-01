@@ -154,12 +154,17 @@ export function ThreadCreateScreen({ navigate }: NavigationProps) {
           <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
             <div className="min-w-0">
               <span className="text-sm text-white/70">記録メイン</span>
-              <p className="text-[11px] text-white/40">
+              <p className="text-[11px] leading-relaxed text-white/40">
                 開いたときに記録帳を表示します。タイムラインにはいつでも切り替えられます
               </p>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={recordMain}
+              aria-label="記録メイン"
               onClick={() => setRecordMain((v) => !v)}
+              disabled={submitting}
               className="flex shrink-0 items-center gap-2"
             >
               <div
