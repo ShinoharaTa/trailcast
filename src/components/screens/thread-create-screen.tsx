@@ -14,11 +14,13 @@ import {
   sanitizeDefaultTagsForRecord,
   sanitizeThreadTagsForRecord,
 } from "@/lib/tags";
+import { defaultViewForRecord } from "@/lib/record";
 
 export function ThreadCreateScreen({ navigate }: NavigationProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<"private" | "public">("private");
+  const [recordMain, setRecordMain] = useState(false);
   const [threadTags, setThreadTags] = useState<string[]>([]);
   const [defaultTags, setDefaultTags] = useState<string[]>([]);
   const [coverFile, setCoverFile] = useState<File | null>(null);
@@ -58,6 +60,7 @@ export function ThreadCreateScreen({ navigate }: NavigationProps) {
           tags: sanitizeThreadTagsForRecord(threadTags),
           defaultTags: sanitizeDefaultTagsForRecord(defaultTags),
           coverImage,
+          defaultView: defaultViewForRecord(recordMain ? "log" : "timeline"),
           createdAt: new Date().toISOString(),
         },
         { coverBlob },
@@ -143,6 +146,35 @@ export function ThreadCreateScreen({ navigate }: NavigationProps) {
                 <div
                   className={`size-5 rounded-full bg-white shadow transition-transform ${
                     visibility === "public" ? "translate-x-5" : ""
+                  }`}
+                />
+              </div>
+            </button>
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="min-w-0">
+              <span className="text-sm text-white/70">記録メイン</span>
+              <p className="text-[11px] leading-relaxed text-white/40">
+                開いたときに記録帳を表示します。タイムラインにはいつでも切り替えられます
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={recordMain}
+              aria-label="記録メイン"
+              onClick={() => setRecordMain((v) => !v)}
+              disabled={submitting}
+              className="flex shrink-0 items-center gap-2"
+            >
+              <div
+                className={`relative h-6 w-11 rounded-full p-0.5 transition ${
+                  recordMain ? "bg-emerald-500" : "bg-surface-700"
+                }`}
+              >
+                <div
+                  className={`size-5 rounded-full bg-white shadow transition-transform ${
+                    recordMain ? "translate-x-5" : ""
                   }`}
                 />
               </div>
