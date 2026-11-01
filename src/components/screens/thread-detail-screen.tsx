@@ -877,17 +877,31 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     },
     [],
   );
+  // 表示やスレッドが変わったら、前の表示の完了・失敗を持ち越さない
+  const threadUri = thread?.uri;
+  useEffect(() => {
+    if (defaultViewSavedTimerRef.current) {
+      clearTimeout(defaultViewSavedTimerRef.current);
+      defaultViewSavedTimerRef.current = null;
+    }
+    setDefaultViewSave("idle");
+  }, [view, threadUri]);
 
   const saveDefaultView = async () => {
     if (!thread || defaultViewSave === "saving") return;
     setDefaultViewSave("saving");
     try {
+      // 触っていないフィールドを古い値で上書きしないよう、取り直した record を土台にする
+      const { repo, rkey } = parseAtUri(thread.uri);
+      const fresh = await getThread(repo, rkey);
       const updated = await updateThread(
-        thread.rkey,
+        rkey,
         {
-          // 表示の設定は活動ではないので updatedAt は spread の値のまま (OG backfill と同じ)
-          ...stripRecordMeta(thread),
+          ...stripRecordMeta(fresh),
           defaultView: defaultViewForRecord(view),
+          // 表示の設定は活動ではないので一覧の並びを動かさない (OG backfill と同じ)。
+          // 未設定なら createdAt を入れて updateThread の自動スタンプ (now) を避ける
+          updatedAt: fresh.updatedAt ?? fresh.createdAt,
         },
         { skipOgImage: true },
       );
@@ -1241,7 +1255,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
         {/* 終了したスレッドでも変えられる (編集画面と同じ扱い) */}
         {defaultViewSave === "saved" ? (
-          <div className="-mt-4 mb-4 text-right text-[11px] text-white/40">
+          <div
+            role="status"
+            className="-mt-4 mb-4 text-right text-[11px] text-white/40"
+          >
             既定の表示にしました
           </div>
         ) : (
@@ -1257,7 +1274,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 「{THREAD_VIEW_LABELS[view]}」を既定の表示にする
               </button>
               {defaultViewSave === "error" && (
-                <div className="text-[11px] text-red-400">
+                <div role="alert" className="text-[11px] text-red-400">
                   既定の表示を保存できませんでした
                 </div>
               )}
