@@ -45,6 +45,11 @@ export interface TagInputProps {
   onChange: (tags: string[]) => void;
   /** 表示中スレッドで既に使われているタグ。「このスレッドのタグ」として出す */
   threadTags?: TagCount[];
+  /**
+   * 候補に出さないタグの tagKey (分類に使っている選択肢名など)。
+   * 「このスレッドのタグ」「よく使うタグ」から除く。手入力は妨げない
+   */
+  excludeKeys?: ReadonlySet<string>;
   /** スレッドに定義されたタググループ。見出し付きで最上段に出す */
   tagGroups?: TagGroup[];
   disabled?: boolean;
@@ -72,6 +77,7 @@ export function TagInput({
   value,
   onChange,
   threadTags = [],
+  excludeKeys,
   tagGroups,
   disabled = false,
   hint,
@@ -105,8 +111,10 @@ export function TagInput({
   // このスレッドのタグ (件数順)。グループに出したものは重複して出さない
   const threadSection = useMemo(
     () =>
-      threadTags.filter((t) => !groupTagKeys.has(t.key)).map((t) => t.tag),
-    [threadTags, groupTagKeys],
+      threadTags
+        .filter((t) => !groupTagKeys.has(t.key) && !excludeKeys?.has(t.key))
+        .map((t) => t.tag),
+    [threadTags, groupTagKeys, excludeKeys],
   );
 
   // よく使うタグ (個人辞書、使用回数 → 直近使用順)。グループ・スレッド分は除く
@@ -115,7 +123,11 @@ export function TagInput({
     return dictionary
       .filter((e) => {
         const key = tagKey(e.tag);
-        return !groupTagKeys.has(key) && !threadKeys.has(key);
+        return (
+          !groupTagKeys.has(key) &&
+          !threadKeys.has(key) &&
+          !excludeKeys?.has(key)
+        );
       })
       .sort(
         (a, b) =>
@@ -124,7 +136,7 @@ export function TagInput({
           (tagKey(a.tag) < tagKey(b.tag) ? -1 : 1),
       )
       .map((e) => e.tag);
-  }, [dictionary, groupTagKeys, threadTags]);
+  }, [dictionary, groupTagKeys, threadTags, excludeKeys]);
 
   // 入力中の文字列での前方一致絞り込み。チップをその場でフィルタする
   const query = tagKey(draft.trim().replace(/^[#＃]+/, ""));

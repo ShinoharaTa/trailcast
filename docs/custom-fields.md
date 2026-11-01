@@ -269,7 +269,13 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
 
 ### tagIndex（個人辞書）
 - select の値は tagIndex に **入れない**（辞書は自由タグ用）。変換で tags から
-  外れたタグは辞書に残るが、サジェストの害は小さい。放置。
+  外れたタグは辞書に残るが、辞書からは消さず表示側で除外する（#99）。
+  - タグ入力欄（投稿 / 編集 / スレッドの既定タグ）は、そのスレッドの select の選択肢名
+    （archived 含む、`selectOptionTagKeys`）を「このスレッドのタグ」「よく使うタグ」に出さない。
+    別スレッドでは自由タグかもしれないので、辞書エントリ自体は残す
+  - `recordTagUsage` も同じ集合を `exclude` で受け取り、選択肢名と同名のタグを数えない
+    （手打ちの同名タグ・編集での追加・Bluesky インポート）。`rebuildTagIndexFromPosts` は
+    defs を参照できないので従来どおり
 
 ---
 

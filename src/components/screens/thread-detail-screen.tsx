@@ -42,10 +42,10 @@ import {
   PlusIcon,
   StarIcon,
 } from "@/components/ui/icons";
-import { countTags } from "@/lib/tags";
 import {
   countFreeTags,
   initialFreeTagsForEdit,
+  selectOptionTagKeys,
   pruneFieldSelection,
   pruneRangeSelection,
   setRangeBound,
@@ -558,7 +558,6 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     setFilter(EMPTY_RECORD_FILTER);
   }, [thread]);
 
-  const threadTagCounts = useMemo(() => countTags(posts), [posts]);
   // タグから記録項目へ書き換えられる自分の投稿 (#62)。所有者の判定は early return の
   // 後なので myDid 基準で計算する (参加者・未ログインでは記録帳に入口を出さない)
   const migratePlans = useMemo(
@@ -570,6 +569,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     () => countFreeTags(posts, defs),
     [posts, defs],
   );
+  // 記録項目の選択肢名。タグ候補・タグ辞書から除く (#99)
+  const classificationKeys = useMemo(() => selectOptionTagKeys(defs), [defs]);
   const visiblePosts = useMemo(
     () => applyRecordFilter(orderedPosts, defs, filter, { timeline: true }),
     [orderedPosts, defs, filter],
@@ -1605,7 +1606,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             <CheckpointPostScreen
               threadUri={thread.uri}
               threadTitle={thread.title}
-              threadTags={threadTagCounts}
+              threadTags={freeTagCounts}
+              excludeTagKeys={classificationKeys}
               tagGroups={thread.tagGroups}
               defaultTags={thread.defaultTags}
               fields={thread.fields}
@@ -1618,7 +1620,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           {modal === "checkpoint-edit" && editingPost && (
             <CheckpointEditScreen
               post={editingPost}
-              threadTags={threadTagCounts}
+              threadTags={freeTagCounts}
+              excludeTagKeys={classificationKeys}
               tagGroups={thread.tagGroups}
               fields={thread.fields}
               onSubmitted={onModalSubmitted}
@@ -1629,7 +1632,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             thread && (
             <ThreadEditScreen
               thread={thread}
-              threadTags={threadTagCounts}
+              threadTags={freeTagCounts}
+              excludeTagKeys={classificationKeys}
               initialSection={
                 modal === "thread-edit-fields" ? "fields" : undefined
               }
@@ -1661,6 +1665,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         onClose={closeModal}
         threadUri={thread.uri}
         defaultTags={thread.defaultTags}
+        excludeTagKeys={classificationKeys}
         onSubmitted={onModalSubmitted}
       />
 

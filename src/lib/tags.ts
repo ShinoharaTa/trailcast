@@ -104,6 +104,20 @@ export function dedupeTags(tags: string[]): string[] {
 }
 
 /**
+ * タグ辞書に反映するタグ (純粋な計算部分)。正規化して、`exclude` の tagKey に
+ * 一致するもの (分類に使っている選択肢名など) を外す。重複はそのまま残す
+ * (recordTagUsage は出現回数だけ加算するため)。
+ */
+export function tagsForUsage(
+  tags: string[],
+  exclude?: ReadonlySet<string>,
+): string[] {
+  return tags
+    .map(normalizeTag)
+    .filter((t): t is string => t !== null && !exclude?.has(tagKey(t)));
+}
+
+/**
  * 保存直前のサニタイズ。正規化 → 重複除去 → 件数上限。
  * 空配列になった場合は undefined を返し、レコードに空の `tags: []` を
  * 書き込まないようにする。

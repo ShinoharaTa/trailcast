@@ -44,6 +44,8 @@ export interface CheckpointEditScreenProps {
   post: PostWithMeta;
   /** このスレッドで既に使われているタグ。タグ候補の上位に出す */
   threadTags?: TagCount[];
+  /** 候補に出さず、タグ辞書にも数えないタグの tagKey (記録項目の選択肢名) */
+  excludeTagKeys?: ReadonlySet<string>;
   /** スレッドのタググループ。候補の最上段に見出し付きで出す */
   tagGroups?: TagGroup[];
   /** スレッド (所有者) の記録項目の定義 */
@@ -55,6 +57,7 @@ export interface CheckpointEditScreenProps {
 export function CheckpointEditScreen({
   post,
   threadTags,
+  excludeTagKeys,
   tagGroups,
   fields,
   onSubmitted,
@@ -105,7 +108,7 @@ export function CheckpointEditScreen({
       // 編集で新しく付いたタグだけを辞書に加算する (再保存で回数が膨らまないように)
       const before = new Set((post.tags ?? []).map(tagKey));
       const added = (recordTags ?? []).filter((t) => !before.has(tagKey(t)));
-      if (added.length > 0) await recordTagUsage(added);
+      if (added.length > 0) await recordTagUsage(added, { exclude: excludeTagKeys });
       onSubmitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存に失敗しました");
@@ -160,6 +163,7 @@ export function CheckpointEditScreen({
           value={tags}
           onChange={setTags}
           threadTags={threadTags}
+          excludeKeys={excludeTagKeys}
           tagGroups={tagGroups}
           disabled={saving}
           hint="スレッド内の絞り込みに使えます"
