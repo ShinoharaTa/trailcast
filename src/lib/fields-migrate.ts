@@ -2,16 +2,18 @@
 //
 // post.fields を持たず、tags から記録項目の値を読み取っている自分の投稿を対象に、
 // 編集画面で何も触らずに保存したのと同じ fields / tags を 1 件ずつ書き戻す。
+// post.fields を持つ投稿も、tags に選択肢と同名のタグが残っていれば対象にする (#104)。
 // 仕様は docs/remaining-spec.md §3、書き込みルールは docs/custom-fields.md §3。
 
 import {
   buildEditedPostFields,
   fieldValuesFromResolved,
   resolveFieldValues,
+  sanitizePostFieldsForRecord,
 } from "@/lib/fields";
 import { rewritePost } from "@/lib/pds/posts";
 import { sortByCheckpoint, splitPostText } from "@/lib/record";
-import { tagKey } from "@/lib/tags";
+import { sanitizeTagsForRecord, tagKey } from "@/lib/tags";
 import type { FieldDef, FieldValue, PostRecord, PostWithMeta } from "@/lib/types";
 import { parseAtUri, stripRecordMeta } from "@/lib/types";
 
@@ -29,7 +31,7 @@ export interface MigrationPlan {
 
 /**
  * 対象なら計画、対象外なら null。
- * - post.fields がプロパティとして存在する → null
+ * - post.fields がプロパティとして存在する → planTaggedFieldsMigration (#104)
  * - defs に入力できる項目（非 archived）が無い → null（buildEditedPostFields が fields を書かないため）
  * - resolveFieldValues(post, defs) に source "tags" の値が無い → null
  * 書き込み内容は buildEditedPostFields(post, defs, fieldValuesFromResolved(resolved), post.tags ?? []) と同一
@@ -38,7 +40,7 @@ export function planFieldMigration(
   post: PostWithMeta,
   defs: FieldDef[],
 ): MigrationPlan | null {
-  if (post.fields !== undefined) return null;
+  if (post.fields !== undefined) return planTaggedFieldsMigration(post, defs);
   if (!defs.some((d) => !d.archived)) return null;
   const resolved = resolveFieldValues(post, defs);
   const fromTags = resolved.filter((r) => r.source === "tags" && r.optionIds);
@@ -78,6 +80,70 @@ export function planFieldMigration(
     (t) => movedKeys.has(tagKey(t)) && !kept.has(tagKey(t)),
   );
 
+  return { post, fields, tags, movedTags, moved };
+}
+
+/**
+ * post.fields を持つ投稿で、tags に選択肢と同名のタグが残っているもの (#104)。
+ * - 対象は非 archived の select 項目の、非 archived の選択肢で、tagKey が post.tags に一致するもの
+ * - 既に選択済みの選択肢と同名のタグは tags から外すだけ (fields は変わらない)
+ * - multiple: 既存の選択 + 一致した選択肢 (定義順)
+ * - 1 つだけ: 既存の値が空で一致がちょうど 1 件のときだけ書く。値あり・一致 2 件以上は
+ *   その項目をスキップしてタグを残す (明示的な選択を上書きしない／曖昧なものを決めない)
+ * - 書く項目も外すタグも無ければ null
+ */
+function planTaggedFieldsMigration(
+  post: PostWithMeta,
+  defs: FieldDef[],
+): MigrationPlan | null {
+  const postFields = post.fields ?? [];
+  const tagKeys = new Set((post.tags ?? []).map(tagKey));
+  if (tagKeys.size === 0) return null;
+
+  const updated = new Map<string, FieldValue>();
+  const moved: MigrationPlan["moved"] = [];
+  const movedKeys = new Set<string>();
+  for (const def of defs) {
+    if (def.type !== "select" || def.archived) continue;
+    const current = postFields.find((v) => v.field === def.id);
+    const selected = current && "options" in current ? current.options : [];
+    const selectedSet = new Set(selected);
+    const hits = (def.options ?? []).filter(
+      (o) => !o.archived && tagKeys.has(tagKey(o.label)),
+    );
+    // 既に選んである選択肢: タグを外すだけ
+    const redundant = hits.filter((o) => selectedSet.has(o.id));
+    let added = hits.filter((o) => !selectedSet.has(o.id));
+    if (!def.multiple && (selected.length > 0 || added.length !== 1)) added = [];
+    if (added.length > 0) {
+      updated.set(def.id, {
+        $type: "net.shino3.trailcast.post#selectValue",
+        field: def.id,
+        options: [...selected, ...added.map((o) => o.id)],
+      });
+    }
+    const labels = hits
+      .filter((o) => selectedSet.has(o.id) || added.includes(o))
+      .map((o) => o.label);
+    if (labels.length === 0) continue;
+    for (const o of [...redundant, ...added]) movedKeys.add(tagKey(o.label));
+    moved.push({ field: def, labels });
+  }
+  if (moved.length === 0) return null;
+
+  const merged = postFields.map((v) => updated.get(v.field) ?? v);
+  for (const [id, v] of updated) {
+    if (!postFields.some((x) => x.field === id)) merged.push(v);
+  }
+  // 触っていない項目は元の値のまま (1 つだけの select に複数入っていても絞らない)
+  const keepMultiple = new Set(
+    postFields.map((v) => v.field).filter((id) => !updated.has(id)),
+  );
+  const fields = sanitizePostFieldsForRecord(merged, defs, { keepMultiple }) ?? [];
+  const tags = sanitizeTagsForRecord(
+    (post.tags ?? []).filter((t) => !movedKeys.has(tagKey(t))),
+  );
+  const movedTags = (post.tags ?? []).filter((t) => movedKeys.has(tagKey(t)));
   return { post, fields, tags, movedTags, moved };
 }
 
