@@ -16,8 +16,14 @@ import type {
 } from "@/lib/types";
 import { parseAtUri, buildAtUri, NSID_THREAD,
   effectiveSortOrder,
+  stripRecordMeta,
 } from "@/lib/types";
-import { getThread, deleteThread, listPostsForThread } from "@/lib/pds/threads";
+import {
+  getThread,
+  deleteThread,
+  listPostsForThread,
+  updateThread,
+} from "@/lib/pds/threads";
 import { deletePost, refreshFromSource } from "@/lib/pds/posts";
 import {
   createBookmark,
@@ -50,7 +56,9 @@ import { parseLocation } from "@/lib/location";
 import {
   AVAILABLE_THREAD_VIEWS,
   EMPTY_RECORD_FILTER,
+  THREAD_VIEW_LABELS,
   applyRecordFilter,
+  defaultViewForRecord,
   effectiveDefaultView,
   isRecordFilterActive,
   type RecordFilter,
@@ -854,6 +862,50 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const coverUrl = useBlobUrl(threadDidForBlobs, thread?.coverImage);
   const pdsUrl = usePdsUrl(threadDidForBlobs);
 
+  // 詳細から「いまの表示を既定にする」(所有者のみ)。保存中 / 直後 2 秒の完了表示 / 失敗
+  const [defaultViewSave, setDefaultViewSave] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const defaultViewSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  useEffect(
+    () => () => {
+      if (defaultViewSavedTimerRef.current) {
+        clearTimeout(defaultViewSavedTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const saveDefaultView = async () => {
+    if (!thread || defaultViewSave === "saving") return;
+    setDefaultViewSave("saving");
+    try {
+      const updated = await updateThread(
+        thread.rkey,
+        {
+          // 表示の設定は活動ではないので updatedAt は spread の値のまま (OG backfill と同じ)
+          ...stripRecordMeta(thread),
+          defaultView: defaultViewForRecord(view),
+        },
+        { skipOgImage: true },
+      );
+      setThread(updated);
+      setDefaultViewSave("saved");
+      if (defaultViewSavedTimerRef.current) {
+        clearTimeout(defaultViewSavedTimerRef.current);
+      }
+      defaultViewSavedTimerRef.current = setTimeout(() => {
+        defaultViewSavedTimerRef.current = null;
+        setDefaultViewSave("idle");
+      }, 2000);
+    } catch (e) {
+      console.error("Failed to save default view:", e);
+      setDefaultViewSave("error");
+    }
+  };
+
   const executeDeleteThread = async () => {
     if (!thread) return;
     setConfirmTarget(null);
@@ -1186,6 +1238,32 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       {/* Timeline / 記録 */}
       <div className="mx-auto max-w-3xl px-4 pt-10 pb-28 sm:px-5">
         <ViewSwitch view={view} onChange={setView} />
+
+        {/* 終了したスレッドでも変えられる (編集画面と同じ扱い) */}
+        {defaultViewSave === "saved" ? (
+          <div className="-mt-4 mb-4 text-right text-[11px] text-white/40">
+            既定の表示にしました
+          </div>
+        ) : (
+          isOwner &&
+          view !== effectiveDefaultView(thread, AVAILABLE_THREAD_VIEWS) && (
+            <div className="-mt-4 mb-4 text-right">
+              <button
+                type="button"
+                onClick={saveDefaultView}
+                disabled={defaultViewSave === "saving"}
+                className="text-[11px] text-indigo-300 transition hover:text-indigo-200 disabled:opacity-50"
+              >
+                「{THREAD_VIEW_LABELS[view]}」を既定の表示にする
+              </button>
+              {defaultViewSave === "error" && (
+                <div className="text-[11px] text-red-400">
+                  既定の表示を保存できませんでした
+                </div>
+              )}
+            </div>
+          )
+        )}
 
         {view !== "timeline" && (
           <>

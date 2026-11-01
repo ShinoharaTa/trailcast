@@ -28,6 +28,12 @@ export const THREAD_VIEWS: readonly ThreadView[] = ["timeline", "log", "review"]
 export const DEFAULT_THREAD_VIEW: ThreadView = "timeline";
 /** いま UI がある表示 */
 export const AVAILABLE_THREAD_VIEWS: readonly ThreadView[] = THREAD_VIEWS;
+/** 表示名 (編集画面の既定の表示・詳細の「既定の表示にする」で共有) */
+export const THREAD_VIEW_LABELS: Record<ThreadView, string> = {
+  timeline: "タイムライン",
+  log: "記録帳",
+  review: "ふりかえり",
+};
 
 /**
  * 初期表示。未設定・未知の値は "timeline"。

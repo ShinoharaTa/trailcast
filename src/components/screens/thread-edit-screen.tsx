@@ -17,6 +17,7 @@ import {
 } from "@/lib/types";
 import {
   AVAILABLE_THREAD_VIEWS,
+  THREAD_VIEW_LABELS,
   defaultViewToSave,
   effectiveDefaultView,
 } from "@/lib/record";
@@ -597,26 +598,20 @@ export function ThreadEditScreen({
             </div>
           </div>
           <div className="flex gap-2" role="radiogroup" aria-label="既定の表示">
-            {(
-              [
-                { view: "timeline", label: "タイムライン" },
-                { view: "log", label: "記録帳" },
-                { view: "review", label: "ふりかえり" },
-              ] as const
-            ).map((o) => (
+            {(["timeline", "log", "review"] as const).map((v) => (
               <button
-                key={o.view}
+                key={v}
                 type="button"
                 role="radio"
-                aria-checked={defaultView === o.view}
-                onClick={() => setDefaultView(o.view)}
+                aria-checked={defaultView === v}
+                onClick={() => setDefaultView(v)}
                 className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                  defaultView === o.view
+                  defaultView === v
                     ? "border-indigo-400/60 bg-indigo-500/15 text-white"
                     : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/5"
                 }`}
               >
-                {o.label}
+                {THREAD_VIEW_LABELS[v]}
               </button>
             ))}
           </div>
