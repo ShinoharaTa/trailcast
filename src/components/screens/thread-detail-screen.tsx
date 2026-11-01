@@ -877,22 +877,26 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     },
     [],
   );
-  // 表示やスレッドが変わったら、前の表示の完了・失敗を持ち越さない
+  // 表示やスレッドが変わったら、前の表示の完了・失敗を持ち越さない。
+  // 保存中は戻さない (戻すとボタンが押せるようになり二重に書き込める)
   const threadUri = thread?.uri;
+  const currentThreadUriRef = useRef(threadUri);
   useEffect(() => {
+    currentThreadUriRef.current = threadUri;
     if (defaultViewSavedTimerRef.current) {
       clearTimeout(defaultViewSavedTimerRef.current);
       defaultViewSavedTimerRef.current = null;
     }
-    setDefaultViewSave("idle");
+    setDefaultViewSave((s) => (s === "saving" ? s : "idle"));
   }, [view, threadUri]);
 
   const saveDefaultView = async () => {
     if (!thread || defaultViewSave === "saving") return;
     setDefaultViewSave("saving");
+    const startedUri = thread.uri;
     try {
       // 触っていないフィールドを古い値で上書きしないよう、取り直した record を土台にする
-      const { repo, rkey } = parseAtUri(thread.uri);
+      const { repo, rkey } = parseAtUri(startedUri);
       const fresh = await getThread(repo, rkey);
       const updated = await updateThread(
         rkey,
@@ -905,6 +909,11 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         },
         { skipOgImage: true },
       );
+      // 保存中に別のスレッドへ移っていたら、今のスレッドを上書きしない
+      if (currentThreadUriRef.current !== startedUri) {
+        setDefaultViewSave("idle");
+        return;
+      }
       setThread(updated);
       setDefaultViewSave("saved");
       if (defaultViewSavedTimerRef.current) {
@@ -916,7 +925,9 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       }, 2000);
     } catch (e) {
       console.error("Failed to save default view:", e);
-      setDefaultViewSave("error");
+      setDefaultViewSave(
+        currentThreadUriRef.current === startedUri ? "error" : "idle",
+      );
     }
   };
 
