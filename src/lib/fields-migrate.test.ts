@@ -272,6 +272,49 @@ describe("planFieldMigration (fields あり, #104)", () => {
     expect(out?.fields).toEqual([select("result", ["ok", "ng"]), select("tags", ["solved"])]);
   });
 
+  describe("既存の fields に理解できない値があれば null", () => {
+    const memo: FieldDef = { id: "memo", label: "メモ", type: "text" };
+    const defs2 = [tagsDef, result, memo];
+    const cases: [string, FieldValue[]][] = [
+      ["定義に無い項目 (ghost field)", [select("ghost", ["x"])]],
+      ["single の未知の選択肢 id", [select("result", ["zzz"])]],
+      [
+        "text の前後空白",
+        [{ $type: "net.shino3.trailcast.post#textValue", field: "memo", text: " 夜 " }],
+      ],
+      ["書き換える multiple の未知の選択肢 id", [select("tags", ["zzz"])]],
+      ["書き換えない multiple の未知の選択肢 id", [select("tags", ["hint", "zzz"])]],
+      [
+        "未知の $type",
+        [{ $type: "net.shino3.trailcast.post#unknown", field: "memo" } as unknown as FieldValue],
+      ],
+      ["同じ項目の重複", [select("result", ["ok"]), select("result", ["ok"])]],
+    ];
+    for (const [name, fields] of cases) {
+      it(name, () => {
+        const p = post({ tags: ["解けた", "ヒント", "成功"], fields });
+        expect(planFieldMigration(p, defs2)).toBeNull();
+      });
+    }
+
+    it("理解できる値だけなら対象 (text もそのまま残る)", () => {
+      const text: FieldValue = {
+        $type: "net.shino3.trailcast.post#textValue",
+        field: "memo",
+        text: "夜",
+      };
+      const out = planFieldMigration(post({ tags: ["解けた"], fields: [text] }), defs2);
+      expect(out?.fields).toEqual([text, select("tags", ["solved"])]);
+    });
+  });
+
+  it("タグは normalizeTag してから突合する (#解けた も一致)", () => {
+    const out = planFieldMigration(post({ tags: ["#解けた", " 東京 "], fields: [] }), all);
+    expect(out?.fields).toEqual([select("tags", ["solved"])]);
+    expect(out?.tags).toEqual(["東京"]);
+    expect(out?.movedTags).toEqual(["#解けた"]);
+  });
+
   it("planFieldMigrations でも他人の repo の投稿は除く", () => {
     const mine = post({ tags: ["解けた"], fields: [] });
     const theirs = post({ tags: ["解けた"], fields: [], repo: OTHER });

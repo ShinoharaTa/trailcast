@@ -97,7 +97,7 @@ export function FieldMigratePanel({
         </p>
         <ul className="mt-3 space-y-1 text-xs text-white/40">
           <li>・参加者の投稿は対象になりません</li>
-          <li>・書き換えた投稿は編集画面で保存したのと同じ形になります。元のタグには戻せません</li>
+          <li>・選択肢と同じ名前のタグはタグ欄から外れます。元のタグには戻せません</li>
           <li>・処理中はこのタブを開いたままにしてください</li>
         </ul>
         <ul className="mt-4 max-h-56 divide-y divide-white/5 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03]">
