@@ -1281,7 +1281,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 type="button"
                 onClick={saveDefaultView}
                 disabled={defaultViewSave === "saving"}
-                className="text-[11px] text-indigo-300 transition hover:text-indigo-200 disabled:opacity-50"
+                className="inline-flex min-h-11 items-center pl-3 text-[11px] text-indigo-300 transition hover:text-indigo-200 disabled:opacity-50 md:min-h-0 md:pl-0"
               >
                 「{THREAD_VIEW_LABELS[view]}」を既定の表示にする
               </button>
@@ -1439,7 +1439,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                       type="button"
                       onClick={() => openCheckpointEdit(cp)}
                       aria-label="編集"
-                      className="rounded-md px-2 py-1 text-white/40 transition hover:bg-white/5 hover:text-white/80 md:text-white/20 md:hover:text-white/60"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 py-1 text-white/40 transition hover:bg-white/5 md:min-h-0 md:min-w-0 hover:text-white/80 md:text-white/20 md:hover:text-white/60"
                     >
                       <EditIcon className="size-3.5" />
                     </button>
@@ -1447,7 +1447,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                       type="button"
                       onClick={() => setConfirmTarget({ type: "post", post: cp })}
                       aria-label="削除"
-                      className="rounded-md px-2 py-1 text-white/40 transition hover:bg-red-500/10 hover:text-red-400 md:text-white/20"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 py-1 text-white/40 transition hover:bg-red-500/10 md:min-h-0 md:min-w-0 hover:text-red-400 md:text-white/20"
                     >
                       <TrashIcon className="size-3.5" />
                     </button>

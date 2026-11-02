@@ -193,7 +193,7 @@ export function FieldFilterBar({
                   onRangeChange(field.id, "max", "");
                 }}
                 aria-label={`${field.label} の範囲を解除`}
-                className="rounded-full px-2 py-1 text-sm text-white/40 transition hover:bg-white/10 hover:text-white/80 md:text-xs"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full px-2 py-1 text-sm text-white/40 transition hover:bg-white/10 hover:text-white/80 md:min-h-0 md:min-w-0 md:text-xs"
               >
                 ×
               </button>
