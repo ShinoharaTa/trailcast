@@ -1639,6 +1639,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               }
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
+              onConflict={() => void refresh()}
               onRequestDelete={() => {
                 setModal(null);
                 setConfirmTarget({ type: "thread" });

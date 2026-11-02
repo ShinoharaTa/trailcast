@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { BlobRef } from "@atproto/api";
+import { ComAtprotoRepoPutRecord, type BlobRef } from "@atproto/api";
 import { PhotoIcon, TrashIcon } from "@/components/ui/icons";
 import { getThread, listThreads, updateThread } from "@/lib/pds/threads";
 import { uploadImage } from "@/lib/pds/posts";
@@ -91,6 +91,11 @@ export interface ThreadEditScreenProps {
   onCancel: () => void;
   onRequestDelete?: () => void;
   /**
+   * 保存が InvalidSwap (開いた後に別の場所で更新された) で止まったときに呼ぶ。
+   * 親の表示を最新にする用。編集画面は閉じずにエラーを出したまま残す。
+   */
+  onConflict?: () => void;
+  /**
    * 開いた直後にスクロールして見せる節。スレッド詳細の絞り込みパネルから
    * 「記録項目を編集」で来たときに使う (#37 #60)。
    */
@@ -177,6 +182,7 @@ function ThreadEditForm({
   onSubmitted,
   onCancel,
   onRequestDelete,
+  onConflict,
   initialSection,
 }: ThreadEditScreenProps) {
   const [title, setTitle] = useState(thread.title);
@@ -396,6 +402,11 @@ function ThreadEditForm({
       return;
     }
     if (fieldErrors.size > 0) return;
+    // cid が無いと swapRecord で検出できず黙って上書きしうるので、書かずに止める
+    if (!thread.cid) {
+      setError("最新の状態を確認できませんでした。開き直してください");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -434,18 +445,15 @@ function ThreadEditForm({
           updatedAt: new Date().toISOString(),
         },
         // 取り直した時点から他で更新されていれば PDS が InvalidSwap で reject する
-        { coverBlob, swapCid: thread.cid || undefined },
+        { coverBlob, swapCid: thread.cid },
       );
       onSubmitted();
     } catch (e) {
-      // @atproto/api の InvalidSwapError は XRPCError で error === "InvalidSwap" を持つ
-      const invalidSwap =
-        typeof e === "object" &&
-        e !== null &&
-        (e as { error?: unknown }).error === "InvalidSwap";
+      const invalidSwap = e instanceof ComAtprotoRepoPutRecord.InvalidSwapError;
+      if (invalidSwap) onConflict?.();
       setError(
         invalidSwap
-          ? "別の端末で更新されています。閉じて開き直してください"
+          ? "別の場所で更新されています。閉じて開き直してください"
           : e instanceof Error
             ? e.message
             : "更新に失敗しました",
