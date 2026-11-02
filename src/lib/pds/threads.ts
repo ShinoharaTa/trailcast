@@ -103,10 +103,19 @@ export async function getThread(
   return { ...res.value, uri: res.uri, cid: res.cid, rkey };
 }
 
+/**
+ * updateThread の追加オプション。
+ * - `swapCid`: 読んだ時点の cid。渡すと putRecord の swapRecord に使う楽観ロックになり、
+ *   読んだ後に他で更新されていれば PDS が InvalidSwap で reject する。
+ */
+export interface UpdateThreadOptions extends ThreadOgContext {
+  swapCid?: string;
+}
+
 export async function updateThread(
   rkey: string,
   record: ThreadRecord,
-  ogContext?: ThreadOgContext,
+  opts?: UpdateThreadOptions,
 ): Promise<ThreadWithMeta> {
   const agent = getAgent();
   // 一覧の並び順に使う最終活動時刻。呼び出し側が明示したときはそれを尊重する
@@ -115,12 +124,13 @@ export async function updateThread(
     ...record,
     updatedAt: record.updatedAt ?? new Date().toISOString(),
   };
-  const enriched = await withOgImage(stamped, ogContext);
+  const enriched = await withOgImage(stamped, opts);
   const res = await agent.com.atproto.repo.putRecord({
     repo: getMyDid(),
     collection: NSID_THREAD,
     rkey,
     record: enriched as unknown as Record<string, unknown>,
+    ...(opts?.swapCid ? { swapRecord: opts.swapCid } : {}),
   });
   return { ...enriched, uri: res.data.uri, cid: res.data.cid, rkey };
 }
