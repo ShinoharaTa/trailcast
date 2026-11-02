@@ -1785,6 +1785,13 @@ describe("投稿画面からの選択肢追加", () => {
       ).toEqual({ ok: false, reason: "archived", fieldId: "place" });
     });
 
+    it("スレッドが終了していれば失敗 (追加するものが無ければ成功)", () => {
+      expect(
+        appendPendingOptions([place], [pending("place", "p1", "京都")], { ended: true }),
+      ).toEqual({ ok: false, reason: "ended" });
+      expect(appendPendingOptions([place], [], { ended: true })).toMatchObject({ ok: true });
+    });
+
     it("選択肢数が上限なら失敗", () => {
       const full: FieldDef = {
         ...place,

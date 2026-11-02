@@ -24,8 +24,8 @@ export interface UsePendingOptionsParams {
   threadUri: string;
   /** スレッド (所有者) の記録項目の定義 */
   fields: FieldDef[] | undefined;
-  /** スレッドの所有者か。所有者だけ選択肢をその場で追加できる */
-  isOwner: boolean | undefined;
+  /** 選択肢をその場で追加できるか (スレッドの所有者で、終了していないとき) */
+  canAddOptions: boolean | undefined;
   /** 選択肢を thread.fields に書き込んだあと、書き込み後のスレッドで呼ぶ */
   onThreadUpdated?: (thread: ThreadWithMeta) => void;
   fieldValues: FieldValue[];
@@ -41,7 +41,7 @@ export interface UsePendingOptionsParams {
 export function usePendingOptions({
   threadUri,
   fields,
-  isOwner,
+  canAddOptions,
   onThreadUpdated,
   fieldValues,
   setFieldValues,
@@ -111,16 +111,21 @@ export function usePendingOptions({
   }> => {
     const toWrite = selectedPendingOptions(pendingOptions, fieldValues);
     if (toWrite.length === 0) return { defs, values: fieldValues };
-    // 書き込めるのは所有者の repo だけ。UI で出し分けているが念のため止める
-    if (!isOwner) {
-      throw new Error("選択肢を追加できるのはスレッドの所有者だけです");
+    // 書き込めるのは所有者の repo の終了していないスレッドだけ。UI で出し分けているが念のため止める
+    if (!canAddOptions) {
+      throw new Error("このスレッドには選択肢を追加できません");
     }
     const { repo, rkey } = parseAtUri(threadUri);
     const fresh = await getThread(repo, rkey);
-    const merged = appendPendingOptions(fresh.fields ?? [], toWrite);
+    const merged = appendPendingOptions(fresh.fields ?? [], toWrite, {
+      ended: Boolean(fresh.endedAt),
+    });
     if (!merged.ok) {
       // 取り直した定義で画面を最新にしてから止める
       onThreadUpdated?.(fresh);
+      if (merged.reason === "ended") {
+        throw new Error("終了したスレッドには選択肢を追加できません");
+      }
       const label =
         defs.find((d) => d.id === merged.fieldId)?.label ?? "記録項目";
       throw new Error(
@@ -164,8 +169,8 @@ export function usePendingOptions({
   return {
     /** 定義の末尾に追加待ちの選択肢を足した defs (archived も含む) */
     defs,
-    /** 所有者でなければ undefined (FieldInputs に「＋ 追加」を出さない) */
-    handleAddOption: isOwner ? handleAddOption : undefined,
+    /** 追加できないとき (所有者でない・終了したスレッド) は undefined (FieldInputs に「＋ 追加」を出さない) */
+    handleAddOption: canAddOptions ? handleAddOption : undefined,
     writePendingOptions,
   };
 }

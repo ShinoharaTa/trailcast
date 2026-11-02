@@ -851,10 +851,16 @@ export type AppendPendingOptionsResult =
       /** missing: 項目が無い / archived: 項目が非表示 / full: 選択肢数の上限 */
       reason: "missing" | "archived" | "full";
       fieldId: string;
+    }
+  | {
+      ok: false;
+      /** ended: スレッドが終了している (項目によらない) */
+      reason: "ended";
     };
 
 /**
  * 書き込み直前に取り直した thread.fields に、追加待ちの選択肢を足す。
+ * - 取り直したスレッドが終了している (opts.ended) なら失敗 (投稿しない)
  * - 項目が無い・archived なら失敗 (投稿しない)
  * - 取り直した定義に同じ名前の archived でない選択肢があればそれを使う
  *   (別の端末で先に追加・再表示された場合など)
@@ -867,7 +873,10 @@ export type AppendPendingOptionsResult =
 export function appendPendingOptions(
   fresh: FieldDef[],
   pending: PendingFieldOption[],
+  opts?: { ended?: boolean },
 ): AppendPendingOptionsResult {
+  // 終了したスレッドには追加しない (追加するものが無ければ何もしないので成功)
+  if (opts?.ended && pending.length > 0) return { ok: false, reason: "ended" };
   // select の options だけ複製して足す (引数の定義は書き換えない)
   const fields = fresh.map((d) =>
     d.type === "select" ? { ...d, options: [...(d.options ?? [])] } : d,

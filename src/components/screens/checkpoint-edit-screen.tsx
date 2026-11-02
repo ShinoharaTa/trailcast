@@ -52,8 +52,8 @@ export interface CheckpointEditScreenProps {
   tagGroups?: TagGroup[];
   /** スレッド (所有者) の記録項目の定義 */
   fields?: FieldDef[];
-  /** スレッドの所有者か。所有者だけ select に選択肢をその場で追加できる */
-  isOwner?: boolean;
+  /** select に選択肢をその場で追加できるか (スレッドの所有者で、終了していないとき) */
+  canAddOptions?: boolean;
   /** 保存前に選択肢を thread.fields に書き込んだあと、書き込み後のスレッドで呼ぶ */
   onThreadUpdated?: (thread: ThreadWithMeta) => void;
   onSubmitted: () => void;
@@ -66,7 +66,7 @@ export function CheckpointEditScreen({
   excludeTagKeys,
   tagGroups,
   fields,
-  isOwner,
+  canAddOptions,
   onThreadUpdated,
   onSubmitted,
   onCancel,
@@ -84,7 +84,7 @@ export function CheckpointEditScreen({
   const { defs, handleAddOption, writePendingOptions } = usePendingOptions({
     threadUri: post.thread,
     fields,
-    isOwner,
+    canAddOptions,
     onThreadUpdated,
     fieldValues,
     setFieldValues,
