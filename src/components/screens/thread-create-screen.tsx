@@ -155,7 +155,7 @@ export function ThreadCreateScreen({ navigate }: NavigationProps) {
             <div className="min-w-0">
               <span className="text-sm text-white/70">既定の表示を記録帳にする</span>
               <p className="text-[11px] leading-relaxed text-white/40">
-                開いたときに記録帳を表示します。タイムラインにはいつでも切り替えられます
+                開いたときに記録帳を表示します。見る人全員に適用されます。タイムラインにはいつでも切り替えられます
               </p>
             </div>
             <button
