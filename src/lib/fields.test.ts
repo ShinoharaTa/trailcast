@@ -660,6 +660,15 @@ describe("sanitizePostFieldsForRecord", () => {
     ]);
   });
 
+  it("number 先頭の全角ハイフン・U+2212・長音はマイナスとみなす", () => {
+    for (const minus of ["－１", "\u22121", "ー1"]) {
+      expect(sanitizePostFieldsForRecord([num("weight", minus)], defs)).toEqual([
+        num("weight", "-1"),
+      ]);
+    }
+    expect(sanitizePostFieldsForRecord([num("weight", "1ー")], defs)).toBeUndefined();
+  });
+
   it("同じ field が 2 件あると後勝ちで 1 件になる", () => {
     expect(
       sanitizePostFieldsForRecord([num("weight", "10"), num("weight", "20")], defs),

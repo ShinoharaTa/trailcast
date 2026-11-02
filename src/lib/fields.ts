@@ -57,6 +57,18 @@ const FIELD_TYPES = new Set<string>(Object.keys(VALUE_TYPES));
 /** 指数表記や先頭の `+` は受けない。lexicon の値をそのまま読める形に限る */
 export const DECIMAL_PATTERN = /^-?\d+(\.\d+)?$/;
 
+/**
+ * 数値の入力を DECIMAL_PATTERN で判定できる形にする。NFKC (全角数字・全角ピリオド・
+ * 全角ハイフン → 半角) → trim の後、先頭の U+2212 (−) と長音「ー」だけ "-" とみなす。
+ * 先頭以外の「ー」等はそのまま残すので不正になる
+ */
+export function normalizeDecimalInput(raw: string): string {
+  return raw
+    .normalize("NFKC")
+    .trim()
+    .replace(/^[\u2212\u30fc]/, "-");
+}
+
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 
 /** field / option 用のランダム id (base32 小文字 8 文字)。label からは作らない。 */
@@ -197,10 +209,10 @@ function sanitizeValue(
       return { $type: value.$type, field: def.id, options };
     }
     case VALUE_TYPES.number: {
-      // 全角数字・全角ピリオドも受ける (入力欄の onChange と同じ NFKC → trim)
+      // 入力欄は生の文字列を持つので、全角数字等はここで正規化する
       const decimal =
         typeof value.value === "string"
-          ? value.value.normalize("NFKC").trim()
+          ? normalizeDecimalInput(value.value)
           : value.value;
       if (!isValidDecimal(decimal)) return null;
       return { $type: value.$type, field: def.id, value: decimal };
