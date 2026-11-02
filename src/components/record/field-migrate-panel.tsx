@@ -39,8 +39,9 @@ export function FieldMigratePanel({
   /**
    * 親の Modal の閉じる (× / ESC / 背景) から呼ぶ関数を受け取る ref。
    * running 中は閉じずに停止にするため、閉じる操作はパネルが握る。
+   * 閉じたら true、停止にとどめたら false を返す。
    */
-  requestCloseRef?: RefObject<(() => void) | null>;
+  requestCloseRef?: RefObject<(() => boolean) | null>;
 }) {
   // 開いた時点の対象で固定する (実行中に親の posts が変わっても対象を動かさない)
   const [plans] = useState(initialPlans);
@@ -65,9 +66,10 @@ export function FieldMigratePanel({
   const requestClose = useCallback(() => {
     if (phase === "running") {
       abortRef.current?.abort();
-      return;
+      return false;
     }
     onClose(phase === "done" ? progress : null);
+    return true;
   }, [phase, progress, onClose]);
 
   // パネルが消えたら (親の画面遷移など) 次の件に進ませない。処理中の 1 件は完走する

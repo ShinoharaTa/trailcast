@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { readModalKind, withoutModal } from "@/lib/modal-history-state";
 import {
   parsePathname,
   screenToPathname,
@@ -43,14 +44,26 @@ function samePath(a: string, b: string): boolean {
 export function useNavigation() {
   const [pathname, setPathname] = useState<string>("/");
   const [route, setRoute] = useState<Route>({ screen: "home", params: {} });
+  // popstate の中で現在のパスと比べるため、state とは別に持つ
+  const pathnameRef = useRef("/");
 
   useEffect(() => {
     const current = readPathname();
+    pathnameRef.current = current;
     setPathname(current);
     setRoute(parsePathname(current));
 
+    // モーダルを開いたままリロード / 外部遷移した場合、そのエントリの印が残る。
+    // 残っていると次に開いたモーダルを「戻る」で閉じられないので外しておく
+    if (readModalKind(window.history.state) !== null) {
+      window.history.replaceState(withoutModal(window.history.state), "");
+    }
+
     const onPop = () => {
       const p = readPathname();
+      // モーダルのエントリを戻っただけ (パスは同じ) なら画面を作り直さない
+      if (samePath(p, pathnameRef.current)) return;
+      pathnameRef.current = p;
       setPathname(p);
       setRoute(parsePathname(p));
     };
@@ -66,12 +79,18 @@ export function useNavigation() {
     ) => {
       const nextPath = screenToPathname(screen, newParams);
       if (typeof window !== "undefined" && !samePath(nextPath, pathname)) {
-        if (options?.replace) {
+        // モーダルを開いたまま遷移するときは、そのエントリを遷移先で置き換える
+        // (戻ったときにモーダルのエントリで 1 回空振りしないように)
+        if (
+          options?.replace ||
+          readModalKind(window.history.state) !== null
+        ) {
           window.history.replaceState({}, "", nextPath);
         } else {
           window.history.pushState({}, "", nextPath);
         }
       }
+      pathnameRef.current = nextPath;
       setPathname(nextPath);
       setRoute(parsePathname(nextPath));
       if (typeof window !== "undefined") {

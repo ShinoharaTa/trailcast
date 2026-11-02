@@ -3,6 +3,7 @@
 import { Modal } from "@/components/ui/modal";
 import { LoginForm } from "@/components/auth/login-form";
 import { MapIcon } from "@/components/ui/icons";
+import { useModalHistory } from "@/lib/use-modal-history";
 
 export interface LoginModalProps {
   open: boolean;
@@ -10,8 +11,11 @@ export interface LoginModalProps {
 }
 
 export function LoginModal({ open, onClose }: LoginModalProps) {
+  // 端末の「戻る」はダイアログだけを閉じる
+  const dismiss = useModalHistory(open ? "login" : null, onClose);
+  const handleClose = () => dismiss(onClose);
   return (
-    <Modal open={open} onClose={onClose} maxWidth="sm" ariaLabel="ログイン">
+    <Modal open={open} onClose={handleClose} maxWidth="sm" ariaLabel="ログイン">
       <div className="flex flex-col items-center text-center">
         <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-indigo-500 shadow-lg shadow-indigo-500/30">
           <MapIcon className="size-6 text-white" />
@@ -22,7 +26,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         </p>
       </div>
       <div className="mt-6 text-left">
-        <LoginForm onSuccess={onClose} />
+        <LoginForm onSuccess={handleClose} />
       </div>
     </Modal>
   );

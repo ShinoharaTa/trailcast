@@ -12,6 +12,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
+import { useModalHistory } from "@/lib/use-modal-history";
 import {
   backfillThreads,
   setBackfillDismissedForever,
@@ -58,31 +59,38 @@ export function OgBackfillModal({
     setPhase("done");
   }, [targets]);
 
+  // 端末の「戻る」もモーダルの閉じる操作と同じ扱いにする (running 中は停止にとどめる)
+  const dismiss = useModalHistory(open ? "og-backfill" : null, () =>
+    handleRequestClose(),
+  );
+
   const handleLater = useCallback(() => {
     setBackfillDismissedThisSession();
-    onClose(0);
-  }, [onClose]);
+    dismiss(() => onClose(0));
+  }, [dismiss, onClose]);
 
   const handleNever = useCallback(() => {
     setBackfillDismissedForever();
-    onClose(0);
-  }, [onClose]);
+    dismiss(() => onClose(0));
+  }, [dismiss, onClose]);
 
   const handleFinishClose = useCallback(() => {
-    onClose(progress.succeeded);
-  }, [onClose, progress.succeeded]);
+    dismiss(() => onClose(progress.succeeded));
+  }, [dismiss, onClose, progress.succeeded]);
 
-  // running 中に閉じようとした場合: 現在処理中のものを完走させて停止
+  // running 中に閉じようとした場合: 現在処理中のものを完走させて停止。
+  // 閉じたら true、停止にとどめたら false を返す
   const handleRequestClose = useCallback(() => {
     if (phase === "running") {
       abortRef.current?.abort();
-      return;
+      return false;
     }
     if (phase === "done") {
       handleFinishClose();
-      return;
+      return true;
     }
     handleLater();
+    return true;
   }, [phase, handleFinishClose, handleLater]);
 
   const pct =
