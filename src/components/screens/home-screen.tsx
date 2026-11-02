@@ -332,7 +332,7 @@ export function HomeScreen({ navigate }: NavigationProps) {
                       </span>
                     )}
                   </div>
-                  <h3 className="text-lg font-bold text-white">{t.title}</h3>
+                  <h3 className="line-clamp-2 text-lg font-bold text-white">{t.title}</h3>
                   <ThreadTagChips tags={t.tags} className="mt-1.5" />
                   {t.description && (
                     <p className="mt-1 line-clamp-2 text-sm text-white/50">
