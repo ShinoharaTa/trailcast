@@ -434,6 +434,10 @@ export function initialFreeTagsForEdit(
  *   外したものは、その label と tagKey が一致するタグを tags から外す
  * - UI では選ばれたままなのに sanitize で落ちたもの (1 つだけの項目に旧タグが
  *   2 つ以上一致していた場合など) は、元のタグを tags に戻す。データを消さないため
+ * - 書く fields で選ばれている選択肢の label と tagKey が一致するタグも tags から
+ *   外す (新規投稿の stripSelectedOptionTags と同じ規則。fields 側が正)。
+ *   対象は archived でない項目の archived でない選択肢だけ。画面に出ない
+ *   archived の選択と同名のタグが、理由の見えないまま消えないようにする
  *
  * `tags` はタグ欄の値 (initialFreeTagsForEdit で外した後でも、元の post.tags でもよい)。
  * 項目が無いスレッドでは fields は元の投稿のまま触らない。
@@ -498,15 +502,23 @@ export function buildEditedPostFields(
   );
   return {
     fields,
-    tags: sanitizeTagsForRecord([
-      ...restored,
-      ...tags.filter((t) => !removeKeys.has(tagKey(t))),
-    ]),
+    tags: sanitizeTagsForRecord(
+      stripSelectedOptionTags(
+        [...restored, ...tags.filter((t) => !removeKeys.has(tagKey(t)))],
+        fields,
+        defs
+          .filter((d) => !d.archived)
+          .map((d) => ({
+            ...d,
+            options: d.options?.filter((o) => !o.archived),
+          })),
+      ),
+    ),
   };
 }
 
 /**
- * 新規投稿の tags から、選んだ選択肢の label と tagKey が一致するタグを外す。
+ * 投稿の tags から、選んだ選択肢の label と tagKey が一致するタグを外す。
  * 選択の値は fields 側にだけ書く (tags との二重書きを避ける)。
  * `fields` は sanitizePostFieldsForRecord 済みのものを渡す。
  */
@@ -839,10 +851,16 @@ export type AppendPendingOptionsResult =
       /** missing: 項目が無い / archived: 項目が非表示 / full: 選択肢数の上限 */
       reason: "missing" | "archived" | "full";
       fieldId: string;
+    }
+  | {
+      ok: false;
+      /** ended: スレッドが終了している (項目によらない) */
+      reason: "ended";
     };
 
 /**
  * 書き込み直前に取り直した thread.fields に、追加待ちの選択肢を足す。
+ * - 取り直したスレッドが終了している (opts.ended) なら失敗 (投稿しない)
  * - 項目が無い・archived なら失敗 (投稿しない)
  * - 取り直した定義に同じ名前の archived でない選択肢があればそれを使う
  *   (別の端末で先に追加・再表示された場合など)
@@ -855,7 +873,10 @@ export type AppendPendingOptionsResult =
 export function appendPendingOptions(
   fresh: FieldDef[],
   pending: PendingFieldOption[],
+  opts?: { ended?: boolean },
 ): AppendPendingOptionsResult {
+  // 終了したスレッドには追加しない (追加するものが無ければ何もしないので成功)
+  if (opts?.ended && pending.length > 0) return { ok: false, reason: "ended" };
   // select の options だけ複製して足す (引数の定義は書き換えない)
   const fields = fresh.map((d) =>
     d.type === "select" ? { ...d, options: [...(d.options ?? [])] } : d,

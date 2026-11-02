@@ -1611,7 +1611,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               tagGroups={thread.tagGroups}
               defaultTags={thread.defaultTags}
               fields={thread.fields}
-              isOwner={isOwner}
+              // 終了したスレッドでは選択肢を足さない
+              canAddOptions={isOwner && !thread.endedAt}
               // 投稿前に選択肢を書き込んだら、投稿に失敗しても定義は反映しておく
               onThreadUpdated={setThread}
               onSubmitted={onModalSubmitted}
@@ -1624,6 +1625,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               excludeTagKeys={classificationKeys}
               tagGroups={thread.tagGroups}
               fields={thread.fields}
+              // 終了したスレッドでは選択肢を足さない
+              canAddOptions={isOwner && !thread.endedAt}
+              // 保存前に選択肢を書き込んだら、保存に失敗しても定義は反映しておく
+              onThreadUpdated={setThread}
               onSubmitted={onModalSubmitted}
               onCancel={closeModal}
             />
