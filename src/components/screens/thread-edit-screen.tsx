@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { BlobRef } from "@atproto/api";
+import { ComAtprotoRepoPutRecord, type BlobRef } from "@atproto/api";
 import { PhotoIcon, TrashIcon } from "@/components/ui/icons";
-import { listThreads, updateThread } from "@/lib/pds/threads";
+import { getThread, listThreads, updateThread } from "@/lib/pds/threads";
 import { uploadImage } from "@/lib/pds/posts";
 import { processCoverImage } from "@/lib/image-processing";
 import {
@@ -91,19 +91,98 @@ export interface ThreadEditScreenProps {
   onCancel: () => void;
   onRequestDelete?: () => void;
   /**
+   * 保存が InvalidSwap (開いた後に別の場所で更新された) で止まったときに呼ぶ。
+   * 親の表示を最新にする用。編集画面は閉じずにエラーを出したまま残す。
+   */
+  onConflict?: () => void;
+  /**
    * 開いた直後にスクロールして見せる節。スレッド詳細の絞り込みパネルから
    * 「記録項目を編集」で来たときに使う (#37 #60)。
    */
   initialSection?: "fields";
 }
 
-export function ThreadEditScreen({
+/**
+ * 開いた時点の record を PDS から取り直してから編集フォームを出す。
+ * props の thread は対象の特定 (uri / rkey) にだけ使い、初期値と保存の土台は
+ * 取り直した record にする。保存は取り直した cid で swapRecord するので、
+ * 別端末・別経路で更新されていれば上書きせずに止まる (#109)。
+ */
+export function ThreadEditScreen(props: ThreadEditScreenProps) {
+  const { thread, onCancel } = props;
+  const repo = parseAtUri(thread.uri).repo;
+  const [fresh, setFresh] = useState<ThreadWithMeta | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    getThread(repo, thread.rkey).then(
+      (t) => {
+        if (!cancelled) setFresh(t);
+      },
+      (e) => {
+        if (cancelled) return;
+        setLoadError(
+          e instanceof Error ? e.message : "スレッドの読み込みに失敗しました",
+        );
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, thread.rkey, attempt]);
+
+  if (fresh) return <ThreadEditForm {...props} thread={fresh} />;
+
+  return (
+    <div>
+      <h2 className="mb-6 pr-10 text-xl font-bold text-white">
+        スレッド情報を編集
+      </h2>
+      {loadError ? (
+        <div className="space-y-5">
+          <div className="rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
+            {loadError}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white/80 transition hover:bg-white/10"
+            >
+              閉じる
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoadError(null);
+                setAttempt((n) => n + 1);
+              }}
+              className="flex-1 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110"
+            >
+              再読み込み
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-2 py-10 text-sm text-white/50">
+          <span className="size-4 animate-spin rounded-full border-2 border-white/50 border-t-transparent" />
+          読み込み中...
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ThreadEditForm({
   thread,
   threadTags,
   excludeTagKeys,
   onSubmitted,
   onCancel,
   onRequestDelete,
+  onConflict,
   initialSection,
 }: ThreadEditScreenProps) {
   const [title, setTitle] = useState(thread.title);
@@ -323,6 +402,11 @@ export function ThreadEditScreen({
       return;
     }
     if (fieldErrors.size > 0) return;
+    // cid が無いと swapRecord で検出できず黙って上書きしうるので、書かずに止める
+    if (!thread.cid) {
+      setError("最新の状態を確認できませんでした。開き直してください");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -360,11 +444,20 @@ export function ThreadEditScreen({
           // 編集は活動なので一覧の並びを進める (spread で古い値が入るため明示)
           updatedAt: new Date().toISOString(),
         },
-        { coverBlob },
+        // 取り直した時点から他で更新されていれば PDS が InvalidSwap で reject する
+        { coverBlob, swapCid: thread.cid },
       );
       onSubmitted();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "更新に失敗しました");
+      const invalidSwap = e instanceof ComAtprotoRepoPutRecord.InvalidSwapError;
+      if (invalidSwap) onConflict?.();
+      setError(
+        invalidSwap
+          ? "別の場所で更新されています。閉じて開き直してください"
+          : e instanceof Error
+            ? e.message
+            : "更新に失敗しました",
+      );
       setSubmitting(false);
     }
   };
