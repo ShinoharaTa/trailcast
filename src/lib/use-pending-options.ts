@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { getThread, updateThread } from "@/lib/pds/threads";
 import {
@@ -38,6 +36,7 @@ export interface UsePendingOptionsParams {
  * 投稿・編集画面で「＋ 追加」した選択肢 (所有者のみ) を扱う。
  * 保存するまで thread.fields には書かず、定義の末尾に足した defs で
  * 既存の選択肢と同じように入力・保存の組み立てに使う。
+ * writePendingOptions は足せずに失敗したときも、取り直したスレッドで onThreadUpdated を呼ぶ。
  */
 export function usePendingOptions({
   threadUri,

@@ -435,7 +435,9 @@ export function initialFreeTagsForEdit(
  * - UI では選ばれたままなのに sanitize で落ちたもの (1 つだけの項目に旧タグが
  *   2 つ以上一致していた場合など) は、元のタグを tags に戻す。データを消さないため
  * - 書く fields で選ばれている選択肢の label と tagKey が一致するタグも tags から
- *   外す (新規投稿の stripSelectedOptionTags と同じ規則。fields 側が正)
+ *   外す (新規投稿の stripSelectedOptionTags と同じ規則。fields 側が正)。
+ *   対象は archived でない項目の archived でない選択肢だけ。画面に出ない
+ *   archived の選択と同名のタグが、理由の見えないまま消えないようにする
  *
  * `tags` はタグ欄の値 (initialFreeTagsForEdit で外した後でも、元の post.tags でもよい)。
  * 項目が無いスレッドでは fields は元の投稿のまま触らない。
@@ -504,7 +506,12 @@ export function buildEditedPostFields(
       stripSelectedOptionTags(
         [...restored, ...tags.filter((t) => !removeKeys.has(tagKey(t)))],
         fields,
-        defs,
+        defs
+          .filter((d) => !d.archived)
+          .map((d) => ({
+            ...d,
+            options: d.options?.filter((o) => !o.archived),
+          })),
       ),
     ),
   };

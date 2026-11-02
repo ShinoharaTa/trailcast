@@ -1007,6 +1007,22 @@ describe("buildEditedPostFields", () => {
     });
   });
 
+  it("archived の項目・選択肢の選択と同名のタグは外さない (#107)", () => {
+    const old: FieldDef = { ...result, archived: true };
+    const post: Post = { fields: [select("kind", ["walk"]), select("result", ["ok"])] };
+    expect(
+      buildEditedPostFields(
+        post,
+        [kind, old],
+        [select("kind", ["walk"]), select("result", ["ok"])],
+        ["周遊", "成功"],
+      ),
+    ).toEqual({
+      fields: [select("kind", ["walk"]), select("result", ["ok"])],
+      tags: ["周遊", "成功"],
+    });
+  });
+
   it("入力できる項目が無いスレッドでは fields を触らない", () => {
     const post: Post = { fields: [num("x", "1")], tags: ["ホール"] };
     expect(buildEditedPostFields(post, [], [], ["ホール", "ホール"])).toEqual({
