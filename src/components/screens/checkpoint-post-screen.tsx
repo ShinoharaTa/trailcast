@@ -618,7 +618,7 @@ export function CheckpointPostScreen({
               にも投稿
             </span>
             <span className="text-[11px] text-white/40">
-              同じテキストと写真を Bluesky に同時投稿します
+              同じテキストと写真を Bluesky に同時投稿します。タグと選んだ選択肢名はハッシュタグになります
             </span>
           </div>
           <input
