@@ -1277,7 +1277,7 @@ export function isRangeField(def: FieldDef): boolean {
 }
 
 /**
- * 境界 1 つを数値にする。NFKC 正規化 (全角数字 → 半角) と trim の後に空なら null、
+ * 境界 1 つを数値にする。normalizeDecimalInput (保存時と同じ正規化) の後に空なら null、
  * 解釈できなければ "invalid"。DECIMAL_PATTERN かつ MAX_NUMBER_VALUE_LENGTH 以内なら Number()。
  * 範囲項目でない def には常に "invalid"
  */
@@ -1286,7 +1286,7 @@ export function parseRangeBound(
   def: FieldDef,
 ): number | null | "invalid" {
   if (!isRangeField(def)) return "invalid";
-  const s = raw.normalize("NFKC").trim();
+  const s = normalizeDecimalInput(raw);
   if (!s) return null;
   return isValidDecimal(s) ? Number(s) : "invalid";
 }

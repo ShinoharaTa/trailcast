@@ -1413,6 +1413,12 @@ describe("範囲絞り込み (#74)", () => {
       expect(parseRangeBound("　１２．５　", weight)).toBe(12.5);
       expect(parseRangeBound("　", weight)).toBeNull();
     });
+    it("先頭の全角ハイフン・U+2212・長音はマイナスとみなす", () => {
+      expect(parseRangeBound("－１", weight)).toBe(-1);
+      expect(parseRangeBound("\u22121", weight)).toBe(-1);
+      expect(parseRangeBound("ー1", weight)).toBe(-1);
+      expect(parseRangeBound("1ー", weight)).toBe("invalid");
+    });
     it("範囲項目でない def は常に invalid", () => {
       expect(parseRangeBound("1", kind)).toBe("invalid");
       expect(parseRangeBound("1", time)).toBe("invalid");
