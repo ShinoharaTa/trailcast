@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PinIcon, CloseIcon } from "@/components/ui/icons";
 import type {
   FieldDef,
@@ -19,6 +19,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { FieldInputs } from "@/components/ui/field-inputs";
 import {
   buildEditedPostFields,
+  divertOptionTags,
   fieldValuesFromResolved,
   initialFreeTagsForEdit,
   resolveFieldValues,
@@ -90,6 +91,27 @@ export function CheckpointEditScreen({
     setFieldValues,
   });
   const inputDefs = defs.filter((d) => !d.archived);
+  // 選択肢と同じ名前のタグはタグ欄に残さず、その選択肢を選ぶ (#113)。
+  // 追加待ちの選択肢も defs に入っているので対象になる
+  const [divertNotice, setDivertNotice] = useState<{ text: string } | null>(
+    null,
+  );
+  const handleTagsChange = (next: string[]) => {
+    const result = divertOptionTags(next, defs, fieldValues);
+    setTags(result.tags);
+    if (result.diverted.length === 0) {
+      setDivertNotice(null);
+      return;
+    }
+    setFieldValues(result.values);
+    const labels = result.diverted.map((d) => `「${d.option.label}」`).join("");
+    setDivertNotice({ text: `選択肢${labels}を選びました` });
+  };
+  useEffect(() => {
+    if (!divertNotice) return;
+    const id = setTimeout(() => setDivertNotice(null), 3000);
+    return () => clearTimeout(id);
+  }, [divertNotice]);
   const [fieldsValid, setFieldsValid] = useState(true);
   const [checkpointAt, setCheckpointAt] = useState(post.checkpointAt);
   const [location, setLocation] = useState<Location | null>(() =>
@@ -182,7 +204,8 @@ export function CheckpointEditScreen({
 
         <TagInput
           value={tags}
-          onChange={setTags}
+          onChange={handleTagsChange}
+          notice={divertNotice?.text}
           threadTags={threadTags}
           excludeKeys={excludeTagKeys}
           tagGroups={tagGroups}

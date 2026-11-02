@@ -14,6 +14,7 @@ import { sanitizeTagsForRecord, type TagCount } from "@/lib/tags";
 import {
   buildNewPostFields,
   crosspostTagsFor,
+  divertOptionTags,
   stripSelectedOptionTags,
 } from "@/lib/fields";
 import { usePendingOptions } from "@/lib/use-pending-options";
@@ -116,6 +117,27 @@ export function CheckpointPostScreen({
     setFieldValues,
   });
   const inputDefs = defs.filter((d) => !d.archived);
+  // 選択肢と同じ名前のタグはタグ欄に残さず、その選択肢を選ぶ (#113)。
+  // 追加待ちの選択肢も defs に入っているので対象になる
+  const [divertNotice, setDivertNotice] = useState<{ text: string } | null>(
+    null,
+  );
+  const handleTagsChange = (next: string[]) => {
+    const result = divertOptionTags(next, defs, fieldValues);
+    setTags(result.tags);
+    if (result.diverted.length === 0) {
+      setDivertNotice(null);
+      return;
+    }
+    setFieldValues(result.values);
+    const labels = result.diverted.map((d) => `「${d.option.label}」`).join("");
+    setDivertNotice({ text: `選択肢${labels}を選びました` });
+  };
+  useEffect(() => {
+    if (!divertNotice) return;
+    const id = setTimeout(() => setDivertNotice(null), 3000);
+    return () => clearTimeout(id);
+  }, [divertNotice]);
   // タグ欄は既定で畳む (#35)。「とにかく記録する」ときに邪魔にならないように。
   // 既定タグがあれば触らなくても付くので、開くのは足したい/外したいときだけ。
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -398,7 +420,8 @@ export function CheckpointPostScreen({
         {tagsOpen ? (
           <TagInput
             value={tags}
-            onChange={setTags}
+            onChange={handleTagsChange}
+            notice={divertNotice?.text}
             threadTags={threadTags}
             excludeKeys={excludeTagKeys}
             tagGroups={tagGroups}

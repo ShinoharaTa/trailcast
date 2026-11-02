@@ -12,6 +12,7 @@ import {
   convertTagGroupsToFields,
   copyFieldDefs,
   countFreeTags,
+  divertOptionTags,
   EMPTY_RANGE_INPUT,
   effectiveRange,
   filterPostsByRanges,
@@ -1366,6 +1367,104 @@ describe("filterPostsByFieldsAndTags", () => {
     expect(
       filterPostsByFieldsAndTags(posts, [kind], { kind: ["hall", "room"] }, ["東京"]),
     ).toEqual([posts[0], posts[2]]);
+  });
+});
+
+describe("自由タグでのタグ絞り込み (#113)", () => {
+  // fallback 投稿 (fields 無し) と fields:[] 投稿が混在するスレッド
+  const posts: Post[] = [
+    { tags: ["ホール"] }, // fallback: ホールは選択扱いで自由タグではない
+    { fields: [], tags: ["ホール"] }, // fields:[]: ホールは自由タグ
+    { fields: [], tags: ["ホール", "東京"] },
+    { tags: ["東京"] },
+  ];
+
+  it("チップの facetCount と押した結果の件数が一致する", () => {
+    const chips = freeTagChips(posts, [kind], {}, []);
+    for (const chip of chips) {
+      const filtered = filterPostsByFieldsAndTags(posts, [kind], {}, [chip.key]);
+      expect(filtered.length).toBe(chip.facetCount);
+    }
+    expect(chips.find((c) => c.key === "ホール")?.facetCount).toBe(2);
+  });
+
+  it("絞り込み結果は元の投稿 (tags を置き換えていない)", () => {
+    const filtered = filterPostsByFieldsAndTags(posts, [kind], {}, ["ホール"]);
+    expect(filtered).toEqual([posts[1], posts[2]]);
+    expect(filtered[0]).toBe(posts[1]);
+  });
+
+  it("項目チップの件数もタグ条件を自由タグで数える", () => {
+    const groups = fieldFilterGroups(posts, [kind], {}, ["ホール"]);
+    const chip = groups[0].chips.find((c) => c.optionId === FIELD_UNSET);
+    expect(chip?.count).toBe(2);
+  });
+
+  it("入力できる項目が無いスレッドでは tags のまま", () => {
+    const archived = { ...kind, archived: true };
+    expect(
+      filterPostsByFieldsAndTags(posts, [archived], {}, ["ホール"]),
+    ).toEqual([posts[0], posts[1], posts[2]]);
+  });
+});
+
+describe("divertOptionTags", () => {
+  const multi: FieldDef = { ...kind, multiple: true };
+
+  it("multiple は選択に足し、タグ欄から外す", () => {
+    const r = divertOptionTags(
+      ["東京", "ルーム"],
+      [multi],
+      [select("kind", ["hall"])],
+    );
+    expect(r.tags).toEqual(["東京"]);
+    expect(r.values).toEqual([select("kind", ["hall", "room"])]);
+    expect(r.diverted.map((d) => d.option.id)).toEqual(["room"]);
+  });
+
+  it("1 つだけは置き換える。値が無ければ足す", () => {
+    expect(
+      divertOptionTags(["ルーム"], [kind], [select("kind", ["hall"])]).values,
+    ).toEqual([select("kind", ["room"])]);
+    expect(divertOptionTags(["成功"], [kind, result], []).values).toEqual([
+      select("result", ["ok"]),
+    ]);
+  });
+
+  it("archived の選択肢・項目は自由タグのまま", () => {
+    const tags = ["周遊", "成功"];
+    const values: FieldValue[] = [];
+    const r = divertOptionTags(tags, [kind, { ...result, archived: true }], values);
+    expect(r.tags).toBe(tags);
+    expect(r.values).toBe(values);
+    expect(r.diverted).toEqual([]);
+  });
+
+  it("大文字小文字と先頭の # を無視する", () => {
+    const def: FieldDef = {
+      id: "w",
+      label: "天気",
+      type: "select",
+      options: [{ id: "s", label: "Sunny" }],
+    };
+    const r = divertOptionTags(["#sunny"], [def], []);
+    expect(r.tags).toEqual([]);
+    expect(r.values).toEqual([select("w", ["s"])]);
+  });
+
+  it("定義が無ければ何もしない", () => {
+    const tags = ["ホール"];
+    const values: FieldValue[] = [];
+    const r = divertOptionTags(tags, [], values);
+    expect(r).toEqual({ tags, values, diverted: [] });
+    expect(r.tags).toBe(tags);
+  });
+
+  it("既に選択済みならタグだけ外す", () => {
+    const values = [select("kind", ["hall"])];
+    const r = divertOptionTags(["ホール"], [multi], values);
+    expect(r.tags).toEqual([]);
+    expect(r.values).toEqual(values);
   });
 });
 
