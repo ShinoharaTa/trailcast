@@ -193,7 +193,7 @@ export function FieldFilterBar({
                   onRangeChange(field.id, "max", "");
                 }}
                 aria-label={`${field.label} の範囲を解除`}
-                className="rounded-full px-2 py-1 text-sm text-white/40 transition hover:bg-white/10 hover:text-white/80 md:text-xs"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full px-2 py-1 text-sm text-white/40 transition hover:bg-white/10 hover:text-white/80 md:min-h-0 md:min-w-0 md:text-xs"
               >
                 ×
               </button>
@@ -240,7 +240,7 @@ export function FieldFilterBar({
             <button
               type="button"
               onClick={onClear}
-              className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition hover:bg-white/10 hover:text-white/80 md:px-2.5 md:py-1 md:text-[11px]"
+              className="relative rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition after:absolute after:-inset-x-1 after:-inset-y-2 after:content-[''] hover:bg-white/10 hover:text-white/80 md:px-2.5 md:py-1 md:text-[11px] md:after:hidden"
             >
               クリア
             </button>
@@ -249,7 +249,7 @@ export function FieldFilterBar({
             <button
               type="button"
               onClick={onEditFields}
-              className="rounded-full px-3 py-1.5 text-xs font-medium text-indigo-300 transition hover:bg-indigo-500/10 hover:text-indigo-200 md:px-2.5 md:py-1 md:text-[11px]"
+              className="-my-2 inline-flex min-h-11 items-center rounded-full px-3 py-1.5 text-xs font-medium text-indigo-300 transition hover:bg-indigo-500/10 hover:text-indigo-200 md:my-0 md:min-h-0 md:px-2.5 md:py-1 md:text-[11px]"
             >
               {editLabel}
             </button>

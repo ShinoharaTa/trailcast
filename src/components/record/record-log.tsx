@@ -249,7 +249,7 @@ export function RecordLog({
             onClick={() =>
               setSortOrder((o) => (o === "desc" ? "asc" : "desc"))
             }
-            className="rounded px-1 py-0.5 text-indigo-300 transition hover:text-indigo-200"
+            className="inline-flex min-h-11 items-center justify-center rounded px-3 text-indigo-300 transition hover:text-indigo-200 md:min-h-0 md:px-1"
           >
             {sortOrder === "desc" ? "新しい順" : "古い順"} ↕
           </button>
@@ -257,7 +257,7 @@ export function RecordLog({
             <button
               type="button"
               onClick={clearAll}
-              className="rounded px-1 py-0.5 text-indigo-300 transition hover:text-indigo-200"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded px-3 text-indigo-300 transition hover:text-indigo-200 md:min-h-0 md:min-w-0 md:px-1"
             >
               クリア
             </button>
