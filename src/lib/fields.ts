@@ -196,9 +196,15 @@ function sanitizeValue(
       if (options.length === 0) return null;
       return { $type: value.$type, field: def.id, options };
     }
-    case VALUE_TYPES.number:
-      if (!isValidDecimal(value.value)) return null;
-      return { $type: value.$type, field: def.id, value: value.value };
+    case VALUE_TYPES.number: {
+      // 全角数字・全角ピリオドも受ける (入力欄の onChange と同じ NFKC → trim)
+      const decimal =
+        typeof value.value === "string"
+          ? value.value.normalize("NFKC").trim()
+          : value.value;
+      if (!isValidDecimal(decimal)) return null;
+      return { $type: value.$type, field: def.id, value: decimal };
+    }
     case VALUE_TYPES.duration:
       if (!Number.isInteger(value.seconds) || value.seconds < 0) return null;
       return { $type: value.$type, field: def.id, seconds: value.seconds };

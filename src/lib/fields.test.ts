@@ -654,6 +654,12 @@ describe("sanitizePostFieldsForRecord", () => {
     ]);
   });
 
+  it('number の全角 "１２．５" は NFKC で "12.5" になる', () => {
+    expect(sanitizePostFieldsForRecord([num("weight", "１２．５")], defs)).toEqual([
+      num("weight", "12.5"),
+    ]);
+  });
+
   it("同じ field が 2 件あると後勝ちで 1 件になる", () => {
     expect(
       sanitizePostFieldsForRecord([num("weight", "10"), num("weight", "20")], defs),

@@ -171,7 +171,7 @@ export function RecordLog({
             onChange={(e) => update({ query: e.target.value })}
             placeholder="本文・タグ・項目で探す"
             aria-label="記録を検索"
-            className="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-white outline-none placeholder:text-white/30"
+            className="min-w-0 flex-1 bg-transparent py-2.5 text-base text-white outline-none placeholder:text-white/30 md:text-sm"
           />
         </label>
 

@@ -14,7 +14,7 @@ import { formatDuration, parseDurationInput } from "@/lib/fields-format";
 import type { FieldDef, FieldValue } from "@/lib/types";
 
 const inputClass =
-  "rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50";
+  "rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50 md:text-sm";
 
 export interface FieldInputsProps {
   /** 入力させる項目 (archived は渡す前に除外する) */
@@ -294,7 +294,10 @@ export function FieldInputs({
                           def.scale ? `0.${"0".repeat(def.scale)}` : "0"
                         }
                         onChange={(e) => {
-                          const value = e.target.value.trim();
+                          // 全角数字も受ける (duration と同じく NFKC → trim)
+                          const value = e.target.value
+                            .normalize("NFKC")
+                            .trim();
                           setValue(
                             def.id,
                             value
