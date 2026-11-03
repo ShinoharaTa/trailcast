@@ -109,8 +109,9 @@
 - 記録項目（archived 以外）のあるスレッドでは、新規投稿も編集保存も、項目が
   未入力なら `fields: []` を書く（自由タグが選択肢扱いで読み替えられないように）。
   項目の無いスレッドでは新規投稿は `fields` を書かない。
-- `tagGroups` は **deprecated**。変換後は thread から消す（§7）。lexicon の
-  プロパティ自体は残す（既存 record が持っているため）。
+- `tagGroups` は現役の機能として残す（#121 で方針変更。当初は deprecated の予定だった）。
+  自由タグを見出しごとに並べる表示用で、絞り込みバーとタグ入力の候補で使う。
+  §7 の変換を選んだスレッドでは変換時に thread から消える。
 
 ---
 
@@ -174,8 +175,8 @@ text / rating は 2 次（lexicon の knownValues に足すだけで後方互換
 
 - `id` は `fieldDef / fieldOption` とも **クライアント生成の短いランダム文字列**
   （例: base32 8 文字）。label からは作らない（改名耐性のため）。
-- `tagGroups` の description を "Deprecated: superseded by fields (select). Kept for
-  records written before fields existed." に書き換える。
+- `tagGroups` の description は現役機能としての説明にする（#121。当初の
+  "Deprecated: superseded by fields (select)..." は取り消し）。
 
 #### `net.shino3.trailcast.post` に追加
 
