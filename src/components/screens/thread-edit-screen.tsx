@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { ComAtprotoRepoPutRecord, type BlobRef } from "@atproto/api";
 import { PhotoIcon, TrashIcon } from "@/components/ui/icons";
+import { Modal } from "@/components/ui/modal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { getThread, listThreads, updateThread } from "@/lib/pds/threads";
 import { uploadImage } from "@/lib/pds/posts";
 import { processCoverImage } from "@/lib/image-processing";
@@ -100,7 +102,19 @@ export interface ThreadEditScreenProps {
    * 「記録項目を編集」で来たときに使う (#37 #60)。
    */
   initialSection?: "fields";
+  /**
+   * 親の「戻る」(history) から呼ぶ閉じる関数を受け取る ref。
+   * 未保存の変更があるときは閉じずに破棄確認を出すため、閉じる操作はフォームが握る。
+   * 閉じたら true、確認を出して閉じなかったら false を返す。
+   */
+  requestCloseRef?: RefObject<(() => boolean) | null>;
 }
+
+const EDIT_TITLE = "スレッド情報を編集";
+
+const editHeader = (
+  <h2 className="pr-10 text-xl font-bold text-white">{EDIT_TITLE}</h2>
+);
 
 /**
  * 開いた時点の record を PDS から取り直してから編集フォームを出す。
@@ -136,10 +150,13 @@ export function ThreadEditScreen(props: ThreadEditScreenProps) {
   if (fresh) return <ThreadEditForm {...props} thread={fresh} />;
 
   return (
-    <div>
-      <h2 className="mb-6 pr-10 text-xl font-bold text-white">
-        スレッド情報を編集
-      </h2>
+    <Modal
+      open
+      onClose={onCancel}
+      maxWidth="2xl"
+      header={editHeader}
+      ariaLabel={EDIT_TITLE}
+    >
       {loadError ? (
         <div className="space-y-5">
           <div className="rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
@@ -171,7 +188,7 @@ export function ThreadEditScreen(props: ThreadEditScreenProps) {
           読み込み中...
         </div>
       )}
-    </div>
+    </Modal>
   );
 }
 
@@ -184,6 +201,7 @@ function ThreadEditForm({
   onRequestDelete,
   onConflict,
   initialSection,
+  requestCloseRef,
 }: ThreadEditScreenProps) {
   const [title, setTitle] = useState(thread.title);
   const [description, setDescription] = useState(thread.description ?? "");
@@ -531,571 +549,626 @@ function ThreadEditForm({
     fieldsDirty ||
     threadTagsDirty;
 
-  return (
-    <div>
-      <h2 className="mb-6 pr-10 text-xl font-bold text-white">
-        スレッド情報を編集
-      </h2>
-      <div className="space-y-5">
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-white/50">
-            タイトル
-          </label>
-          <input
-            type="text"
-            placeholder="例: 京都日帰り旅"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            maxLength={100}
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
-          />
+  // 未保存の変更があるときの閉じる操作 (× / 背景 / ESC / キャンセル / 戻る) は破棄確認を挟む
+  const [discardConfirmOpen, setDiscardConfirmOpenState] = useState(false);
+  // requestClose は ref 経由で古い render の closure から呼ばれうるので、開閉は ref でも持つ
+  const discardConfirmOpenRef = useRef(false);
+  const setDiscardConfirmOpen = (v: boolean) => {
+    discardConfirmOpenRef.current = v;
+    setDiscardConfirmOpenState(v);
+  };
+  const requestClose = () => {
+    // 保存中は閉じない
+    if (submitting) return false;
+    // 確認を出している間は何もしない
+    if (discardConfirmOpenRef.current) return false;
+    if (dirty) {
+      setDiscardConfirmOpen(true);
+      return false;
+    }
+    onCancel();
+    return true;
+  };
+
+  useEffect(() => {
+    if (!requestCloseRef) return;
+    requestCloseRef.current = requestClose;
+    return () => {
+      requestCloseRef.current = null;
+    };
+  });
+
+  const footer = (
+    <div className="space-y-2">
+      {error && (
+        <div
+          title={error}
+          className="line-clamp-2 rounded-lg bg-red-500/10 px-4 py-2 text-xs text-red-400"
+        >
+          {error}
         </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-white/50">
-            概要
-          </label>
-          <textarea
-            rows={3}
-            placeholder="どんなスレッド？"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            maxLength={500}
-            className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
-          />
+      )}
+      {fieldErrors.size > 0 && (
+        <div className="truncate rounded-lg bg-red-500/10 px-4 py-2 text-xs text-red-400">
+          記録項目に未入力があります
         </div>
-        <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-          <div>
-            <div className="text-sm text-white/70">公開設定</div>
-            <div className="text-[11px] text-white/40">
-              {visibility === "public"
-                ? "誰でも閲覧できます"
-                : "自分だけが閲覧できます"}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() =>
-              setVisibility((v) => (v === "private" ? "public" : "private"))
-            }
-            className="flex items-center gap-2"
-          >
-            <span className="text-xs text-white/40">
-              {visibility === "private" ? "Private" : "Public"}
+      )}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={requestClose}
+          disabled={submitting}
+          className="flex-1 rounded-xl border border-white/10 bg-white/5 min-h-11 py-2 text-sm md:py-3 font-medium text-white/80 transition hover:bg-white/10 disabled:opacity-50"
+        >
+          キャンセル
+        </button>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={
+            submitting || !title.trim() || !dirty || fieldErrors.size > 0
+          }
+          className="flex-1 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 min-h-11 py-2 text-sm md:py-3 font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
+        >
+          {submitting ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              保存中...
             </span>
-            <div
-              className={`relative h-6 w-11 rounded-full p-0.5 transition ${
-                visibility === "public" ? "bg-emerald-500" : "bg-surface-700"
+          ) : (
+            "保存"
+          )}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <Modal
+        open
+        onClose={requestClose}
+        maxWidth="2xl"
+        header={editHeader}
+        footer={footer}
+        ariaLabel={EDIT_TITLE}
+      >
+        <div className="space-y-5">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-white/50">
+              タイトル
+            </label>
+            <input
+              type="text"
+              placeholder="例: 京都日帰り旅"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={100}
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-white/50">
+              概要
+            </label>
+            <textarea
+              rows={3}
+              placeholder="どんなスレッド？"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={500}
+              className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div>
+              <div className="text-sm text-white/70">公開設定</div>
+              <div className="text-[11px] text-white/40">
+                {visibility === "public"
+                  ? "誰でも閲覧できます"
+                  : "自分だけが閲覧できます"}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setVisibility((v) => (v === "private" ? "public" : "private"))
+              }
+              className="flex items-center gap-2"
+            >
+              <span className="text-xs text-white/40">
+                {visibility === "private" ? "Private" : "Public"}
+              </span>
+              <div
+                className={`relative h-6 w-11 rounded-full p-0.5 transition ${
+                  visibility === "public" ? "bg-emerald-500" : "bg-surface-700"
+                }`}
+              >
+                <div
+                  className={`size-5 rounded-full bg-white shadow transition-transform ${
+                    visibility === "public" ? "translate-x-5" : ""
+                  }`}
+                />
+              </div>
+            </button>
+          </div>
+
+          <TagInput
+            label="スレッドのタグ"
+            maxTags={MAX_TAGS_PER_THREAD}
+            value={threadTagList}
+            onChange={setThreadTagList}
+            disabled={submitting}
+            hint="スレッド自体の分類 (例: 旅行, オフ会)。プロフィールで絞り込みに使えます"
+          />
+          <TagInput
+            label="投稿に既定で付けるタグ"
+            maxTags={MAX_DEFAULT_TAGS}
+            value={defaultTags}
+            onChange={setDefaultTags}
+            threadTags={threadTags}
+            excludeKeys={excludeTagKeys}
+            disabled={submitting}
+            hint="このスレッドの新しいチェックポイントに最初から入ります。投稿ごとに外せます"
+          />
+
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="min-w-0">
+              <div className="text-sm text-white/70">このスレッドを終了する</div>
+              <div className="mt-0.5 text-[11px] leading-relaxed text-white/40">
+                終了すると、チェックポイントが古い順 (最初から読む順) で表示され、
+                参加者の投稿を受け付けなくなります。あとで再開できます。
+                {thread.endedAt && ` 終了日時: ${formatEndedAt(thread.endedAt)}`}
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={ended}
+              onClick={() => setEnded((v) => !v)}
+              disabled={submitting}
+              className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition ${
+                ended ? "bg-amber-500" : "bg-surface-700"
               }`}
             >
-              <div
-                className={`size-5 rounded-full bg-white shadow transition-transform ${
-                  visibility === "public" ? "translate-x-5" : ""
+              <span
+                className={`absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow transition ${
+                  ended ? "translate-x-5" : ""
                 }`}
               />
-            </div>
-          </button>
-        </div>
-
-        <TagInput
-          label="スレッドのタグ"
-          maxTags={MAX_TAGS_PER_THREAD}
-          value={threadTagList}
-          onChange={setThreadTagList}
-          disabled={submitting}
-          hint="スレッド自体の分類 (例: 旅行, オフ会)。プロフィールで絞り込みに使えます"
-        />
-        <TagInput
-          label="投稿に既定で付けるタグ"
-          maxTags={MAX_DEFAULT_TAGS}
-          value={defaultTags}
-          onChange={setDefaultTags}
-          threadTags={threadTags}
-          excludeKeys={excludeTagKeys}
-          disabled={submitting}
-          hint="このスレッドの新しいチェックポイントに最初から入ります。投稿ごとに外せます"
-        />
-
-        <div className="flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-          <div className="min-w-0">
-            <div className="text-sm text-white/70">このスレッドを終了する</div>
-            <div className="mt-0.5 text-[11px] leading-relaxed text-white/40">
-              終了すると、チェックポイントが古い順 (最初から読む順) で表示され、
-              参加者の投稿を受け付けなくなります。あとで再開できます。
-              {thread.endedAt && ` 終了日時: ${formatEndedAt(thread.endedAt)}`}
-            </div>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={ended}
-            onClick={() => setEnded((v) => !v)}
-            disabled={submitting}
-            className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition ${
-              ended ? "bg-amber-500" : "bg-surface-700"
-            }`}
-          >
-            <span
-              className={`absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow transition ${
-                ended ? "translate-x-5" : ""
-              }`}
-            />
-          </button>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-          <div className="mb-2 flex items-center justify-between">
-            <div>
-              <div className="text-sm text-white/70">
-                チェックポイントの並び順
-              </div>
-              <div className="text-[11px] text-white/40">
-                {sortOrder === "desc"
-                  ? "新しいものが上に表示されます"
-                  : "古いものが上に表示されます"}
-                {sortOrder === defaultSortOrder && " (デフォルト)"}
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-2" role="radiogroup" aria-label="並び順">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={sortOrder === "asc"}
-              onClick={() => setSortOrder("asc")}
-              className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                sortOrder === "asc"
-                  ? "border-indigo-400/60 bg-indigo-500/15 text-white"
-                  : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/5"
-              }`}
-            >
-              古い順 (昇順)
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={sortOrder === "desc"}
-              onClick={() => setSortOrder("desc")}
-              className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                sortOrder === "desc"
-                  ? "border-indigo-400/60 bg-indigo-500/15 text-white"
-                  : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/5"
-              }`}
-            >
-              新しい順 (降順)
             </button>
           </div>
-        </div>
 
-        {/* 表示の設定なので、終了したスレッドでも編集できる */}
-        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-          <div className="mb-2">
-            <div className="text-sm text-white/70">既定の表示</div>
-            <div className="text-[11px] text-white/40">
-              スレッドを開いたときの表示です。見る人全員に適用されます
-              {defaultView === "timeline" && " (デフォルト)"}
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="mb-2 flex items-center justify-between">
+              <div>
+                <div className="text-sm text-white/70">
+                  チェックポイントの並び順
+                </div>
+                <div className="text-[11px] text-white/40">
+                  {sortOrder === "desc"
+                    ? "新しいものが上に表示されます"
+                    : "古いものが上に表示されます"}
+                  {sortOrder === defaultSortOrder && " (デフォルト)"}
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="flex gap-2" role="radiogroup" aria-label="既定の表示">
-            {(["timeline", "log", "review"] as const).map((v) => (
+            <div className="flex gap-2" role="radiogroup" aria-label="並び順">
               <button
-                key={v}
                 type="button"
                 role="radio"
-                aria-checked={defaultView === v}
-                onClick={() => setDefaultView(v)}
+                aria-checked={sortOrder === "asc"}
+                onClick={() => setSortOrder("asc")}
                 className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                  defaultView === v
+                  sortOrder === "asc"
                     ? "border-indigo-400/60 bg-indigo-500/15 text-white"
                     : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/5"
                 }`}
               >
-                {THREAD_VIEW_LABELS[v]}
+                古い順 (昇順)
               </button>
-            ))}
-          </div>
-        </div>
-
-        <div
-          ref={fieldsSectionRef}
-          className="scroll-mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3"
-        >
-          <div className="text-sm text-white/70">記録項目</div>
-          <p className="mb-3 mt-0.5 text-[11px] leading-relaxed text-white/40">
-            投稿で記録する項目を決めます。選択肢・数値・時間・テキストから選べます。名前や選択肢はあとから変えても、過去の記録はそのまま残ります。
-          </p>
-          {fieldsLocked && (
-            <p className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200/80">
-              終了したスレッドの記録項目は編集できません。再開すると編集できます。
-            </p>
-          )}
-
-          {canConvertTagGroups && !convertOpen && (
-            <button
-              type="button"
-              onClick={openConvert}
-              disabled={submitting}
-              className="mb-3 w-full rounded-lg border border-indigo-400/30 bg-indigo-500/10 py-2.5 text-xs font-medium text-indigo-200 transition hover:bg-indigo-500/20 disabled:opacity-50"
-            >
-              タググループを記録項目に変換
-            </button>
-          )}
-          {canConvertTagGroups && convertOpen && (
-            <div className="mb-3 rounded-lg border border-indigo-400/30 bg-indigo-500/[0.06] p-3">
-              <div className="text-xs font-medium text-white/70">
-                タググループを記録項目に変換
-              </div>
-              <p className="mb-2.5 mt-0.5 text-[11px] text-white/40">
-                過去の投稿は書き換えません。タグから自動で読み取ります。
-              </p>
-              <div className="space-y-2">
-                {(sanitizedTagGroups ?? []).map((g, i) => (
-                  <div
-                    key={`${i}-${g.label}`}
-                    className="flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0 truncate text-xs text-white/70">
-                      {g.label}
-                      <span className="ml-1.5 text-white/30">
-                        {g.tags.length} 件
-                      </span>
-                    </div>
-                    <SegmentedToggle
-                      label={`${g.label} の選び方`}
-                      value={convertMultiple[i] ?? true}
-                      onChange={(multiple) =>
-                        setConvertMultiple((ms) =>
-                          ms.map((m, j) => (j === i ? multiple : m)),
-                        )
-                      }
-                      disabled={submitting}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setConvertOpen(false)}
-                  disabled={submitting}
-                  className="flex-1 rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-medium text-white/70 transition hover:bg-white/10 disabled:opacity-50"
-                >
-                  やめる
-                </button>
-                <button
-                  type="button"
-                  onClick={convertTagGroups}
-                  disabled={submitting}
-                  className="flex-1 rounded-lg bg-indigo-500/80 py-2 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50"
-                >
-                  変換する
-                </button>
-              </div>
-            </div>
-          )}
-
-          <fieldset disabled={fieldsLocked || submitting} className="min-w-0">
-            {orderedFields.length > 0 && (
-              <div className="space-y-3">
-                {orderedFields.map((f, i) => (
-                  <FieldCard
-                    key={f.id}
-                    field={f}
-                    error={fieldErrors.get(f.id)}
-                    tagCandidates={optionCandidatesFromTags(
-                      threadTags ?? [],
-                      f.options,
-                    )}
-                    canMoveUp={!f.archived && i > 0}
-                    canMoveDown={
-                      !f.archived &&
-                      i + 1 < orderedFields.length &&
-                      !orderedFields[i + 1].archived
-                    }
-                    onChange={(patch) => updateField(f.id, patch)}
-                    onMove={(dir) => moveField(f.id, dir)}
-                    onRemove={() => removeField(f.id)}
-                    onRestore={() => restoreField(f.id)}
-                  />
-                ))}
-              </div>
-            )}
-            <div
-              className={`grid grid-cols-4 gap-2 ${
-                orderedFields.length > 0 ? "mt-3" : ""
-              }`}
-            >
-              {FIELD_TYPES.map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => addField(type)}
-                  disabled={fields.length >= MAX_FIELDS}
-                  className="rounded-lg border border-dashed border-white/15 py-2.5 text-xs font-medium text-white/50 transition hover:border-indigo-400/40 hover:text-white/80 disabled:opacity-40"
-                >
-                  ＋ {FIELD_TYPE_LABELS[type]}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          {!fieldsLocked && !copyOpen && (
-            <button
-              type="button"
-              onClick={openCopy}
-              disabled={submitting || fields.length >= MAX_FIELDS}
-              className="mt-2 w-full rounded-lg py-2 text-[11px] text-white/45 transition hover:bg-white/5 hover:text-white/70 disabled:opacity-40"
-            >
-              他のスレッドからコピー
-            </button>
-          )}
-          {!fieldsLocked && copyOpen && (
-            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
-              <div className="mb-2 text-xs font-medium text-white/70">
-                他のスレッドからコピー
-              </div>
-              {copyError ? (
-                <p className="text-[11px] text-red-400">{copyError}</p>
-              ) : !copyCandidates ? (
-                <p className="text-[11px] text-white/40">読み込み中...</p>
-              ) : copyCandidates.length === 0 ? (
-                <p className="text-[11px] text-white/40">
-                  コピーできるスレッドがありません
-                </p>
-              ) : (
-                <select
-                  value={copySource}
-                  onChange={(e) => setCopySource(e.target.value)}
-                  disabled={submitting}
-                  aria-label="コピー元のスレッド"
-                  className="w-full rounded-lg border border-white/10 bg-surface-900 px-3 py-2 text-base text-white outline-none focus:border-indigo-400 md:text-sm"
-                >
-                  {copyCandidates.map(({ thread: t, count }) => (
-                    <option key={t.rkey} value={t.rkey}>
-                      {t.title}（{count} 項目）
-                    </option>
-                  ))}
-                </select>
-              )}
-              <div className="mt-2.5 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCopyOpen(false)}
-                  className="flex-1 rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-medium text-white/70 transition hover:bg-white/10"
-                >
-                  閉じる
-                </button>
-                {copyCandidates && copyCandidates.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={copyFromThread}
-                    disabled={
-                      submitting || !copySource || fields.length >= MAX_FIELDS
-                    }
-                    className="flex-1 rounded-lg bg-indigo-500/80 py-2 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50"
-                  >
-                    コピー
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-          <div className="text-sm text-white/70">タグ絞り込みのグループ</div>
-          <p className="mb-3 mt-0.5 text-[11px] text-white/40">
-            「場所」「食事」のような見出しでタグをまとめると、スレッド詳細の絞り込みが見出し付きで表示されます
-          </p>
-          {tagGroups.length > 0 && (
-            <div className="space-y-3">
-              {tagGroups.map((g) => (
-                <div
-                  key={g.id}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] p-3"
-                >
-                  <div className="mb-2.5 flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={g.label}
-                      onChange={(e) =>
-                        updateTagGroup(g.id, { label: e.target.value })
-                      }
-                      placeholder="見出し (例: 場所)"
-                      maxLength={MAX_TAG_GROUP_LABEL_LENGTH}
-                      className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeTagGroup(g.id)}
-                      aria-label={`グループ${g.label ? ` ${g.label}` : ""} を削除`}
-                      className="flex size-9 shrink-0 items-center justify-center rounded-lg text-white/40 transition hover:bg-red-500/10 hover:text-red-400 md:size-8"
-                    >
-                      <TrashIcon className="size-4" />
-                    </button>
-                  </div>
-                  <TagInput
-                    value={g.tags}
-                    onChange={(tags) => updateTagGroup(g.id, { tags })}
-                    threadTags={threadTags}
-                    label="このグループのタグ"
-                    maxTags={MAX_TAGS_PER_GROUP}
-                  />
-                  {unassignedTags.length > 0 &&
-                    g.tags.length < MAX_TAGS_PER_GROUP && (
-                      // スレッドで使われているのにどのグループにも入っていない
-                      // タグを、入力せずワンタップで入れられるようにする (#37)
-                      <div className="mt-2">
-                        <div className="mb-1 text-[11px] text-white/35">
-                          未分類のタグから追加
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {unassignedTags.map((t) => (
-                            <button
-                              key={t.key}
-                              type="button"
-                              onClick={() =>
-                                updateTagGroup(g.id, {
-                                  tags: [...g.tags, t.tag],
-                                })
-                              }
-                              className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-white/60 transition hover:bg-indigo-500/20 hover:text-indigo-200"
-                            >
-                              + #{t.tag}
-                              <span className="ml-1 text-white/30">{t.count}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                </div>
-              ))}
-            </div>
-          )}
-          {tagGroups.length < MAX_TAG_GROUPS && (
-            <button
-              type="button"
-              onClick={addTagGroup}
-              className={`w-full rounded-lg border border-dashed border-white/15 py-2.5 text-xs font-medium text-white/50 transition hover:border-indigo-400/40 hover:text-white/80 ${
-                tagGroups.length > 0 ? "mt-3" : ""
-              }`}
-            >
-              + グループを追加
-            </button>
-          )}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-white/50">
-            カバー画像
-          </label>
-          <div
-            onClick={() => fileRef.current?.click()}
-            className="group relative flex aspect-[3/1] cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-white/10 bg-white/[0.02] transition hover:border-indigo-400/40"
-          >
-            {displayCoverUrl ? (
-              <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={displayCoverUrl}
-                  alt="cover"
-                  className="h-full w-full object-cover"
-                />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition group-hover:opacity-100" />
-                <span className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-0.5 text-[10px] text-white/90 opacity-0 transition group-hover:opacity-100">
-                  クリックして変更
-                </span>
-              </>
-            ) : (
-              <div className="text-center">
-                <PhotoIcon className="mx-auto size-8 text-white/20" />
-                <span className="mt-2 block text-xs text-white/30">
-                  カバー画像を選択
-                </span>
-              </div>
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleCoverSelect}
-            />
-          </div>
-          {displayCoverUrl && (
-            <button
-              type="button"
-              onClick={handleRemoveCover}
-              className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-white/50 transition hover:bg-red-500/10 hover:text-red-400"
-            >
-              <TrashIcon className="size-3" />
-              画像を削除
-            </button>
-          )}
-        </div>
-
-        {onRequestDelete && (
-          <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-red-400/80">
-              危険な操作
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-white/50">
-                スレッドを削除すると、紐づくチェックポイントもすべて削除されます。この操作は元に戻せません。
-              </p>
               <button
                 type="button"
-                onClick={onRequestDelete}
-                className="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/20"
+                role="radio"
+                aria-checked={sortOrder === "desc"}
+                onClick={() => setSortOrder("desc")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                  sortOrder === "desc"
+                    ? "border-indigo-400/60 bg-indigo-500/15 text-white"
+                    : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/5"
+                }`}
               >
-                <span className="flex items-center gap-1.5">
-                  <TrashIcon className="size-3.5" />
-                  スレッドを削除
-                </span>
+                新しい順 (降順)
               </button>
             </div>
           </div>
-        )}
 
-        {error && (
-          <div className="rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
-            {error}
+          {/* 表示の設定なので、終了したスレッドでも編集できる */}
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="mb-2">
+              <div className="text-sm text-white/70">既定の表示</div>
+              <div className="text-[11px] text-white/40">
+                スレッドを開いたときの表示です。見る人全員に適用されます
+                {defaultView === "timeline" && " (デフォルト)"}
+              </div>
+            </div>
+            <div className="flex gap-2" role="radiogroup" aria-label="既定の表示">
+              {(["timeline", "log", "review"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={defaultView === v}
+                  onClick={() => setDefaultView(v)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                    defaultView === v
+                      ? "border-indigo-400/60 bg-indigo-500/15 text-white"
+                      : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/5"
+                  }`}
+                >
+                  {THREAD_VIEW_LABELS[v]}
+                </button>
+              ))}
+            </div>
           </div>
-        )}
-        {fieldErrors.size > 0 && (
-          <div className="rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
-            記録項目に未入力があります
-          </div>
-        )}
 
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={submitting}
-            className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white/80 transition hover:bg-white/10 disabled:opacity-50"
+          <div
+            ref={fieldsSectionRef}
+            className="scroll-mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3"
           >
-            キャンセル
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={
-              submitting || !title.trim() || !dirty || fieldErrors.size > 0
-            }
-            className="flex-1 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
-          >
-            {submitting ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                保存中...
-              </span>
-            ) : (
-              "保存"
+            <div className="text-sm text-white/70">記録項目</div>
+            <p className="mb-3 mt-0.5 text-[11px] leading-relaxed text-white/40">
+              投稿で記録する項目を決めます。選択肢・数値・時間・テキストから選べます。名前や選択肢はあとから変えても、過去の記録はそのまま残ります。
+            </p>
+            {fieldsLocked && (
+              <p className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200/80">
+                終了したスレッドの記録項目は編集できません。再開すると編集できます。
+              </p>
             )}
-          </button>
+
+            {canConvertTagGroups && !convertOpen && (
+              <button
+                type="button"
+                onClick={openConvert}
+                disabled={submitting}
+                className="mb-3 w-full rounded-lg border border-indigo-400/30 bg-indigo-500/10 py-2.5 text-xs font-medium text-indigo-200 transition hover:bg-indigo-500/20 disabled:opacity-50"
+              >
+                タググループを記録項目に変換
+              </button>
+            )}
+            {canConvertTagGroups && convertOpen && (
+              <div className="mb-3 rounded-lg border border-indigo-400/30 bg-indigo-500/[0.06] p-3">
+                <div className="text-xs font-medium text-white/70">
+                  タググループを記録項目に変換
+                </div>
+                <p className="mb-2.5 mt-0.5 text-[11px] text-white/40">
+                  過去の投稿は書き換えません。タグから自動で読み取ります。
+                </p>
+                <div className="space-y-2">
+                  {(sanitizedTagGroups ?? []).map((g, i) => (
+                    <div
+                      key={`${i}-${g.label}`}
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0 truncate text-xs text-white/70">
+                        {g.label}
+                        <span className="ml-1.5 text-white/30">
+                          {g.tags.length} 件
+                        </span>
+                      </div>
+                      <SegmentedToggle
+                        label={`${g.label} の選び方`}
+                        value={convertMultiple[i] ?? true}
+                        onChange={(multiple) =>
+                          setConvertMultiple((ms) =>
+                            ms.map((m, j) => (j === i ? multiple : m)),
+                          )
+                        }
+                        disabled={submitting}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConvertOpen(false)}
+                    disabled={submitting}
+                    className="flex-1 rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-medium text-white/70 transition hover:bg-white/10 disabled:opacity-50"
+                  >
+                    やめる
+                  </button>
+                  <button
+                    type="button"
+                    onClick={convertTagGroups}
+                    disabled={submitting}
+                    className="flex-1 rounded-lg bg-indigo-500/80 py-2 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    変換する
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <fieldset disabled={fieldsLocked || submitting} className="min-w-0">
+              {orderedFields.length > 0 && (
+                <div className="space-y-3">
+                  {orderedFields.map((f, i) => (
+                    <FieldCard
+                      key={f.id}
+                      field={f}
+                      error={fieldErrors.get(f.id)}
+                      tagCandidates={optionCandidatesFromTags(
+                        threadTags ?? [],
+                        f.options,
+                      )}
+                      canMoveUp={!f.archived && i > 0}
+                      canMoveDown={
+                        !f.archived &&
+                        i + 1 < orderedFields.length &&
+                        !orderedFields[i + 1].archived
+                      }
+                      onChange={(patch) => updateField(f.id, patch)}
+                      onMove={(dir) => moveField(f.id, dir)}
+                      onRemove={() => removeField(f.id)}
+                      onRestore={() => restoreField(f.id)}
+                    />
+                  ))}
+                </div>
+              )}
+              <div
+                className={`grid grid-cols-4 gap-2 ${
+                  orderedFields.length > 0 ? "mt-3" : ""
+                }`}
+              >
+                {FIELD_TYPES.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => addField(type)}
+                    disabled={fields.length >= MAX_FIELDS}
+                    className="rounded-lg border border-dashed border-white/15 py-2.5 text-xs font-medium text-white/50 transition hover:border-indigo-400/40 hover:text-white/80 disabled:opacity-40"
+                  >
+                    ＋ {FIELD_TYPE_LABELS[type]}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            {!fieldsLocked && !copyOpen && (
+              <button
+                type="button"
+                onClick={openCopy}
+                disabled={submitting || fields.length >= MAX_FIELDS}
+                className="mt-2 w-full rounded-lg py-2 text-[11px] text-white/45 transition hover:bg-white/5 hover:text-white/70 disabled:opacity-40"
+              >
+                他のスレッドからコピー
+              </button>
+            )}
+            {!fieldsLocked && copyOpen && (
+              <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                <div className="mb-2 text-xs font-medium text-white/70">
+                  他のスレッドからコピー
+                </div>
+                {copyError ? (
+                  <p className="text-[11px] text-red-400">{copyError}</p>
+                ) : !copyCandidates ? (
+                  <p className="text-[11px] text-white/40">読み込み中...</p>
+                ) : copyCandidates.length === 0 ? (
+                  <p className="text-[11px] text-white/40">
+                    コピーできるスレッドがありません
+                  </p>
+                ) : (
+                  <select
+                    value={copySource}
+                    onChange={(e) => setCopySource(e.target.value)}
+                    disabled={submitting}
+                    aria-label="コピー元のスレッド"
+                    className="w-full rounded-lg border border-white/10 bg-surface-900 px-3 py-2 text-base text-white outline-none focus:border-indigo-400 md:text-sm"
+                  >
+                    {copyCandidates.map(({ thread: t, count }) => (
+                      <option key={t.rkey} value={t.rkey}>
+                        {t.title}（{count} 項目）
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <div className="mt-2.5 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCopyOpen(false)}
+                    className="flex-1 rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-medium text-white/70 transition hover:bg-white/10"
+                  >
+                    閉じる
+                  </button>
+                  {copyCandidates && copyCandidates.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={copyFromThread}
+                      disabled={
+                        submitting || !copySource || fields.length >= MAX_FIELDS
+                      }
+                      className="flex-1 rounded-lg bg-indigo-500/80 py-2 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                      コピー
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="text-sm text-white/70">タグ絞り込みのグループ</div>
+            <p className="mb-3 mt-0.5 text-[11px] text-white/40">
+              「場所」「食事」のような見出しでタグをまとめると、スレッド詳細の絞り込みが見出し付きで表示されます
+            </p>
+            {tagGroups.length > 0 && (
+              <div className="space-y-3">
+                {tagGroups.map((g) => (
+                  <div
+                    key={g.id}
+                    className="rounded-lg border border-white/10 bg-white/[0.03] p-3"
+                  >
+                    <div className="mb-2.5 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={g.label}
+                        onChange={(e) =>
+                          updateTagGroup(g.id, { label: e.target.value })
+                        }
+                        placeholder="見出し (例: 場所)"
+                        maxLength={MAX_TAG_GROUP_LABEL_LENGTH}
+                        className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeTagGroup(g.id)}
+                        aria-label={`グループ${g.label ? ` ${g.label}` : ""} を削除`}
+                        className="flex size-9 shrink-0 items-center justify-center rounded-lg text-white/40 transition hover:bg-red-500/10 hover:text-red-400 md:size-8"
+                      >
+                        <TrashIcon className="size-4" />
+                      </button>
+                    </div>
+                    <TagInput
+                      value={g.tags}
+                      onChange={(tags) => updateTagGroup(g.id, { tags })}
+                      threadTags={threadTags}
+                      label="このグループのタグ"
+                      maxTags={MAX_TAGS_PER_GROUP}
+                    />
+                    {unassignedTags.length > 0 &&
+                      g.tags.length < MAX_TAGS_PER_GROUP && (
+                        // スレッドで使われているのにどのグループにも入っていない
+                        // タグを、入力せずワンタップで入れられるようにする (#37)
+                        <div className="mt-2">
+                          <div className="mb-1 text-[11px] text-white/35">
+                            未分類のタグから追加
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {unassignedTags.map((t) => (
+                              <button
+                                key={t.key}
+                                type="button"
+                                onClick={() =>
+                                  updateTagGroup(g.id, {
+                                    tags: [...g.tags, t.tag],
+                                  })
+                                }
+                                className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-white/60 transition hover:bg-indigo-500/20 hover:text-indigo-200"
+                              >
+                                + #{t.tag}
+                                <span className="ml-1 text-white/30">{t.count}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {tagGroups.length < MAX_TAG_GROUPS && (
+              <button
+                type="button"
+                onClick={addTagGroup}
+                className={`w-full rounded-lg border border-dashed border-white/15 py-2.5 text-xs font-medium text-white/50 transition hover:border-indigo-400/40 hover:text-white/80 ${
+                  tagGroups.length > 0 ? "mt-3" : ""
+                }`}
+              >
+                + グループを追加
+              </button>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-white/50">
+              カバー画像
+            </label>
+            <div
+              onClick={() => fileRef.current?.click()}
+              className="group relative flex aspect-[3/1] cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-white/10 bg-white/[0.02] transition hover:border-indigo-400/40"
+            >
+              {displayCoverUrl ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={displayCoverUrl}
+                    alt="cover"
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition group-hover:opacity-100" />
+                  <span className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-0.5 text-[10px] text-white/90 opacity-0 transition group-hover:opacity-100">
+                    クリックして変更
+                  </span>
+                </>
+              ) : (
+                <div className="text-center">
+                  <PhotoIcon className="mx-auto size-8 text-white/20" />
+                  <span className="mt-2 block text-xs text-white/30">
+                    カバー画像を選択
+                  </span>
+                </div>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleCoverSelect}
+              />
+            </div>
+            {displayCoverUrl && (
+              <button
+                type="button"
+                onClick={handleRemoveCover}
+                className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-white/50 transition hover:bg-red-500/10 hover:text-red-400"
+              >
+                <TrashIcon className="size-3" />
+                画像を削除
+              </button>
+            )}
+          </div>
+
+          {onRequestDelete && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-red-400/80">
+                危険な操作
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-white/50">
+                  スレッドを削除すると、紐づくチェックポイントもすべて削除されます。この操作は元に戻せません。
+                </p>
+                <button
+                  type="button"
+                  onClick={onRequestDelete}
+                  className="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/20"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <TrashIcon className="size-3.5" />
+                    スレッドを削除
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
-    </div>
+      </Modal>
+      <ConfirmDialog
+        open={discardConfirmOpen}
+        title="変更を破棄しますか"
+        message="保存していない変更は失われます。"
+        confirmLabel="破棄する"
+        cancelLabel="編集を続ける"
+        destructive
+        initialFocus="cancel"
+        onConfirm={() => {
+          setDiscardConfirmOpen(false);
+          onCancel();
+        }}
+        onCancel={() => setDiscardConfirmOpen(false)}
+      />
+    </>
   );
 }
 
