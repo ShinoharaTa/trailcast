@@ -48,6 +48,10 @@ export function LoginForm({ onSuccess, className }: LoginFormProps) {
           <input
             type="text"
             autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            inputMode="email"
             placeholder="yourname.bsky.social"
             value={identifier}
             onChange={(e) => {
@@ -56,7 +60,7 @@ export function LoginForm({ onSuccess, className }: LoginFormProps) {
             }}
             onKeyDown={handleKeyDown}
             disabled={isLoggingIn}
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50"
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder-white/30 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50 md:text-sm"
           />
           <p className="mt-1.5 text-[11px] text-white/30">
             ハンドル (例: name.bsky.social) または DID を入力

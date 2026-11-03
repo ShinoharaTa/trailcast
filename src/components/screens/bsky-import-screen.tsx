@@ -561,7 +561,7 @@ function UrlInputSection({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={"https://bsky.app/profile/.../post/...\nat://did:plc:.../app.bsky.feed.post/..."}
-        className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 font-mono text-xs text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+        className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 font-mono text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-xs"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <p className="text-[11px] text-white/30">

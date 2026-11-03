@@ -20,7 +20,7 @@ import { HashIcon } from "@/components/ui/icons";
 
 /** FieldInputs の inputClass を絞り込みバー用に詰めたもの */
 const rangeInputClass =
-  "rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50 md:text-xs";
+  "rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50 md:text-xs";
 
 /**
  * タイムライン上部に置く絞り込み / 集計バー (#60)。仕様は docs/record-mode.md §4.3。

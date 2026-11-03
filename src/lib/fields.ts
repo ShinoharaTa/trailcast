@@ -57,6 +57,18 @@ const FIELD_TYPES = new Set<string>(Object.keys(VALUE_TYPES));
 /** 指数表記や先頭の `+` は受けない。lexicon の値をそのまま読める形に限る */
 export const DECIMAL_PATTERN = /^-?\d+(\.\d+)?$/;
 
+/**
+ * 数値の入力を DECIMAL_PATTERN で判定できる形にする。NFKC (全角数字・全角ピリオド・
+ * 全角ハイフン → 半角) → trim の後、先頭の U+2212 (−) と長音「ー」だけ "-" とみなす。
+ * 先頭以外の「ー」等はそのまま残すので不正になる
+ */
+export function normalizeDecimalInput(raw: string): string {
+  return raw
+    .normalize("NFKC")
+    .trim()
+    .replace(/^[\u2212\u30fc]/, "-");
+}
+
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 
 /** field / option 用のランダム id (base32 小文字 8 文字)。label からは作らない。 */
@@ -196,9 +208,15 @@ function sanitizeValue(
       if (options.length === 0) return null;
       return { $type: value.$type, field: def.id, options };
     }
-    case VALUE_TYPES.number:
-      if (!isValidDecimal(value.value)) return null;
-      return { $type: value.$type, field: def.id, value: value.value };
+    case VALUE_TYPES.number: {
+      // 入力欄は生の文字列を持つので、全角数字等はここで正規化する
+      const decimal =
+        typeof value.value === "string"
+          ? normalizeDecimalInput(value.value)
+          : value.value;
+      if (!isValidDecimal(decimal)) return null;
+      return { $type: value.$type, field: def.id, value: decimal };
+    }
     case VALUE_TYPES.duration:
       if (!Number.isInteger(value.seconds) || value.seconds < 0) return null;
       return { $type: value.$type, field: def.id, seconds: value.seconds };
@@ -1350,7 +1368,7 @@ export function isRangeField(def: FieldDef): boolean {
 }
 
 /**
- * 境界 1 つを数値にする。NFKC 正規化 (全角数字 → 半角) と trim の後に空なら null、
+ * 境界 1 つを数値にする。normalizeDecimalInput (保存時と同じ正規化) の後に空なら null、
  * 解釈できなければ "invalid"。DECIMAL_PATTERN かつ MAX_NUMBER_VALUE_LENGTH 以内なら Number()。
  * 範囲項目でない def には常に "invalid"
  */
@@ -1359,7 +1377,7 @@ export function parseRangeBound(
   def: FieldDef,
 ): number | null | "invalid" {
   if (!isRangeField(def)) return "invalid";
-  const s = raw.normalize("NFKC").trim();
+  const s = normalizeDecimalInput(raw);
   if (!s) return null;
   return isValidDecimal(s) ? Number(s) : "invalid";
 }

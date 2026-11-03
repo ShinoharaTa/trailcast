@@ -477,7 +477,7 @@ function MonthlySection({
             aria-label="月ごとの記録の指標"
             value={metricValue}
             onChange={(e) => setSelected(e.target.value as MetricValue)}
-            className="max-w-[55%] shrink-0 truncate rounded-lg border border-white/10 bg-surface-900 px-2 py-1 text-xs text-white/70 focus:border-indigo-400 focus:outline-none"
+            className="max-w-[55%] shrink-0 truncate rounded-lg border border-white/10 bg-surface-900 px-2 py-1 text-base text-white/70 focus:border-indigo-400 focus:outline-none md:text-xs"
           >
             {options.map((o) => (
               <option key={o.value} value={o.value}>

@@ -176,7 +176,7 @@ export function CheckpointEditScreen({
               const d = new Date(e.target.value);
               if (!isNaN(d.getTime())) setCheckpointAt(d.toISOString());
             }}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-indigo-400"
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-base text-white outline-none focus:border-indigo-400 md:text-sm"
           />
         </div>
 
@@ -186,7 +186,7 @@ export function CheckpointEditScreen({
             rows={3}
             value={text}
             onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT))}
-            className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+            className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
           />
           <span className="absolute bottom-3 right-3 text-xs text-white/20">
             {text.length}/{MAX_TEXT}
