@@ -3,7 +3,6 @@
 import {
   useDeferredValue,
   useMemo,
-  useState,
   type Dispatch,
   type SetStateAction,
 } from "react";
@@ -13,7 +12,6 @@ import type {
   ThreadSortOrder,
   ThreadWithMeta,
 } from "@/lib/types";
-import { effectiveSortOrder } from "@/lib/types";
 import {
   initialFreeTagsForEdit,
   setRangeBound,
@@ -31,6 +29,7 @@ import {
 } from "@/lib/record";
 import { FieldFilterBar } from "@/components/ui/field-filter-bar";
 import { PostFieldValues, PostTags } from "@/components/ui/post-field-values";
+import { EditIcon } from "@/components/ui/icons";
 
 /** thread.fields が無いときの defs。毎 render で新しい配列を作らず参照を固定する */
 const NO_FIELDS: FieldDef[] = [];
@@ -54,7 +53,9 @@ function dateParts(iso: string): { md: string; year: string } | null {
  *
  * - 絞り込み (項目・範囲・自由タグ) はタイムラインと同じ filter を共有する
  * - 検索語と未記録は記録帳だけで効く
- * - 行の日付・タイトルを押すとタイムラインのその投稿へ移る (編集・削除はタイムラインで行う)
+ * - 行の日付・タイトルを押すとタイムラインのその投稿へ移る
+ * - 自分の投稿の行には編集ボタンを出し、記録帳のまま編集を開く (削除はタイムラインで行う)
+ * - 並び順は絞り込みと同じく親が持つ (タイムラインとの行き来で失わない)
  */
 export function RecordLog({
   posts,
@@ -62,6 +63,10 @@ export function RecordLog({
   filter,
   onFilterChange,
   onOpenPost,
+  sortOrder,
+  onSortOrderChange,
+  canManagePost,
+  onEditPost,
   canEdit = false,
   onEditFields,
   migrateCount = 0,
@@ -74,6 +79,11 @@ export function RecordLog({
   /** 範囲の解除 (×) は下限・上限を続けて更新するので、関数での更新も受ける */
   onFilterChange: Dispatch<SetStateAction<RecordFilter>>;
   onOpenPost: (uri: string) => void;
+  sortOrder: ThreadSortOrder;
+  onSortOrderChange: Dispatch<SetStateAction<ThreadSortOrder>>;
+  /** 編集できる投稿か (自分の repo にあるか)。タイムラインと同じ判定を渡す */
+  canManagePost?: (post: PostWithMeta) => boolean;
+  onEditPost?: (post: PostWithMeta) => void;
   canEdit?: boolean;
   onEditFields?: () => void;
   /** タグから記録項目へ書き換えられる自分の投稿の件数 (#62) */
@@ -81,9 +91,6 @@ export function RecordLog({
   onOpenMigrate?: () => void;
 }) {
   const defs = thread.fields ?? NO_FIELDS;
-  const [sortOrder, setSortOrder] = useState<ThreadSortOrder>(() =>
-    effectiveSortOrder(thread),
-  );
   // 入力のたびに一覧を組み直すと重くなるので、検索語の反映は遅らせる
   const deferredQuery = useDeferredValue(filter.query);
 
@@ -247,7 +254,7 @@ export function RecordLog({
           <button
             type="button"
             onClick={() =>
-              setSortOrder((o) => (o === "desc" ? "asc" : "desc"))
+              onSortOrderChange((o) => (o === "desc" ? "asc" : "desc"))
             }
             className="inline-flex min-h-11 items-center justify-center rounded px-3 text-indigo-300 transition hover:text-indigo-200 md:min-h-0 md:px-1"
           >
@@ -306,13 +313,26 @@ export function RecordLog({
                   )}
                 </button>
                 <div className="min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => onOpenPost(post.uri)}
-                    className="block w-full truncate text-left text-sm font-semibold text-white/90 transition hover:text-white"
-                  >
-                    {title}
-                  </button>
+                  <div className="flex items-start gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onOpenPost(post.uri)}
+                      className="block min-w-0 flex-1 truncate text-left text-sm font-semibold text-white/90 transition hover:text-white"
+                    >
+                      {title}
+                    </button>
+                    {onEditPost && canManagePost?.(post) && (
+                      // md 未満はタップ領域 44px。負の margin で行の高さは変えない
+                      <button
+                        type="button"
+                        onClick={() => onEditPost(post)}
+                        aria-label="編集"
+                        className="-my-3 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md px-2 py-1 text-white/40 transition hover:bg-white/5 hover:text-white/80 md:my-0 md:min-h-0 md:min-w-0"
+                      >
+                        <EditIcon className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
                   {note && (
                     <p className="mt-0.5 line-clamp-2 whitespace-pre-line text-xs text-white/40">
                       {note}

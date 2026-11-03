@@ -11,6 +11,7 @@ import {
 import type { NavigationProps } from "@/lib/use-navigation";
 import type {
   FieldDef,
+  ThreadSortOrder,
   ThreadWithMeta,
   PostWithMeta,
 } from "@/lib/types";
@@ -550,13 +551,16 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   // refresh() で thread が入れ替わっても上書きしないよう、初期化したスレッドの uri を持つ。
   // 描画前に決めて、既定が記録帳のスレッドでタイムラインが一瞬見えないようにする。
   // スレッドが変わったら絞り込みも初期化する (前のスレッドの検索語・未記録を持ち越さない)
+  // 記録帳の並び順も絞り込みと同じくここで持ち、タイムラインとの行き来で失わない (#122)
   const [view, setView] = useState<ThreadView>("timeline");
+  const [logSortOrder, setLogSortOrder] = useState<ThreadSortOrder>("desc");
   const viewInitUriRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (!thread || viewInitUriRef.current === thread.uri) return;
     viewInitUriRef.current = thread.uri;
     setView(effectiveDefaultView(thread, AVAILABLE_THREAD_VIEWS));
     setFilter(EMPTY_RECORD_FILTER);
+    setLogSortOrder(effectiveSortOrder(thread));
   }, [thread]);
 
   // タグから記録項目へ書き換えられる自分の投稿 (#62)。所有者の判定は early return の
@@ -1319,6 +1323,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
                 filter={filter}
                 onFilterChange={setFilter}
                 onOpenPost={scrollToPost}
+                sortOrder={logSortOrder}
+                onSortOrderChange={setLogSortOrder}
+                canManagePost={canManagePost}
+                onEditPost={openCheckpointEdit}
                 canEdit={isOwner}
                 onEditFields={() => setModal("thread-edit-fields")}
                 migrateCount={migratePlans.length}
