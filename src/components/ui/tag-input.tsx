@@ -55,6 +55,8 @@ export interface TagInputProps {
   disabled?: boolean;
   /** ラベルの下に出す補助テキスト */
   hint?: string;
+  /** 入力欄のすぐ下に出す一言 (選択肢への振り分けの知らせなど)。null / 省略で出さない */
+  notice?: string | null;
   /** 入力欄のラベル。省略時は「タグ」 */
   label?: string;
   /** タグ数の上限。省略時はチェックポイントの上限 (MAX_TAGS_PER_POST) */
@@ -81,6 +83,7 @@ export function TagInput({
   tagGroups,
   disabled = false,
   hint,
+  notice,
   label = "タグ",
   maxTags = MAX_TAGS_PER_POST,
 }: TagInputProps) {
@@ -354,6 +357,9 @@ export function TagInput({
         />
       </div>
 
+      <p role="status" aria-live="polite" className="text-[11px] text-indigo-300">
+        {notice && <span className="mt-1 block">{notice}</span>}
+      </p>
       {hint && <p className="mt-1 text-[11px] text-white/30">{hint}</p>}
     </div>
   );

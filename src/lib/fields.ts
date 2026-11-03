@@ -556,6 +556,107 @@ export function stripSelectedOptionTags(
   return tags.filter((t) => !keys.has(tagKey(t)));
 }
 
+/** 振り分けた選択肢 1 件。`replaced` は 1 つだけの項目で置き換えた元の選択肢 */
+export interface DivertedOption {
+  field: FieldDef;
+  option: FieldOption;
+  replaced?: FieldOption;
+}
+
+/** タグ欄の入力を選択肢へ振り分けた結果。`diverted` は振り分けた選択肢 (タグの順) */
+export interface DivertOptionTagsResult {
+  tags: string[];
+  values: FieldValue[];
+  diverted: DivertedOption[];
+}
+
+/**
+ * タグ欄に打った選択肢名を、その選択肢の選択に振り分ける (#113)。
+ * - 対象は archived でない select の archived でない選択肢。比較は normalizeTag 後の
+ *   tagKey 一致 (大文字小文字・先頭の `#` を無視)。複数の項目に同じ名前があれば定義順で先の項目
+ * - 一致したタグは tags から外し、multiple は選択に足す / 1 つだけは置き換える
+ * - archived の項目・選択肢と同名のタグは自由タグのまま残す (選択として入力できないため)
+ * - `opts.prev` (直前のタグ欄の値) に tagKey が含まれるタグは対象外。新しく足したタグだけを
+ *   振り分け、無関係なタグの付け外しで既存のタグが選択に変わらないようにする
+ * - 1 つだけの項目に複数一致したら最後のものを選び、diverted もその 1 件だけにする
+ * 一致が無ければ tags / values は同じ参照を返す。入力は変更しない。
+ */
+export function divertOptionTags(
+  tags: string[],
+  defs: FieldDef[],
+  values: FieldValue[],
+  opts?: { prev?: string[] },
+): DivertOptionTagsResult {
+  const byKey = new Map<string, { field: FieldDef; option: FieldOption }>();
+  for (const def of defs) {
+    if (def.type !== "select" || def.archived) continue;
+    for (const option of def.options ?? []) {
+      if (option.archived) continue;
+      const key = optionLabelKey(option.label);
+      if (key !== null && !byKey.has(key)) byKey.set(key, { field: def, option });
+    }
+  }
+  const prevKeys = new Set((opts?.prev ?? []).map(tagKey));
+  const kept: string[] = [];
+  const hits: { field: FieldDef; option: FieldOption }[] = [];
+  for (const tag of tags) {
+    const key = optionLabelKey(tag);
+    const hit =
+      key === null || prevKeys.has(tagKey(tag)) ? undefined : byKey.get(key);
+    if (hit) hits.push(hit);
+    else kept.push(tag);
+  }
+  if (hits.length === 0) return { tags, values, diverted: [] };
+
+  let next = values;
+  const diverted: DivertedOption[] = [];
+  for (const { field, option } of hits) {
+    const current = next.find((v) => v.field === field.id);
+    const selected = current?.$type === VALUE_TYPES.select ? current.options : [];
+    const value: FieldValue = {
+      $type: VALUE_TYPES.select,
+      field: field.id,
+      options: field.multiple
+        ? selected.includes(option.id)
+          ? selected
+          : [...selected, option.id]
+        : [option.id],
+    };
+    next = current
+      ? next.map((v) => (v.field === field.id ? value : v))
+      : [...next, value];
+    if (field.multiple) {
+      diverted.push({ field, option });
+      continue;
+    }
+    // 1 つだけの項目は最終値の 1 件だけ。置き換え元は呼び出し前の選択で見る
+    const i = diverted.findIndex((d) => d.field.id === field.id);
+    if (i >= 0) diverted.splice(i, 1);
+    const before = values.find((v) => v.field === field.id);
+    const beforeIds = before?.$type === VALUE_TYPES.select ? before.options : [];
+    const replacedId = beforeIds.includes(option.id) ? undefined : beforeIds[0];
+    const replaced = (field.options ?? []).find((o) => o.id === replacedId);
+    diverted.push(replaced ? { field, option, replaced } : { field, option });
+  }
+  return { tags: kept, values: next, diverted };
+}
+
+/**
+ * 振り分けの知らせ文。例: 「選択肢「ルーム」を選びました（「ホール」から変更）」
+ * 振り分けが無ければ null
+ */
+export function divertNoticeText(diverted: DivertedOption[]): string | null {
+  if (diverted.length === 0) return null;
+  const changed = (d: DivertedOption) =>
+    d.replaced ? `（「${d.replaced.label}」から変更）` : "";
+  if (diverted.length === 1) {
+    const d = diverted[0];
+    return `選択肢「${d.option.label}」を選びました${changed(d)}`;
+  }
+  const labels = diverted.map((d) => `「${d.option.label}」${changed(d)}`);
+  return `選択肢${labels.join("")}を選びました`;
+}
+
 /**
  * 分類 (select の選択肢) に使っている label の tagKey。タグ候補・使用履歴から除外するのに使う。
  * archived の項目・選択肢も含める (resolveFieldValues の fallback が archived も一致させるため)。
@@ -1116,10 +1217,35 @@ export function countFreeTags(
   posts: HasFieldValues[],
   defs: FieldDef[],
 ): TagCount[] {
-  if (defs.length === 0) return countTags(posts);
+  if (!hasInputFields(defs)) return countTags(posts);
   return countTags(
     posts.map((post) => ({ tags: initialFreeTagsForEdit(post, defs) })),
   );
+}
+
+/**
+ * タグ条件の判定用に、各投稿の tags を自由タグ (initialFreeTagsForEdit) に置き換える (#113)。
+ * チップの件数 (countFreeTags) と絞り込みを同じ集合で数えるため。
+ * 入力できる項目が無いスレッドでは同じ参照を返す。
+ */
+function withFreeTags<T extends HasFieldValues>(posts: T[], defs: FieldDef[]): T[] {
+  if (!hasInputFields(defs)) return posts;
+  return posts.map((post) => ({
+    ...post,
+    tags: initialFreeTagsForEdit(post, defs),
+  }));
+}
+
+/** 自由タグで絞る。返すのは元の投稿 (tags を置き換えていないもの)。条件が無ければ同じ参照 */
+function filterPostsByFreeTags<T extends HasFieldValues>(
+  posts: T[],
+  defs: FieldDef[],
+  tagKeys: string[],
+): T[] {
+  if (tagKeys.length === 0) return posts;
+  const free = withFreeTags(posts, defs);
+  const kept = new Set(filterPostsByTags(free, tagKeys));
+  return posts.filter((_, i) => kept.has(free[i]));
 }
 
 export interface FieldFilterChip {
@@ -1166,7 +1292,11 @@ export function fieldFilterGroups(
     const others: FieldSelection = { ...selection };
     delete others[def.id];
     const base = filterPostsByRanges(
-      filterPostsByTags(filterPostsByFields(posts, defs, others), tagKeys),
+      filterPostsByFreeTags(
+        filterPostsByFields(posts, defs, others),
+        defs,
+        tagKeys,
+      ),
       defs,
       ranges,
     );
@@ -1222,7 +1352,7 @@ export interface FreeTagChip extends TagCount {
 
 /**
  * 自由タグのチップ。並びは countFreeTags (件数順)。
- * facetCount = countWithTagAdded(filterPostsByRanges(filterPostsByFields(posts, defs, selection), defs, ranges), tagKeys, key)
+ * facetCount = countWithTagAdded(自由タグに置き換えた filterPostsByRanges(filterPostsByFields(posts, defs, selection), defs, ranges), tagKeys, key)
  * disabled = !active && facetCount === 0
  */
 export function freeTagChips(
@@ -1232,19 +1362,18 @@ export function freeTagChips(
   tagKeys: string[],
   ranges: RangeSelection = {},
 ): FreeTagChip[] {
-  const base = filterPostsByRanges(
-    filterPostsByFields(posts, defs, selection),
+  const free = withFreeTags(
+    filterPostsByRanges(filterPostsByFields(posts, defs, selection), defs, ranges),
     defs,
-    ranges,
   );
   return countFreeTags(posts, defs).map((t) => {
     const active = tagKeys.includes(t.key);
-    const facetCount = countWithTagAdded(base, tagKeys, t.key);
+    const facetCount = countWithTagAdded(free, tagKeys, t.key);
     return { ...t, active, facetCount, disabled: !active && facetCount === 0 };
   });
 }
 
-/** 項目 → タグ → 範囲の順で絞る。すべて空なら同じ参照を返す */
+/** 項目 → タグ (自由タグで判定) → 範囲の順で絞る。すべて空なら同じ参照を返す */
 export function filterPostsByFieldsAndTags<T extends HasFieldValues>(
   posts: T[],
   defs: FieldDef[],
@@ -1253,7 +1382,11 @@ export function filterPostsByFieldsAndTags<T extends HasFieldValues>(
   ranges: RangeSelection = {},
 ): T[] {
   return filterPostsByRanges(
-    filterPostsByTags(filterPostsByFields(posts, defs, selection), tagKeys),
+    filterPostsByFreeTags(
+      filterPostsByFields(posts, defs, selection),
+      defs,
+      tagKeys,
+    ),
     defs,
     ranges,
   );
@@ -1426,8 +1559,9 @@ export function rangeFilterRows(
       .filter((v): v is number => v !== null);
     if (!hasInput && (def.archived || values.length === 0)) continue;
 
-    filtered ??= filterPostsByTags(
+    filtered ??= filterPostsByFreeTags(
       filterPostsByFields(posts, defs, selection),
+      defs,
       tagKeys,
     );
     const others: RangeSelection = { ...ranges };
