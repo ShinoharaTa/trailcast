@@ -662,15 +662,21 @@ export function divertNoticeText(diverted: DivertedOption[]): string | null {
  * 選択に振り分けて tags から外し、入力できる項目があれば fields を書く (未入力でも `[]`)。
  * - 入力できる項目が無いスレッドは tags をそのまま返し、fields は書かない (undefined)
  * - 1 つだけの項目に別々の選択肢のタグが複数一致したら、どれも選ばずタグのまま残す
- *   (どれが正しいか決められないため。同じ選択肢の表記違いは 1 件として扱う)
- * `tags` は sanitizeTagsForRecord 済みのものを渡す。返す tags も同じ形 (空なら undefined)。
+ *   (どれが正しいか決められないため。同じ選択肢の表記違いは 1 件として扱う)。
+ *   曖昧としたタグは、同じ名前の選択肢を持つ他の項目にも振り分けない
+ * - 振り分けてから MAX_TAGS_PER_POST で切り詰める (選択肢名のタグが上限で落ちないように)
+ * `tags` は未正規化でよい。返す tags は sanitizeTagsForRecord 済み (空なら undefined)。
  */
 export function buildImportedPostFields(
-  tags: string[] | undefined,
+  tags: string[],
   defs: FieldDef[],
 ): { tags: string[] | undefined; fields: FieldValue[] | undefined } {
-  if (!hasInputFields(defs)) return { tags, fields: undefined };
-  const all = tags ?? [];
+  if (!hasInputFields(defs)) {
+    return { tags: sanitizeTagsForRecord(tags), fields: undefined };
+  }
+  const all = dedupeTags(
+    tags.map(normalizeTag).filter((t): t is string => t !== null),
+  );
   // 1 つだけの項目ごとに一致した選択肢を集め、2 つ以上なら曖昧として振り分けない
   const singleHits = new Map<string, { optionIds: Set<string>; tags: string[] }>();
   for (const tag of all) {
@@ -685,6 +691,7 @@ export function buildImportedPostFields(
   for (const entry of singleHits.values()) {
     if (entry.optionIds.size > 1) ambiguous.push(...entry.tags);
   }
+  // prev に入れたタグは divertOptionTags のどの項目にも振り分けられない
   const r = divertOptionTags(all, defs, [], { prev: ambiguous });
   return {
     tags: sanitizeTagsForRecord(r.tags),

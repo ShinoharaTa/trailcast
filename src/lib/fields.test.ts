@@ -60,6 +60,7 @@ import {
   type RangeSelection,
 } from "@/lib/fields";
 import {
+  MAX_TAGS_PER_POST,
   countTags,
   filterPostsByTags,
   groupTagCounts,
@@ -2051,12 +2052,11 @@ describe("tagsForUsage", () => {
 describe("buildImportedPostFields", () => {
   const multi: FieldDef = { ...kind, multiple: true };
 
-  it("入力できる項目が無ければ tags はそのまま、fields は書かない", () => {
-    const tags = ["ホール"];
-    const r = buildImportedPostFields(tags, [{ ...kind, archived: true }]);
-    expect(r.tags).toBe(tags);
-    expect(r.fields).toBeUndefined();
-    expect(buildImportedPostFields(undefined, [])).toEqual({
+  it("入力できる項目が無ければ tags は sanitize だけ、fields は書かない", () => {
+    expect(
+      buildImportedPostFields(["#ホール", "ホール"], [{ ...kind, archived: true }]),
+    ).toEqual({ tags: ["ホール"], fields: undefined });
+    expect(buildImportedPostFields([], [])).toEqual({
       tags: undefined,
       fields: undefined,
     });
@@ -2074,7 +2074,7 @@ describe("buildImportedPostFields", () => {
       tags: ["東京"],
       fields: [],
     });
-    expect(buildImportedPostFields(undefined, [kind])).toEqual({
+    expect(buildImportedPostFields([], [kind])).toEqual({
       tags: undefined,
       fields: [],
     });
@@ -2121,6 +2121,38 @@ describe("buildImportedPostFields", () => {
       tags: undefined,
       fields: [select("kind", ["hall", "room"])],
     });
+  });
+
+  it("曖昧としたタグは、同じ名前の選択肢を持つ他の項目にも振り分けない", () => {
+    const a: FieldDef = {
+      id: "a",
+      label: "A",
+      type: "select",
+      options: [
+        { id: "rain", label: "雨" },
+        { id: "sun", label: "晴" },
+      ],
+    };
+    const b: FieldDef = {
+      id: "b",
+      label: "B",
+      type: "select",
+      options: [{ id: "rain", label: "雨" }],
+    };
+    expect(buildImportedPostFields(["雨", "晴"], [a, b])).toEqual({
+      tags: ["雨", "晴"],
+      fields: [],
+    });
+  });
+
+  it("振り分けてから MAX_TAGS_PER_POST で切り詰める", () => {
+    const free = Array.from({ length: MAX_TAGS_PER_POST }, (_, i) => `t${i}`);
+    const r = buildImportedPostFields([...free, "成功"], [result]);
+    expect(r.tags).toEqual(free);
+    expect(r.fields).toEqual([select("result", ["ok"])]);
+    const over = buildImportedPostFields([...free, "x", "成功"], [result]);
+    expect(over.tags).toHaveLength(MAX_TAGS_PER_POST);
+    expect(over.fields).toEqual([select("result", ["ok"])]);
   });
 
   it("archived の選択肢と同名のタグは自由タグのまま", () => {

@@ -90,6 +90,9 @@ export function planFieldMigration(
  * - multiple: 既存の選択 + 一致した選択肢 (定義順)
  * - 1 つだけ: 既存の値が空で一致がちょうど 1 件のときだけ書く。値あり・一致 2 件以上は
  *   その項目をスキップしてタグを残す (明示的な選択を上書きしない／曖昧なものを決めない)
+ * - 同じ tagKey の選択肢が複数の項目にあるタグは、どの項目にも書かずタグを残す
+ *   (どの項目の値か決められないため。1 つだけの項目の一致件数には含める。
+ *   インポート (buildImportedPostFields) で残したタグを移行候補に出さないため)
  * - 書く項目も外すタグも無ければ null
  * - 既存の fields に理解できない値 (定義に無い項目・型違い・sanitize で変わる値・
  *   未知の選択肢 id・同じ項目の重複) があれば null。理解できないものは触らない
@@ -109,6 +112,22 @@ function planTaggedFieldsMigration(
   );
   if (tagKeys.size === 0) return null;
 
+  // 同じ tagKey の選択肢を持つ項目の数 (非 archived の select・選択肢のみ)
+  const fieldCountByKey = new Map<string, number>();
+  for (const def of defs) {
+    if (def.type !== "select" || def.archived) continue;
+    const keys = new Set<string>();
+    for (const o of def.options ?? []) {
+      const key = o.archived ? null : keyOf(o.label);
+      if (key !== null) keys.add(key);
+    }
+    for (const key of keys) {
+      fieldCountByKey.set(key, (fieldCountByKey.get(key) ?? 0) + 1);
+    }
+  }
+  const sharedKey = (o: { label: string }) =>
+    (fieldCountByKey.get(keyOf(o.label) ?? "") ?? 0) > 1;
+
   const updated = new Map<string, FieldValue>();
   const moved: MigrationPlan["moved"] = [];
   const movedKeys = new Set<string>();
@@ -127,6 +146,7 @@ function planTaggedFieldsMigration(
     const redundant = hits.filter((o) => selectedSet.has(o.id));
     let added = hits.filter((o) => !selectedSet.has(o.id));
     if (!def.multiple && (selected.length > 0 || added.length !== 1)) added = [];
+    added = added.filter((o) => !sharedKey(o));
     if (added.length > 0) {
       updated.set(def.id, {
         $type: "net.shino3.trailcast.post#selectValue",

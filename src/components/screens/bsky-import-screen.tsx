@@ -10,7 +10,7 @@ import { recordTagUsage } from "@/lib/pds/tags";
 import { touchThread } from "@/lib/pds/thread-activity";
 import { buildImportedPostFields } from "@/lib/fields";
 import type { FieldDef } from "@/lib/types";
-import { extractTagsFromText, sanitizeTagsForRecord,
+import { extractTagsFromText,
   mergeDefaultTags,
 } from "@/lib/tags";
 import {
@@ -327,9 +327,7 @@ export function BlueskyImportScreen({
       const importedTags: string[] = [];
       for (const post of selected) {
         const { tags, fields: postFields } = buildImportedPostFields(
-          sanitizeTagsForRecord(
-            mergeDefaultTags(defaultTags, extractTagsFromText(post.text)),
-          ),
+          mergeDefaultTags(defaultTags, extractTagsFromText(post.text)),
           fields ?? [],
         );
         if (tags) importedTags.push(...tags);
@@ -352,7 +350,14 @@ export function BlueskyImportScreen({
         created++;
       }
       // 辞書更新はサジェスト用なので、まとめて 1 回だけ・失敗は無視する
-      if (importedTags.length > 0) await recordTagUsage(importedTags, { exclude: excludeTagKeys });
+      // 投稿は作成済みなので、ここで投げてもインポート失敗にしない (再実行で重複作成しないように)
+      if (importedTags.length > 0) {
+        try {
+          await recordTagUsage(importedTags, { exclude: excludeTagKeys });
+        } catch (e) {
+          console.warn("recordTagUsage failed after import", e);
+        }
+      }
       onSubmitted();
     } catch (e) {
       setError(e instanceof Error ? e.message : "インポートに失敗しました");
