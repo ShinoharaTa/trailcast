@@ -550,10 +550,18 @@ function ThreadEditForm({
     threadTagsDirty;
 
   // 未保存の変更があるときの閉じる操作 (× / 背景 / ESC / キャンセル / 戻る) は破棄確認を挟む
-  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpenState] = useState(false);
+  // requestClose は ref 経由で古い render の closure から呼ばれうるので、開閉は ref でも持つ
+  const discardConfirmOpenRef = useRef(false);
+  const setDiscardConfirmOpen = (v: boolean) => {
+    discardConfirmOpenRef.current = v;
+    setDiscardConfirmOpenState(v);
+  };
   const requestClose = () => {
-    // 確認を出している間は何もしない (ESC は確認ダイアログと Modal の両方に届く)
-    if (discardConfirmOpen) return false;
+    // 保存中は閉じない
+    if (submitting) return false;
+    // 確認を出している間は何もしない
+    if (discardConfirmOpenRef.current) return false;
     if (dirty) {
       setDiscardConfirmOpen(true);
       return false;
@@ -571,14 +579,17 @@ function ThreadEditForm({
   });
 
   const footer = (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {error && (
-        <div className="rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
+        <div
+          title={error}
+          className="line-clamp-2 rounded-lg bg-red-500/10 px-4 py-2 text-xs text-red-400"
+        >
           {error}
         </div>
       )}
       {fieldErrors.size > 0 && (
-        <div className="rounded-lg bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
+        <div className="truncate rounded-lg bg-red-500/10 px-4 py-2 text-xs text-red-400">
           記録項目に未入力があります
         </div>
       )}
@@ -587,7 +598,7 @@ function ThreadEditForm({
           type="button"
           onClick={requestClose}
           disabled={submitting}
-          className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white/80 transition hover:bg-white/10 disabled:opacity-50"
+          className="flex-1 rounded-xl border border-white/10 bg-white/5 min-h-11 py-2 text-sm md:py-3 font-medium text-white/80 transition hover:bg-white/10 disabled:opacity-50"
         >
           キャンセル
         </button>
@@ -597,7 +608,7 @@ function ThreadEditForm({
           disabled={
             submitting || !title.trim() || !dirty || fieldErrors.size > 0
           }
-          className="flex-1 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
+          className="flex-1 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 min-h-11 py-2 text-sm md:py-3 font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-xl hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
         >
           {submitting ? (
             <span className="flex items-center justify-center gap-2">
@@ -1150,6 +1161,7 @@ function ThreadEditForm({
         confirmLabel="破棄する"
         cancelLabel="編集を続ける"
         destructive
+        initialFocus="cancel"
         onConfirm={() => {
           setDiscardConfirmOpen(false);
           onCancel();

@@ -9,6 +9,8 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /** 開いたときにフォーカスするボタン。既定は確認ボタン */
+  initialFocus?: "confirm" | "cancel";
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -20,15 +22,21 @@ export function ConfirmDialog({
   confirmLabel = "確認",
   cancelLabel = "キャンセル",
   destructive = false,
+  initialFocus = "confirm",
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!open) return;
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") {
+        // 下にある Modal の ESC (window で受ける) に閉じる操作として扱わせない
+        e.preventDefault();
+        onCancel();
+      }
     },
     [open, onCancel],
   );
@@ -39,8 +47,9 @@ export function ConfirmDialog({
   }, [handleKeyDown]);
 
   useEffect(() => {
-    if (open) confirmRef.current?.focus();
-  }, [open]);
+    if (!open) return;
+    (initialFocus === "cancel" ? cancelRef : confirmRef).current?.focus();
+  }, [open, initialFocus]);
 
   if (!open) return null;
 
@@ -55,6 +64,7 @@ export function ConfirmDialog({
         <p className="mt-2 text-sm leading-relaxed text-white/60">{message}</p>
         <div className="mt-5 flex justify-end gap-3">
           <button
+            ref={cancelRef}
             onClick={onCancel}
             className="rounded-lg px-4 py-2 text-sm font-medium text-white/50 transition hover:bg-white/5 hover:text-white/70"
           >
