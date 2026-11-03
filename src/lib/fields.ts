@@ -1373,6 +1373,52 @@ export function freeTagChips(
   });
 }
 
+export interface FreeTagChipSection<T> {
+  /** 見出し。tagGroups が無い (グループに入るチップが無い) ときは null */
+  label: string | null;
+  chips: T[];
+}
+
+/** グループに入らなかったチップの見出し */
+export const OTHER_TAG_SECTION_LABEL = "その他";
+
+/**
+ * 自由タグのチップを thread.tagGroups の見出しごとに分ける (#121)。
+ *
+ * - グループは tagGroups の順、グループ内は定義したタグの順。照合は tagKey
+ * - チップとして出ていないタグは飛ばし、チップが 1 つも無いグループは出さない
+ * - 複数グループに同じタグがあるときは先に出たグループにだけ入れる (チップを重複させない)
+ * - 残りは「その他」に元の並びのまま入れる
+ * - どのグループにもチップが入らなければ見出し無しの 1 区画 (従来のフラット表示)
+ */
+export function groupFreeTagChips<T extends { key: string }>(
+  chips: T[],
+  tagGroups: TagGroup[] | undefined,
+): FreeTagChipSection<T>[] {
+  const byKey = new Map(chips.map((c) => [c.key, c]));
+  const claimed = new Set<string>();
+  const sections: FreeTagChipSection<T>[] = [];
+  for (const g of tagGroups ?? []) {
+    const items: T[] = [];
+    for (const tag of g.tags) {
+      const key = tagKey(tag);
+      const chip = byKey.get(key);
+      if (!chip || claimed.has(key)) continue;
+      claimed.add(key);
+      items.push(chip);
+    }
+    if (items.length > 0) sections.push({ label: g.label, chips: items });
+  }
+  if (sections.length === 0) {
+    return chips.length > 0 ? [{ label: null, chips }] : [];
+  }
+  const rest = chips.filter((c) => !claimed.has(c.key));
+  if (rest.length > 0) {
+    sections.push({ label: OTHER_TAG_SECTION_LABEL, chips: rest });
+  }
+  return sections;
+}
+
 /** 項目 → タグ (自由タグで判定) → 範囲の順で絞る。すべて空なら同じ参照を返す */
 export function filterPostsByFieldsAndTags<T extends HasFieldValues>(
   posts: T[],

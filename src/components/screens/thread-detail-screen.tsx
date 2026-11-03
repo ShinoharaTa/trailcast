@@ -1357,6 +1357,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           canEdit={isOwner}
           onEditFields={() => setModal("thread-edit-fields")}
           hasLegacyTagGroups={(thread.tagGroups?.length ?? 0) > 0}
+          tagGroups={thread.tagGroups}
         />
 
         {posts.length > 0 && visiblePosts.length === 0 && (

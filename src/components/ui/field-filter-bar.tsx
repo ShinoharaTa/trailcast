@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { FieldDef, PostWithMeta } from "@/lib/types";
+import type { FieldDef, PostWithMeta, TagGroup } from "@/lib/types";
 import {
   FIELD_UNSET,
   effectiveRange,
   fieldFilterGroups,
   formatRangeBound,
   freeTagChips,
+  groupFreeTagChips,
   hasRangeInput,
   rangeFilterRows,
   type FieldFilterChip,
@@ -26,6 +27,7 @@ const rangeInputClass =
  * タイムライン上部に置く絞り込み / 集計バー (#60)。仕様は docs/record-mode.md §4.3。
  *
  * - select 項目ごとの行 (項目内 OR / 項目間 AND)、number 項目の範囲の行、その下に自由タグの行 (AND)
+ * - thread.tagGroups があれば自由タグをその見出しごとに分け、残りを「その他」にまとめる (#121)
  * - チップの件数は「その項目以外の条件を当てた上での該当数」(ファセット方式)
  * - 選択済みチップをもう一度押すと解除
  * - 未選択で件数 0 のチップは、押せないようにして空振りを防ぐ
@@ -44,6 +46,7 @@ export function FieldFilterBar({
   canEdit = false,
   onEditFields,
   hasLegacyTagGroups = false,
+  tagGroups,
   className = "mb-8",
 }: {
   /** 絞り込み前の全投稿。件数集計はこちらを基準にする */
@@ -63,6 +66,8 @@ export function FieldFilterBar({
   onEditFields?: () => void;
   /** thread.tagGroups が残っている (変換案内の文言用) */
   hasLegacyTagGroups?: boolean;
+  /** thread.tagGroups。自由タグのチップを見出しごとに分ける */
+  tagGroups?: TagGroup[];
   /** 外側の余白。記録帳のツールバーでは詰める */
   className?: string;
 }) {
@@ -84,6 +89,10 @@ export function FieldFilterBar({
   const tags = useMemo(
     () => freeTagChips(posts, defs, selection, tagKeys, ranges),
     [posts, defs, selection, tagKeys, ranges],
+  );
+  const tagSections = useMemo(
+    () => groupFreeTagChips(tags, tagGroups),
+    [tags, tagGroups],
   );
   const rows = useMemo(
     () => rangeFilterRows(posts, defs, selection, tagKeys, ranges),
@@ -269,11 +278,19 @@ export function FieldFilterBar({
           </div>
         ))}
         {rows.map(renderRangeRow)}
-        {tags.length > 0 && (
-          <div className="flex flex-wrap gap-2 md:gap-1.5">
-            {tags.map(renderTagChip)}
+        {tagSections.map((s, i) => (
+          // 見出しは重複しうる (同名グループ・「その他」という名のグループ) ので位置で区別する
+          <div key={`${i}:${s.label ?? ""}`}>
+            {s.label !== null && (
+              <div className="mb-1.5 text-[11px] font-medium text-white/40">
+                {s.label}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2 md:gap-1.5">
+              {s.chips.map(renderTagChip)}
+            </div>
           </div>
-        )}
+        ))}
       </div>
 
       {filtering && (
