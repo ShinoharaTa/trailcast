@@ -1,18 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { FieldDef, PostWithMeta } from "@/lib/types";
+import { useId, useMemo, useState } from "react";
+import type { FieldDef, PostWithMeta, TagGroup } from "@/lib/types";
 import {
   FIELD_UNSET,
   effectiveRange,
   fieldFilterGroups,
   formatRangeBound,
   freeTagChips,
+  groupFreeTagChips,
   hasRangeInput,
   rangeFilterRows,
   type FieldFilterChip,
   type FieldSelection,
   type FreeTagChip,
+  type FreeTagChipSection,
   type RangeFilterRow,
   type RangeSelection,
 } from "@/lib/fields";
@@ -26,6 +28,7 @@ const rangeInputClass =
  * タイムライン上部に置く絞り込み / 集計バー (#60)。仕様は docs/record-mode.md §4.3。
  *
  * - select 項目ごとの行 (項目内 OR / 項目間 AND)、number 項目の範囲の行、その下に自由タグの行 (AND)
+ * - thread.tagGroups があれば自由タグをその見出しごとに分け、残りを「その他」にまとめる (#121)
  * - チップの件数は「その項目以外の条件を当てた上での該当数」(ファセット方式)
  * - 選択済みチップをもう一度押すと解除
  * - 未選択で件数 0 のチップは、押せないようにして空振りを防ぐ
@@ -44,6 +47,7 @@ export function FieldFilterBar({
   canEdit = false,
   onEditFields,
   hasLegacyTagGroups = false,
+  tagGroups,
   className = "mb-8",
 }: {
   /** 絞り込み前の全投稿。件数集計はこちらを基準にする */
@@ -61,11 +65,15 @@ export function FieldFilterBar({
   /** スレッド所有者なら記録項目の編集への導線を出す (#37) */
   canEdit?: boolean;
   onEditFields?: () => void;
-  /** thread.tagGroups が残っている (変換案内の文言用) */
+  /** thread.tagGroups がある (変換案内の文言用) */
   hasLegacyTagGroups?: boolean;
+  /** thread.tagGroups。自由タグのチップを見出しごとに分ける */
+  tagGroups?: TagGroup[];
   /** 外側の余白。記録帳のツールバーでは詰める */
   className?: string;
 }) {
+  // 自由タグの小見出し・グループ見出しの id (aria-labelledby 用)
+  const idPrefix = useId();
   // blur 済みの範囲入力 ("fieldId:min" など)。入力中は不正の注記を出さない
   const [blurred, setBlurred] = useState<ReadonlySet<string>>(new Set());
   const setBlurredKey = (key: string, on: boolean) =>
@@ -84,6 +92,10 @@ export function FieldFilterBar({
   const tags = useMemo(
     () => freeTagChips(posts, defs, selection, tagKeys, ranges),
     [posts, defs, selection, tagKeys, ranges],
+  );
+  const tagSections = useMemo(
+    () => groupFreeTagChips(tags, tagGroups),
+    [tags, tagGroups],
   );
   const rows = useMemo(
     () => rangeFilterRows(posts, defs, selection, tagKeys, ranges),
@@ -228,6 +240,30 @@ export function FieldFilterBar({
     </button>
   );
 
+  const renderTagSection = (s: FreeTagChipSection<FreeTagChip>, i: number) => {
+    const chips = (
+      <div className="flex flex-wrap gap-2 md:gap-1.5">
+        {s.chips.map(renderTagChip)}
+      </div>
+    );
+    // 見出しは重複しうる (同名グループ・「その他」という名のグループ) ので位置で区別する
+    const key = `${i}:${s.label ?? ""}`;
+    if (s.label === null) return <div key={key}>{chips}</div>;
+    const headingId = `${idPrefix}-tag-group-${i}`;
+    return (
+      <div key={key} role="group" aria-labelledby={headingId}>
+        {/* select 項目の見出しと区別するため # 付きで控えめに */}
+        <div id={headingId} className="mb-1.5 text-[11px] text-white/30">
+          <span aria-hidden="true" className="mr-0.5 text-white/20">
+            #
+          </span>
+          {s.label}
+        </div>
+        {chips}
+      </div>
+    );
+  };
+
   return (
     <div className={`${className} rounded-2xl border border-white/5 bg-white/[0.02] p-3.5`}>
       <div className="mb-2.5 flex items-center gap-2">
@@ -269,11 +305,26 @@ export function FieldFilterBar({
           </div>
         ))}
         {rows.map(renderRangeRow)}
-        {tags.length > 0 && (
-          <div className="flex flex-wrap gap-2 md:gap-1.5">
-            {tags.map(renderTagChip)}
-          </div>
-        )}
+        {tagSections.length > 0 &&
+          (groups.length > 0 || rows.length > 0 ? (
+            // 項目の行と区別するため、区切り線と小見出しを置く。
+            // 自由タグだけのときは上の「タグで絞り込む」で足りるので従来の見た目のまま
+            <div
+              role="group"
+              aria-labelledby={`${idPrefix}-tags`}
+              className="space-y-2.5 border-t border-white/5 pt-2.5"
+            >
+              <div
+                id={`${idPrefix}-tags`}
+                className="text-[11px] font-medium text-white/40"
+              >
+                タグ（すべてに一致）
+              </div>
+              {tagSections.map(renderTagSection)}
+            </div>
+          ) : (
+            tagSections.map(renderTagSection)
+          ))}
       </div>
 
       {filtering && (

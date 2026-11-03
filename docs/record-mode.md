@@ -117,7 +117,7 @@
 
 ### 3.5 fields が無いスレッド
 - PR4: 自由タグのチップだけのフラット表示（従来の `rest` 相当）。見出しは「タグで絞り込む」。
-  `tagGroups` によるグループ分け表示は **廃止**（§8 D-1）。
+  `tagGroups` によるグループ分け表示は PR4 でいったん外したが、#121 で復活した（§8 D-1）。
 - 5a: 記録帳は検索 + 自由タグで使える。未記録チップは出さない（項目が無いので）。
 - 5b/5c: 件数系の KPI・月別・ヒートマップは出す。項目別の節は出さない。
 
@@ -130,7 +130,7 @@
 |---|---|
 | `src/lib/fields.ts` | 絞り込み UI 用の純関数を追加（§4.2） |
 | `src/lib/fields.test.ts` | 追加分のテスト |
-| `src/lib/tags.ts` | `groupTagCounts` / `GroupedTagCounts` に `@deprecated`（tagGroups 撤去時に削除）。関数は残す（テストが参照） |
+| `src/lib/tags.ts` | `groupTagCounts` を UI から外す。関数は残す（テストが参照）。※当初は `@deprecated` を付けたが #121 で外した |
 | `src/components/ui/field-filter-bar.tsx` | **新規**。`TagFilterBar` を置き換える `FieldFilterBar`（5a で記録帳からも使う） |
 | `src/components/screens/thread-detail-screen.tsx` | `TagFilterBar` 削除、`FieldFilterBar` 利用、state 追加、`PostFieldValues` の select 値をトグル可能に、空状態の文言 |
 | `src/components/screens/thread-edit-screen.tsx` | `initialSection` を `"fields"` に変更（§4.4） |
@@ -222,7 +222,7 @@ export function filterPostsByFieldsAndTags<T extends HasFieldValues>(
   matchedCount: number;
   canEdit?: boolean;                 // 所有者
   onEditFields?: () => void;         // 記録項目の編集を開く
-  hasLegacyTagGroups?: boolean;      // thread.tagGroups が残っている（変換案内の文言用）
+  hasLegacyTagGroups?: boolean;      // thread.tagGroups がある（変換案内の文言用）
 }
 ```
 - 見た目は今の `TagFilterBar` のまま（角丸パネル、チップ、クリア、件数表示）。
@@ -231,6 +231,7 @@ export function filterPostsByFieldsAndTags<T extends HasFieldValues>(
   チップ = `label` + 件数（`count`）。`FIELD_UNSET` チップは点線枠（モックの `.chip.todo`
   相当。色は amber ではなく `border-dashed border-white/20`）。
 - 自由タグの行: 項目の下にフラットで `#tag` + 件数（`facetCount`）。
+  ※#121 で、tagGroups があるスレッドでは見出しごとに分け、残りを「その他」にまとめる。
 - 所有者リンク（右上、今の「グループを編集」の位置）:
   - defs あり → 「記録項目を編集」
   - defs なし & `hasLegacyTagGroups` → 「記録項目に変換」
@@ -648,7 +649,8 @@ export function heatLevel(count: number): 0 | 1 | 2 | 3;
 ## 8. 決定事項と未決事項
 
 ### 決定（この仕様で固定。implementer は迷わない）
-- **D-1** `groupTagCounts` の UI 経路は PR4 で廃止。関数は `@deprecated` で残し、tagGroups 撤去時に消す。fields が無く tagGroups だけのスレッドはフラット表示 + 所有者に「記録項目に変換」リンク。
+- **D-1** `groupTagCounts` の UI 経路は PR4 で廃止。tagGroups だけのスレッドの所有者には「記録項目に変換」リンクを出す。
+  **#121 で改訂**: tagGroups は撤去せず現役の機能として残す。絞り込みバーの自由タグは `groupFreeTagChips` で tagGroups の見出しごとに並べる（記録項目の有無に関わらず）。
 - **D-2** 絞り込み・表示モードは URL に載せない。
 - **D-3** ヒートマップは期間に依らず直近 26 週。
 - **D-4** 記録帳の行タップでタイムラインの該当投稿へスクロール。自分の投稿の行には編集ボタンを置き、記録帳のまま編集モーダルを開く（絞り込み・並び順は保持。#122）。削除はタイムラインでのみ行う。

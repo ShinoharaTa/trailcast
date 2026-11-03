@@ -57,7 +57,7 @@
           "tagGroups": {
             "type": "array",
             "maxLength": 50,
-            "description": "Deprecated: superseded by fields (select). Kept for records written before fields existed.",
+            "description": "Headed groups of tags. Used to group free-tag chips in the thread detail filter and tag suggestions under headings. Display-only; tags themselves live in post.tags.",
             "items": {
               "type": "object",
               "required": ["label", "tags"],

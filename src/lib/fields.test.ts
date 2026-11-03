@@ -28,6 +28,7 @@ import {
   fieldFilterGroups,
   filterPostsByFieldsAndTags,
   freeTagChips,
+  groupFreeTagChips,
   pruneFieldSelection,
   toggleFieldOption,
   fieldDefErrors,
@@ -1362,6 +1363,63 @@ describe("freeTagChips", () => {
       disabled: false,
       facetCount: 0,
     });
+  });
+});
+
+describe("groupFreeTagChips (#121)", () => {
+  const chips = [
+    { key: "東京", tag: "東京" },
+    { key: "rain", tag: "Rain" },
+    { key: "大阪", tag: "大阪" },
+    { key: "ラーメン", tag: "ラーメン" },
+  ];
+
+  it("tagGroups が無ければ見出し無しの 1 区画", () => {
+    expect(groupFreeTagChips(chips, undefined)).toEqual([
+      { label: null, chips },
+    ]);
+    expect(groupFreeTagChips(chips, [])).toEqual([{ label: null, chips }]);
+    expect(groupFreeTagChips([], [{ label: "場所", tags: ["東京"] }])).toEqual(
+      [],
+    );
+  });
+
+  it("グループ順・グループ内のタグ順で並べ、残りは「その他」", () => {
+    const sections = groupFreeTagChips(chips, [
+      { label: "食事", tags: ["ラーメン"] },
+      { label: "場所", tags: ["大阪", "名古屋", "東京"] },
+    ]);
+    expect(sections.map((s) => [s.label, s.chips.map((c) => c.key)])).toEqual([
+      ["食事", ["ラーメン"]],
+      ["場所", ["大阪", "東京"]],
+      ["その他", ["rain"]],
+    ]);
+  });
+
+  it("チップの無いグループは出さず、全部グループに入れば「その他」も出さない", () => {
+    const sections = groupFreeTagChips(chips.slice(0, 1), [
+      { label: "空", tags: ["名古屋"] },
+      { label: "場所", tags: ["東京"] },
+    ]);
+    expect(sections).toEqual([{ label: "場所", chips: [chips[0]] }]);
+  });
+
+  it("どのグループにもチップが入らなければ従来通り見出し無し", () => {
+    expect(
+      groupFreeTagChips(chips, [{ label: "空", tags: ["名古屋"] }]),
+    ).toEqual([{ label: null, chips }]);
+  });
+
+  it("tagKey で照合し、複数グループにあるタグは先のグループにだけ入れる", () => {
+    const sections = groupFreeTagChips(chips, [
+      { label: "天気", tags: ["RAIN"] },
+      { label: "別", tags: ["rain", "東京"] },
+    ]);
+    expect(sections.map((s) => [s.label, s.chips.map((c) => c.key)])).toEqual([
+      ["天気", ["rain"]],
+      ["別", ["東京"]],
+      ["その他", ["大阪", "ラーメン"]],
+    ]);
   });
 });
 

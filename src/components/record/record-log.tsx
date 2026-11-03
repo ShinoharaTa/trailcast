@@ -206,6 +206,7 @@ export function RecordLog({
           canEdit={canEdit}
           onEditFields={onEditFields}
           hasLegacyTagGroups={(thread.tagGroups?.length ?? 0) > 0}
+          tagGroups={thread.tagGroups}
           className=""
         />
 
