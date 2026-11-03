@@ -101,7 +101,10 @@ export function FieldFilterBar({
     () => rangeFilterRows(posts, defs, selection, tagKeys, ranges),
     [posts, defs, selection, tagKeys, ranges],
   );
-  if (groups.length === 0 && tags.length === 0 && rows.length === 0) {
+  // 絞るものが無くても、所有者には記録項目の編集への入口として見出し行だけ出す (#129)
+  const headerOnly =
+    groups.length === 0 && tags.length === 0 && rows.length === 0;
+  if (headerOnly && !(canEdit && onEditFields)) {
     return null;
   }
 
@@ -266,10 +269,14 @@ export function FieldFilterBar({
 
   return (
     <div className={`${className} rounded-2xl border border-white/5 bg-white/[0.02] p-3.5`}>
-      <div className="mb-2.5 flex items-center gap-2">
+      <div className={`flex items-center gap-2 ${headerOnly ? "" : "mb-2.5"}`}>
         <HashIcon className="size-3.5 text-white/30" />
         <span className="text-xs font-medium text-white/50">
-          {defs.length > 0 ? "絞り込む" : "タグで絞り込む"}
+          {headerOnly
+            ? "記録項目"
+            : defs.length > 0
+              ? "絞り込む"
+              : "タグで絞り込む"}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           {filtering && (
