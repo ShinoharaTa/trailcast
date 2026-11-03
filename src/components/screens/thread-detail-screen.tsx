@@ -1688,6 +1688,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         onClose={closeModal}
         threadUri={thread.uri}
         defaultTags={thread.defaultTags}
+        fields={thread.fields}
         excludeTagKeys={classificationKeys}
         onSubmitted={onModalSubmitted}
       />

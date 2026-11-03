@@ -7,6 +7,9 @@ import { getAgent } from "@/lib/atp-agent";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { createPost } from "@/lib/pds/posts";
 import { recordTagUsage } from "@/lib/pds/tags";
+import { touchThread } from "@/lib/pds/thread-activity";
+import { buildImportedPostFields } from "@/lib/fields";
+import type { FieldDef } from "@/lib/types";
 import { extractTagsFromText, sanitizeTagsForRecord,
   mergeDefaultTags,
 } from "@/lib/tags";
@@ -61,10 +64,9 @@ export interface BlueskyImportScreenProps {
   threadUri: string;
   /** スレッド設定の既定タグ。取り込んだ投稿にも付ける */
   defaultTags?: string[];
-  /**
-   * タグ辞書に数えないタグの tagKey (記録項目の選択肢名)。投稿の tags 自体は変えない
-   * (fields を書かないインポート投稿は、読み取り時に tags から選択肢として扱われるため)
-   */
+  /** スレッドの記録項目の定義。選択肢名のタグを fields に振り分けるのに使う */
+  fields?: FieldDef[];
+  /** タグ辞書に数えないタグの tagKey (記録項目の選択肢名) */
   excludeTagKeys?: ReadonlySet<string>;
   onSubmitted: () => void;
 }
@@ -88,6 +90,7 @@ export function BlueskyImportScreen({
   onClose,
   threadUri,
   defaultTags,
+  fields,
   excludeTagKeys,
   onSubmitted,
 }: BlueskyImportScreenProps) {
@@ -315,27 +318,38 @@ export function BlueskyImportScreen({
     if (!threadUri) return;
     setImporting(true);
     setError(null);
+    let created = 0;
     try {
       const selected = [...feedPosts, ...urlPosts].filter((p) => p.selected);
       // 元投稿の本文に書かれたハッシュタグを、そのまま Trailcast のタグとして取り込む。
       // スレッドの既定タグがあれば先頭に足す。
+      // 選択肢名のタグは新規投稿と同じ規則で fields に振り分ける (#123)
       const importedTags: string[] = [];
       for (const post of selected) {
-        const tags = sanitizeTagsForRecord(
-          mergeDefaultTags(defaultTags, extractTagsFromText(post.text)),
+        const { tags, fields: postFields } = buildImportedPostFields(
+          sanitizeTagsForRecord(
+            mergeDefaultTags(defaultTags, extractTagsFromText(post.text)),
+          ),
+          fields ?? [],
         );
         if (tags) importedTags.push(...tags);
-        await createPost({
-          thread: threadUri,
-          text: post.text || undefined,
-          imageUrls: post.imageUrls.length > 0
-            ? post.imageUrls.slice(0, 4)
-            : undefined,
-          tags,
-          checkpointAt: post.createdAt,
-          sourceRef: post.uri,
-          createdAt: new Date().toISOString(),
-        });
+        // touchThread は投稿ごとに呼ばず、ループのあとに 1 回だけ呼ぶ
+        await createPost(
+          {
+            thread: threadUri,
+            text: post.text || undefined,
+            imageUrls: post.imageUrls.length > 0
+              ? post.imageUrls.slice(0, 4)
+              : undefined,
+            tags,
+            fields: postFields,
+            checkpointAt: post.createdAt,
+            sourceRef: post.uri,
+            createdAt: new Date().toISOString(),
+          },
+          { touch: false },
+        );
+        created++;
       }
       // 辞書更新はサジェスト用なので、まとめて 1 回だけ・失敗は無視する
       if (importedTags.length > 0) await recordTagUsage(importedTags, { exclude: excludeTagKeys });
@@ -343,6 +357,9 @@ export function BlueskyImportScreen({
     } catch (e) {
       setError(e instanceof Error ? e.message : "インポートに失敗しました");
       setImporting(false);
+    } finally {
+      // 途中で失敗しても、作れた投稿があれば一覧の並びに反映する
+      if (created > 0) void touchThread(threadUri);
     }
   };
 

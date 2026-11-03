@@ -658,6 +658,41 @@ export function divertNoticeText(diverted: DivertedOption[]): string | null {
 }
 
 /**
+ * Bluesky インポートで書く tags / fields (#123)。新規投稿と同じ規則で、選択肢名のタグを
+ * 選択に振り分けて tags から外し、入力できる項目があれば fields を書く (未入力でも `[]`)。
+ * - 入力できる項目が無いスレッドは tags をそのまま返し、fields は書かない (undefined)
+ * - 1 つだけの項目に別々の選択肢のタグが複数一致したら、どれも選ばずタグのまま残す
+ *   (どれが正しいか決められないため。同じ選択肢の表記違いは 1 件として扱う)
+ * `tags` は sanitizeTagsForRecord 済みのものを渡す。返す tags も同じ形 (空なら undefined)。
+ */
+export function buildImportedPostFields(
+  tags: string[] | undefined,
+  defs: FieldDef[],
+): { tags: string[] | undefined; fields: FieldValue[] | undefined } {
+  if (!hasInputFields(defs)) return { tags, fields: undefined };
+  const all = tags ?? [];
+  // 1 つだけの項目ごとに一致した選択肢を集め、2 つ以上なら曖昧として振り分けない
+  const singleHits = new Map<string, { optionIds: Set<string>; tags: string[] }>();
+  for (const tag of all) {
+    const hit = divertOptionTags([tag], defs, []).diverted[0];
+    if (!hit || hit.field.multiple) continue;
+    const entry = singleHits.get(hit.field.id) ?? { optionIds: new Set(), tags: [] };
+    entry.optionIds.add(hit.option.id);
+    entry.tags.push(tag);
+    singleHits.set(hit.field.id, entry);
+  }
+  const ambiguous: string[] = [];
+  for (const entry of singleHits.values()) {
+    if (entry.optionIds.size > 1) ambiguous.push(...entry.tags);
+  }
+  const r = divertOptionTags(all, defs, [], { prev: ambiguous });
+  return {
+    tags: sanitizeTagsForRecord(r.tags),
+    fields: buildNewPostFields(defs, r.values),
+  };
+}
+
+/**
  * 分類 (select の選択肢) に使っている label の tagKey。タグ候補・使用履歴から除外するのに使う。
  * archived の項目・選択肢も含める (resolveFieldValues の fallback が archived も一致させるため)。
  */

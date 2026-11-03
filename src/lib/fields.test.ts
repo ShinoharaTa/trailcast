@@ -8,6 +8,7 @@ import {
   remapSelectValues,
   selectedPendingOptions,
   buildEditedPostFields,
+  buildImportedPostFields,
   buildNewPostFields,
   convertTagGroupsToFields,
   copyFieldDefs,
@@ -2044,5 +2045,88 @@ describe("tagsForUsage", () => {
 
   it("exclude なしなら正規化だけして、重複は残す", () => {
     expect(tagsForUsage(["#雨", "雨", "  "])).toEqual(["雨", "雨"]);
+  });
+});
+
+describe("buildImportedPostFields", () => {
+  const multi: FieldDef = { ...kind, multiple: true };
+
+  it("入力できる項目が無ければ tags はそのまま、fields は書かない", () => {
+    const tags = ["ホール"];
+    const r = buildImportedPostFields(tags, [{ ...kind, archived: true }]);
+    expect(r.tags).toBe(tags);
+    expect(r.fields).toBeUndefined();
+    expect(buildImportedPostFields(undefined, [])).toEqual({
+      tags: undefined,
+      fields: undefined,
+    });
+  });
+
+  it("選択肢名のタグを fields に振り分け、tags から外す", () => {
+    expect(buildImportedPostFields(["東京", "ルーム", "成功"], [kind, result])).toEqual({
+      tags: ["東京"],
+      fields: [select("kind", ["room"]), select("result", ["ok"])],
+    });
+  });
+
+  it("一致が無くても入力できる項目があれば fields: [] を書く", () => {
+    expect(buildImportedPostFields(["東京"], [kind, weight])).toEqual({
+      tags: ["東京"],
+      fields: [],
+    });
+    expect(buildImportedPostFields(undefined, [kind])).toEqual({
+      tags: undefined,
+      fields: [],
+    });
+  });
+
+  it("全部振り分けたら tags は undefined", () => {
+    expect(buildImportedPostFields(["ホール"], [kind])).toEqual({
+      tags: undefined,
+      fields: [select("kind", ["hall"])],
+    });
+  });
+
+  it("1 つだけの項目に別々の選択肢が複数一致したらタグのまま残す", () => {
+    expect(
+      buildImportedPostFields(["ホール", "東京", "ルーム", "成功"], [kind, result]),
+    ).toEqual({
+      tags: ["ホール", "東京", "ルーム"],
+      fields: [select("result", ["ok"])],
+    });
+  });
+
+  it("曖昧なときは表記違いも含めてタグのまま残す。一致が 1 つなら選ぶ", () => {
+    const def: FieldDef = {
+      id: "w",
+      label: "天気",
+      type: "select",
+      options: [
+        { id: "s", label: "Sunny" },
+        { id: "r", label: "Rainy" },
+      ],
+    };
+    expect(buildImportedPostFields(["Sunny", "rainy", "sunny"], [def])).toEqual({
+      tags: ["Sunny", "rainy"],
+      fields: [],
+    });
+    expect(buildImportedPostFields(["Sunny"], [def])).toEqual({
+      tags: undefined,
+      fields: [select("w", ["s"])],
+    });
+  });
+
+  it("multiple は複数一致をすべて選ぶ", () => {
+    expect(buildImportedPostFields(["ホール", "ルーム"], [multi])).toEqual({
+      tags: undefined,
+      fields: [select("kind", ["hall", "room"])],
+    });
+  });
+
+  it("archived の選択肢と同名のタグは自由タグのまま", () => {
+    expect(buildImportedPostFields(["周遊"], [kind])).toEqual({
+      tags: ["周遊"],
+      fields: [],
+    });
   });
 });
