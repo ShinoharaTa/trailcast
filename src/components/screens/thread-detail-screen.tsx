@@ -66,6 +66,7 @@ import {
   type ThreadView,
 } from "@/lib/record";
 import { FieldFilterBar } from "@/components/ui/field-filter-bar";
+import { EmptyPostsState } from "@/components/ui/fields-entry";
 import { PostFieldValues, PostTags } from "@/components/ui/post-field-values";
 import { RecordTabs, ViewSwitch } from "@/components/record/view-switch";
 import { RecordLog } from "@/components/record/record-log";
@@ -1365,9 +1366,13 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         {view === "timeline" && (
         <>
         {posts.length === 0 && (
-          <div className="py-16 text-center">
-            <p className="text-white/30">まだチェックポイントがありません</p>
-          </div>
+          <EmptyPostsState
+            defsCount={defs.length}
+            hasLegacyTagGroups={(thread.tagGroups?.length ?? 0) > 0}
+            canEdit={isOwner}
+            ended={Boolean(thread.endedAt)}
+            onEditFields={() => setModal("thread-edit-fields")}
+          />
         )}
 
         <FieldFilterBar
@@ -1383,6 +1388,7 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
           matchedCount={visiblePosts.length}
           canEdit={isOwner}
           onEditFields={() => setModal("thread-edit-fields")}
+          ended={Boolean(thread.endedAt)}
           hasLegacyTagGroups={(thread.tagGroups?.length ?? 0) > 0}
           tagGroups={thread.tagGroups}
         />

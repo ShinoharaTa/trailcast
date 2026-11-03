@@ -28,6 +28,7 @@ import {
   type RecordFilter,
 } from "@/lib/record";
 import { FieldFilterBar } from "@/components/ui/field-filter-bar";
+import { EmptyPostsState } from "@/components/ui/fields-entry";
 import { PostFieldValues, PostTags } from "@/components/ui/post-field-values";
 import { EditIcon } from "@/components/ui/icons";
 
@@ -154,9 +155,13 @@ export function RecordLog({
 
   if (posts.length === 0) {
     return (
-      <div className="py-16 text-center">
-        <p className="text-white/30">まだチェックポイントがありません</p>
-      </div>
+      <EmptyPostsState
+        defsCount={defs.length}
+        hasLegacyTagGroups={(thread.tagGroups?.length ?? 0) > 0}
+        canEdit={canEdit}
+        ended={Boolean(thread.endedAt)}
+        onEditFields={onEditFields}
+      />
     );
   }
 
@@ -205,6 +210,7 @@ export function RecordLog({
           matchedCount={rows.length}
           canEdit={canEdit}
           onEditFields={onEditFields}
+          ended={Boolean(thread.endedAt)}
           hasLegacyTagGroups={(thread.tagGroups?.length ?? 0) > 0}
           tagGroups={thread.tagGroups}
           className=""
