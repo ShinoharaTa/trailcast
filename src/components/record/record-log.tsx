@@ -48,6 +48,16 @@ function dateParts(iso: string): { md: string; year: string } | null {
   };
 }
 
+/** 編集ボタンの aria-label。本文が無い投稿 (タイトルが置き換え文言) は日付で示す */
+function editLabel(
+  post: PostWithMeta,
+  title: string,
+  date: { md: string; year: string } | null,
+): string {
+  if ((post.text ?? "").trim()) return `「${title}」を編集`;
+  return date ? `${date.year}/${date.md} の記録を編集` : "記録を編集";
+}
+
 /**
  * 記録帳パネル。仕様は docs/record-mode.md §5.3。
  *
@@ -322,12 +332,12 @@ export function RecordLog({
                       {title}
                     </button>
                     {onEditPost && canManagePost?.(post) && (
-                      // md 未満はタップ領域 44px。負の margin で行の高さは変えない
+                      // md 未満はタップ領域 44px。負の margin で行の高さは変えない (md 以上も 2px はみ出す分を吸収)
                       <button
                         type="button"
                         onClick={() => onEditPost(post)}
-                        aria-label="編集"
-                        className="-my-3 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md px-2 py-1 text-white/40 transition hover:bg-white/5 hover:text-white/80 md:my-0 md:min-h-0 md:min-w-0"
+                        aria-label={editLabel(post, title, date)}
+                        className="-my-3 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md px-2 py-1 text-white/40 transition hover:bg-white/5 hover:text-white/80 md:-my-0.5 md:min-h-0 md:min-w-0"
                       >
                         <EditIcon className="size-3.5" />
                       </button>

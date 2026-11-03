@@ -555,12 +555,24 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   const [view, setView] = useState<ThreadView>("timeline");
   const [logSortOrder, setLogSortOrder] = useState<ThreadSortOrder>("desc");
   const viewInitUriRef = useRef<string | null>(null);
+  // 前回見たスレッドの既定の並び順。既定が変わったときだけ記録帳の並び順を合わせる
+  const sortDefaultRef = useRef<ThreadSortOrder | null>(null);
   useLayoutEffect(() => {
     if (!thread || viewInitUriRef.current === thread.uri) return;
     viewInitUriRef.current = thread.uri;
     setView(effectiveDefaultView(thread, AVAILABLE_THREAD_VIEWS));
     setFilter(EMPTY_RECORD_FILTER);
-    setLogSortOrder(effectiveSortOrder(thread));
+    sortDefaultRef.current = effectiveSortOrder(thread);
+    setLogSortOrder(sortDefaultRef.current);
+  }, [thread]);
+  // 同じスレッドで既定が変わったとき (sortOrder の変更・終了) は既定に合わせ直す。
+  // refresh() で thread が入れ替わっても既定が同じなら、利用者が選んだ並び順を残す
+  useLayoutEffect(() => {
+    if (!thread) return;
+    const next = effectiveSortOrder(thread);
+    if (sortDefaultRef.current === next) return;
+    sortDefaultRef.current = next;
+    setLogSortOrder(next);
   }, [thread]);
 
   // タグから記録項目へ書き換えられる自分の投稿 (#62)。所有者の判定は early return の
