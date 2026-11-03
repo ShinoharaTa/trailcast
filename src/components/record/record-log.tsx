@@ -220,6 +220,7 @@ export function RecordLog({
           matchedCount={rows.length}
           canEdit={canEdit}
           onEditFields={onEditFields}
+          ended={Boolean(thread.endedAt)}
           hasLegacyTagGroups={(thread.tagGroups?.length ?? 0) > 0}
           tagGroups={thread.tagGroups}
           className=""

@@ -46,6 +46,7 @@ export function FieldFilterBar({
   matchedCount,
   canEdit = false,
   onEditFields,
+  ended = false,
   hasLegacyTagGroups = false,
   tagGroups,
   className = "mb-8",
@@ -65,6 +66,8 @@ export function FieldFilterBar({
   /** スレッド所有者なら記録項目の編集への導線を出す (#37) */
   canEdit?: boolean;
   onEditFields?: () => void;
+  /** 終了したスレッドか。見出し行だけの表示 (編集への入口) を出さない */
+  ended?: boolean;
   /** thread.tagGroups がある (変換案内の文言用) */
   hasLegacyTagGroups?: boolean;
   /** thread.tagGroups。自由タグのチップを見出しごとに分ける */
@@ -101,10 +104,18 @@ export function FieldFilterBar({
     () => rangeFilterRows(posts, defs, selection, tagKeys, ranges),
     [posts, defs, selection, tagKeys, ranges],
   );
-  // 絞るものが無くても、所有者には記録項目の編集への入口として見出し行だけ出す (#129)
+  // 絞るものが無くても、所有者には記録項目の編集への入口として見出し行だけ出す (#129)。
+  // 終了したスレッドは項目を変えられないので出さない。投稿も項目も無いときは
+  // 空状態の「記録項目を設定」ボタンが同じ入口になるので重ねて出さない
   const headerOnly =
     groups.length === 0 && tags.length === 0 && rows.length === 0;
-  if (headerOnly && !(canEdit && onEditFields)) {
+  if (
+    headerOnly &&
+    (!canEdit ||
+      !onEditFields ||
+      ended ||
+      (posts.length === 0 && defs.length === 0))
+  ) {
     return null;
   }
 
