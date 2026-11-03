@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { readModalKind, withoutModal } from "@/lib/modal-history-state";
+import { hasModalMark, stripStaleModalMark } from "@/lib/modal-history-state";
 import {
   parsePathname,
   screenToPathname,
@@ -54,12 +54,12 @@ export function useNavigation() {
     setRoute(parsePathname(current));
 
     // モーダルを開いたままリロード / 外部遷移した場合、そのエントリの印が残る。
-    // 残っていると次に開いたモーダルを「戻る」で閉じられないので外しておく
-    if (readModalKind(window.history.state) !== null) {
-      window.history.replaceState(withoutModal(window.history.state), "");
-    }
+    // 残ったままだと紛らわしいので外しておく
+    stripStaleModalMark(window.history);
 
     const onPop = () => {
+      // 「進む」で閉じたモーダルのエントリに着いたら、モーダルは開き直さず印だけ外す
+      stripStaleModalMark(window.history);
       const p = readPathname();
       // モーダルのエントリを戻っただけ (パスは同じ) なら画面を作り直さない
       if (samePath(p, pathnameRef.current)) return;
@@ -81,10 +81,7 @@ export function useNavigation() {
       if (typeof window !== "undefined" && !samePath(nextPath, pathname)) {
         // モーダルを開いたまま遷移するときは、そのエントリを遷移先で置き換える
         // (戻ったときにモーダルのエントリで 1 回空振りしないように)
-        if (
-          options?.replace ||
-          readModalKind(window.history.state) !== null
-        ) {
+        if (options?.replace || hasModalMark(window.history.state)) {
           window.history.replaceState({}, "", nextPath);
         } else {
           window.history.pushState({}, "", nextPath);

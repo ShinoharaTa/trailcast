@@ -59,9 +59,12 @@ export function OgBackfillModal({
     setPhase("done");
   }, [targets]);
 
-  // 端末の「戻る」もモーダルの閉じる操作と同じ扱いにする (running 中は停止にとどめる)
-  const dismiss = useModalHistory(open ? "og-backfill" : null, () =>
-    handleRequestClose(),
+  // ホームの初回表示で自動的に開くので history には積まない (開いた覚えのない
+  // エントリで「戻る」が空振りしないように)。閉じる経路は hook に揃えておく
+  const dismiss = useModalHistory(
+    open ? "og-backfill" : null,
+    () => handleRequestClose(),
+    { enabled: false },
   );
 
   const handleLater = useCallback(() => {
