@@ -109,8 +109,6 @@ function modalMaxWidth(kind: ModalKind): "md" | "lg" | "2xl" | "3xl" {
   switch (kind) {
     case "fields-migrate":
       return "md";
-    case "thread-edit":
-    case "thread-edit-fields":
     case "checkpoint-post":
     case "checkpoint-edit":
       return "2xl";
@@ -681,6 +679,8 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
   // 書き換えパネルの閉じる操作。実行中は閉じずに停止にするため、パネルが握る。
   // 閉じたら true、停止にとどめたら false を返す
   const migrateCloseRef = useRef<(() => boolean) | null>(null);
+  // スレッド編集の閉じる操作。未保存の変更があれば閉じずに破棄確認を出すため、フォームが握る
+  const threadEditCloseRef = useRef<(() => boolean) | null>(null);
   const [editingPost, setEditingPost] = useState<PostWithMeta | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -991,10 +991,17 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     setEditingPost(null);
   }, []);
 
-  // 端末の「戻る」はモーダルだけを閉じる。書き換えパネルは実行中なら閉じずに停止する
+  // 端末の「戻る」はモーダルだけを閉じる。書き換えパネルは実行中なら閉じずに停止する。
+  // スレッド編集は未保存の変更があれば閉じずに破棄確認を出す
   const dismissModal = useModalHistory(modal, () => {
     if (modal === "fields-migrate" && migrateCloseRef.current) {
       return migrateCloseRef.current();
+    }
+    if (
+      (modal === "thread-edit" || modal === "thread-edit-fields") &&
+      threadEditCloseRef.current
+    ) {
+      return threadEditCloseRef.current();
     }
     resetModal();
   });
@@ -1606,7 +1613,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
       )}
 
       {/* Modals */}
-      {modal && modal !== "bsky-import" && (
+      {modal &&
+        modal !== "bsky-import" &&
+        modal !== "thread-edit" &&
+        modal !== "thread-edit-fields" && (
         <Modal
           open
           onClose={
@@ -1648,26 +1658,6 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               onCancel={closeModal}
             />
           )}
-          {(modal === "thread-edit" || modal === "thread-edit-fields") &&
-            thread && (
-            <ThreadEditScreen
-              thread={thread}
-              threadTags={freeTagCounts}
-              excludeTagKeys={classificationKeys}
-              initialSection={
-                modal === "thread-edit-fields" ? "fields" : undefined
-              }
-              onSubmitted={onModalSubmitted}
-              onCancel={closeModal}
-              onConflict={() => void refresh()}
-              onRequestDelete={() => {
-                dismissModal(() => {
-                  setModal(null);
-                  setConfirmTarget({ type: "thread" });
-                });
-              }}
-            />
-          )}
           {modal === "fields-migrate" && (
             <FieldMigratePanel
               plans={migratePlans}
@@ -1679,6 +1669,26 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
             />
           )}
         </Modal>
+      )}
+
+      {/* スレッド編集も保存ボタンを footer に固定するため、Modal を自前で持つ */}
+      {(modal === "thread-edit" || modal === "thread-edit-fields") && (
+        <ThreadEditScreen
+          thread={thread}
+          threadTags={freeTagCounts}
+          excludeTagKeys={classificationKeys}
+          initialSection={modal === "thread-edit-fields" ? "fields" : undefined}
+          requestCloseRef={threadEditCloseRef}
+          onSubmitted={onModalSubmitted}
+          onCancel={closeModal}
+          onConflict={() => void refresh()}
+          onRequestDelete={() => {
+            dismissModal(() => {
+              setModal(null);
+              setConfirmTarget({ type: "thread" });
+            });
+          }}
+        />
       )}
 
       {/* Bluesky インポートは header / footer 固定の Scrollable Modal を
