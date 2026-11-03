@@ -235,9 +235,12 @@ export function filterPostsByFieldsAndTags<T extends HasFieldValues>(
 - 所有者リンク（右上、今の「グループを編集」の位置）:
   - defs あり → 「記録項目を編集」
   - defs なし & `hasLegacyTagGroups` → 「記録項目に変換」
-  - どちらも無し → 「記録項目を追加」
-  いずれも `onEditFields`。
-- 何もチップが無い（投稿にタグも項目値も無い）なら `null`（今と同じ）。
+  - どちらも無し → 「記録項目を設定」
+  いずれも `onEditFields`。終了したスレッドでは出さない（項目がロックされるため）。
+- 何もチップが無い（投稿にタグも項目値も無い）なら `null`。
+  ※#129 で、所有者 (未終了) かつ投稿が 1 件以上なら見出し「記録項目」と所有者リンクだけの行を出す。
+  投稿 0 件のときはタイムライン・記録帳の空状態 (`EmptyPostsState`) が同じ文言のボタンを出す
+  （項目 0 件なら説明を添える）。
 - 絞り込み中の件数表示: 「N / total 件を表示中」。「すべてのタグを含む」の文言は削除。
 
 `ThreadDetailScreen`:

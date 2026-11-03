@@ -66,6 +66,7 @@ import {
   type ThreadView,
 } from "@/lib/record";
 import { FieldFilterBar } from "@/components/ui/field-filter-bar";
+import { EmptyPostsState } from "@/components/ui/fields-entry";
 import { PostFieldValues, PostTags } from "@/components/ui/post-field-values";
 import { RecordTabs, ViewSwitch } from "@/components/record/view-switch";
 import { RecordLog } from "@/components/record/record-log";
@@ -1365,24 +1366,13 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
         {view === "timeline" && (
         <>
         {posts.length === 0 && (
-          <div className="py-16 text-center">
-            <p className="text-white/30">まだチェックポイントがありません</p>
-            {/* 記録項目がまだ無い所有者には設定への入口を出す (#129)。終了したスレッドは項目を変えられない */}
-            {isOwner && !thread.endedAt && defs.length === 0 && (
-              <>
-                <p className="mt-2 text-sm text-white/40">
-                  記録項目を設定すると、投稿のたびに選択肢や数値を記録できます
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setModal("thread-edit-fields")}
-                  className="mt-4 inline-flex min-h-11 items-center rounded-full bg-indigo-500/15 px-5 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/25"
-                >
-                  記録項目を設定
-                </button>
-              </>
-            )}
-          </div>
+          <EmptyPostsState
+            defsCount={defs.length}
+            hasLegacyTagGroups={(thread.tagGroups?.length ?? 0) > 0}
+            canEdit={isOwner}
+            ended={Boolean(thread.endedAt)}
+            onEditFields={() => setModal("thread-edit-fields")}
+          />
         )}
 
         <FieldFilterBar
