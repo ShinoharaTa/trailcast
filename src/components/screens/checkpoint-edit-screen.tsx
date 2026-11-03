@@ -19,6 +19,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { FieldInputs } from "@/components/ui/field-inputs";
 import {
   buildEditedPostFields,
+  divertNoticeText,
   divertOptionTags,
   fieldValuesFromResolved,
   initialFreeTagsForEdit,
@@ -97,15 +98,16 @@ export function CheckpointEditScreen({
     null,
   );
   const handleTagsChange = (next: string[]) => {
-    const result = divertOptionTags(next, defs, fieldValues);
+    // 新しく足したタグだけを振り分ける (既にタグ欄にあるタグは触らない)
+    const result = divertOptionTags(next, defs, fieldValues, { prev: tags });
     setTags(result.tags);
-    if (result.diverted.length === 0) {
+    const text = divertNoticeText(result.diverted);
+    if (text === null) {
       setDivertNotice(null);
       return;
     }
     setFieldValues(result.values);
-    const labels = result.diverted.map((d) => `「${d.option.label}」`).join("");
-    setDivertNotice({ text: `選択肢${labels}を選びました` });
+    setDivertNotice({ text });
   };
   useEffect(() => {
     if (!divertNotice) return;

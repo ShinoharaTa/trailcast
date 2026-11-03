@@ -12,6 +12,7 @@ import {
   convertTagGroupsToFields,
   copyFieldDefs,
   countFreeTags,
+  divertNoticeText,
   divertOptionTags,
   EMPTY_RANGE_INPUT,
   effectiveRange,
@@ -1473,6 +1474,55 @@ describe("divertOptionTags", () => {
     const r = divertOptionTags(tags, [], values);
     expect(r).toEqual({ tags, values, diverted: [] });
     expect(r.tags).toBe(tags);
+  });
+
+  it("直前のタグ欄にあったタグは振り分けない (無関係なタグの削除)", () => {
+    // 編集: fields で hall を選択済み + 旧タグ「ルーム」。東京を外しても hall のまま
+    const values = [select("kind", ["hall"])];
+    const r = divertOptionTags(["ルーム"], [kind], values, {
+      prev: ["東京", "ルーム"],
+    });
+    expect(r.tags).toEqual(["ルーム"]);
+    expect(r.values).toBe(values);
+    expect(r.diverted).toEqual([]);
+  });
+
+  it("直前のタグ欄にあったタグは振り分けない (無関係なタグの追加)", () => {
+    const values = [select("kind", ["hall"])];
+    const r = divertOptionTags(["ルーム", "大阪", "成功"], [kind, result], values, {
+      prev: ["ルーム"],
+    });
+    expect(r.tags).toEqual(["ルーム", "大阪"]);
+    expect(r.values).toEqual([select("kind", ["hall"]), select("result", ["ok"])]);
+    expect(r.diverted.map((d) => d.option.id)).toEqual(["ok"]);
+  });
+
+  it("1 つだけの項目で置き換えたら replaced と知らせ文に元の選択肢", () => {
+    const r = divertOptionTags(["ルーム"], [kind], [select("kind", ["hall"])]);
+    expect(r.diverted).toHaveLength(1);
+    expect(r.diverted[0].replaced?.id).toBe("hall");
+    expect(divertNoticeText(r.diverted)).toBe(
+      "選択肢「ルーム」を選びました（「ホール」から変更）",
+    );
+  });
+
+  it("同じ 1 つだけの項目に複数一度に入れたら diverted は最終値の 1 件", () => {
+    const r = divertOptionTags(["ホール", "ルーム"], [kind], []);
+    expect(r.tags).toEqual([]);
+    expect(r.values).toEqual([select("kind", ["room"])]);
+    expect(r.diverted.map((d) => d.option.id)).toEqual(["room"]);
+    expect(r.diverted[0].replaced).toBeUndefined();
+    expect(divertNoticeText(r.diverted)).toBe("選択肢「ルーム」を選びました");
+  });
+
+  it("multiple は置き換えないので replaced を持たない", () => {
+    const r = divertOptionTags(
+      ["ルーム"],
+      [{ ...kind, multiple: true }],
+      [select("kind", ["hall"])],
+    );
+    expect(r.diverted[0].replaced).toBeUndefined();
+    expect(divertNoticeText([])).toBeNull();
   });
 
   it("既に選択済みならタグだけ外す", () => {

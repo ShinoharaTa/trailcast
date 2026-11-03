@@ -14,6 +14,7 @@ import { sanitizeTagsForRecord, type TagCount } from "@/lib/tags";
 import {
   buildNewPostFields,
   crosspostTagsFor,
+  divertNoticeText,
   divertOptionTags,
   stripSelectedOptionTags,
 } from "@/lib/fields";
@@ -104,8 +105,12 @@ export function CheckpointPostScreen({
 }: CheckpointPostScreenProps) {
   const handle = useAuthStore((s) => s.handle);
   const [text, setText] = useState("");
-  const [tags, setTags] = useState<string[]>(() => [...(defaultTags ?? [])]);
-  const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
+  // 既定タグに選択肢名があれば、初期値の時点で選択に振り分ける (知らせ文は出さない)
+  const [initial] = useState(() =>
+    divertOptionTags([...(defaultTags ?? [])], fields ?? [], []),
+  );
+  const [tags, setTags] = useState<string[]>(initial.tags);
+  const [fieldValues, setFieldValues] = useState<FieldValue[]>(initial.values);
   const [fieldsValid, setFieldsValid] = useState(true);
   // 投稿画面で追加した選択肢 (所有者のみ)。投稿するまで thread.fields には書かない
   const { defs, handleAddOption, writePendingOptions } = usePendingOptions({
@@ -123,15 +128,16 @@ export function CheckpointPostScreen({
     null,
   );
   const handleTagsChange = (next: string[]) => {
-    const result = divertOptionTags(next, defs, fieldValues);
+    // 新しく足したタグだけを振り分ける (既にタグ欄にあるタグは触らない)
+    const result = divertOptionTags(next, defs, fieldValues, { prev: tags });
     setTags(result.tags);
-    if (result.diverted.length === 0) {
+    const text = divertNoticeText(result.diverted);
+    if (text === null) {
       setDivertNotice(null);
       return;
     }
     setFieldValues(result.values);
-    const labels = result.diverted.map((d) => `「${d.option.label}」`).join("");
-    setDivertNotice({ text: `選択肢${labels}を選びました` });
+    setDivertNotice({ text });
   };
   useEffect(() => {
     if (!divertNotice) return;

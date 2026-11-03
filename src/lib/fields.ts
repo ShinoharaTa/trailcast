@@ -556,11 +556,18 @@ export function stripSelectedOptionTags(
   return tags.filter((t) => !keys.has(tagKey(t)));
 }
 
+/** 振り分けた選択肢 1 件。`replaced` は 1 つだけの項目で置き換えた元の選択肢 */
+export interface DivertedOption {
+  field: FieldDef;
+  option: FieldOption;
+  replaced?: FieldOption;
+}
+
 /** タグ欄の入力を選択肢へ振り分けた結果。`diverted` は振り分けた選択肢 (タグの順) */
 export interface DivertOptionTagsResult {
   tags: string[];
   values: FieldValue[];
-  diverted: { field: FieldDef; option: FieldOption }[];
+  diverted: DivertedOption[];
 }
 
 /**
@@ -569,12 +576,16 @@ export interface DivertOptionTagsResult {
  *   tagKey 一致 (大文字小文字・先頭の `#` を無視)。複数の項目に同じ名前があれば定義順で先の項目
  * - 一致したタグは tags から外し、multiple は選択に足す / 1 つだけは置き換える
  * - archived の項目・選択肢と同名のタグは自由タグのまま残す (選択として入力できないため)
+ * - `opts.prev` (直前のタグ欄の値) に tagKey が含まれるタグは対象外。新しく足したタグだけを
+ *   振り分け、無関係なタグの付け外しで既存のタグが選択に変わらないようにする
+ * - 1 つだけの項目に複数一致したら最後のものを選び、diverted もその 1 件だけにする
  * 一致が無ければ tags / values は同じ参照を返す。入力は変更しない。
  */
 export function divertOptionTags(
   tags: string[],
   defs: FieldDef[],
   values: FieldValue[],
+  opts?: { prev?: string[] },
 ): DivertOptionTagsResult {
   const byKey = new Map<string, { field: FieldDef; option: FieldOption }>();
   for (const def of defs) {
@@ -585,18 +596,21 @@ export function divertOptionTags(
       if (key !== null && !byKey.has(key)) byKey.set(key, { field: def, option });
     }
   }
+  const prevKeys = new Set((opts?.prev ?? []).map(tagKey));
   const kept: string[] = [];
-  const diverted: DivertOptionTagsResult["diverted"] = [];
+  const hits: { field: FieldDef; option: FieldOption }[] = [];
   for (const tag of tags) {
     const key = optionLabelKey(tag);
-    const hit = key === null ? undefined : byKey.get(key);
-    if (hit) diverted.push(hit);
+    const hit =
+      key === null || prevKeys.has(tagKey(tag)) ? undefined : byKey.get(key);
+    if (hit) hits.push(hit);
     else kept.push(tag);
   }
-  if (diverted.length === 0) return { tags, values, diverted };
+  if (hits.length === 0) return { tags, values, diverted: [] };
 
   let next = values;
-  for (const { field, option } of diverted) {
+  const diverted: DivertedOption[] = [];
+  for (const { field, option } of hits) {
     const current = next.find((v) => v.field === field.id);
     const selected = current?.$type === VALUE_TYPES.select ? current.options : [];
     const value: FieldValue = {
@@ -611,8 +625,36 @@ export function divertOptionTags(
     next = current
       ? next.map((v) => (v.field === field.id ? value : v))
       : [...next, value];
+    if (field.multiple) {
+      diverted.push({ field, option });
+      continue;
+    }
+    // 1 つだけの項目は最終値の 1 件だけ。置き換え元は呼び出し前の選択で見る
+    const i = diverted.findIndex((d) => d.field.id === field.id);
+    if (i >= 0) diverted.splice(i, 1);
+    const before = values.find((v) => v.field === field.id);
+    const beforeIds = before?.$type === VALUE_TYPES.select ? before.options : [];
+    const replacedId = beforeIds.includes(option.id) ? undefined : beforeIds[0];
+    const replaced = (field.options ?? []).find((o) => o.id === replacedId);
+    diverted.push(replaced ? { field, option, replaced } : { field, option });
   }
   return { tags: kept, values: next, diverted };
+}
+
+/**
+ * 振り分けの知らせ文。例: 「選択肢「ルーム」を選びました（「ホール」から変更）」
+ * 振り分けが無ければ null
+ */
+export function divertNoticeText(diverted: DivertedOption[]): string | null {
+  if (diverted.length === 0) return null;
+  const changed = (d: DivertedOption) =>
+    d.replaced ? `（「${d.replaced.label}」から変更）` : "";
+  if (diverted.length === 1) {
+    const d = diverted[0];
+    return `選択肢「${d.option.label}」を選びました${changed(d)}`;
+  }
+  const labels = diverted.map((d) => `「${d.option.label}」${changed(d)}`);
+  return `選択肢${labels.join("")}を選びました`;
 }
 
 /**
@@ -1175,7 +1217,7 @@ export function countFreeTags(
   posts: HasFieldValues[],
   defs: FieldDef[],
 ): TagCount[] {
-  if (defs.length === 0) return countTags(posts);
+  if (!hasInputFields(defs)) return countTags(posts);
   return countTags(
     posts.map((post) => ({ tags: initialFreeTagsForEdit(post, defs) })),
   );
