@@ -654,6 +654,21 @@ describe("sanitizePostFieldsForRecord", () => {
     ]);
   });
 
+  it('number の全角 "１２．５" は NFKC で "12.5" になる', () => {
+    expect(sanitizePostFieldsForRecord([num("weight", "１２．５")], defs)).toEqual([
+      num("weight", "12.5"),
+    ]);
+  });
+
+  it("number 先頭の全角ハイフン・U+2212・長音はマイナスとみなす", () => {
+    for (const minus of ["－１", "\u22121", "ー1"]) {
+      expect(sanitizePostFieldsForRecord([num("weight", minus)], defs)).toEqual([
+        num("weight", "-1"),
+      ]);
+    }
+    expect(sanitizePostFieldsForRecord([num("weight", "1ー")], defs)).toBeUndefined();
+  });
+
   it("同じ field が 2 件あると後勝ちで 1 件になる", () => {
     expect(
       sanitizePostFieldsForRecord([num("weight", "10"), num("weight", "20")], defs),
@@ -1397,6 +1412,12 @@ describe("範囲絞り込み (#74)", () => {
       expect(parseRangeBound("８０", weight)).toBe(80);
       expect(parseRangeBound("　１２．５　", weight)).toBe(12.5);
       expect(parseRangeBound("　", weight)).toBeNull();
+    });
+    it("先頭の全角ハイフン・U+2212・長音はマイナスとみなす", () => {
+      expect(parseRangeBound("－１", weight)).toBe(-1);
+      expect(parseRangeBound("\u22121", weight)).toBe(-1);
+      expect(parseRangeBound("ー1", weight)).toBe(-1);
+      expect(parseRangeBound("1ー", weight)).toBe("invalid");
     });
     it("範囲項目でない def は常に invalid", () => {
       expect(parseRangeBound("1", kind)).toBe("invalid");

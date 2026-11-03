@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   DECIMAL_PATTERN,
+  normalizeDecimalInput,
   MAX_FIELD_OPTIONS,
   MAX_NUMBER_VALUE_LENGTH,
   MAX_TEXT_VALUE_LENGTH,
@@ -13,8 +14,10 @@ import { MAX_TAG_LENGTH, normalizeTag } from "@/lib/tags";
 import { formatDuration, parseDurationInput } from "@/lib/fields-format";
 import type { FieldDef, FieldValue } from "@/lib/types";
 
-const inputClass =
-  "rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50";
+/** 縦 padding 以外。選択肢追加欄は py を詰めるので分けておく */
+const inputBaseClass =
+  "rounded-lg border border-white/10 bg-white/5 px-3 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:opacity-50 md:text-sm";
+const inputClass = `py-2 ${inputBaseClass}`;
 
 export interface FieldInputsProps {
   /** 入力させる項目 (archived は渡す前に除外する) */
@@ -65,10 +68,12 @@ export function FieldInputs({
   const fieldsValid = defs.every((def) => {
     if (def.type === "number") {
       const v = values.find((x) => x.field === def.id);
+      if (v?.$type !== "net.shino3.trailcast.post#numberValue") return true;
+      const value = normalizeDecimalInput(v.value);
       return (
-        v?.$type !== "net.shino3.trailcast.post#numberValue" ||
-        (DECIMAL_PATTERN.test(v.value) &&
-          v.value.length <= MAX_NUMBER_VALUE_LENGTH)
+        value === "" ||
+        (DECIMAL_PATTERN.test(value) &&
+          value.length <= MAX_NUMBER_VALUE_LENGTH)
       );
     }
     if (def.type === "duration") {
@@ -230,7 +235,7 @@ export function FieldInputs({
                               maxLength={MAX_TAG_LENGTH}
                               placeholder="選択肢の名前"
                               aria-label={`${def.label}に選択肢を追加`}
-                              className={`min-w-0 flex-1 py-1.5 text-base md:text-sm ${inputClass}`}
+                              className={`min-w-0 flex-1 py-1.5 ${inputBaseClass}`}
                             />
                             <button
                               type="button"
@@ -278,8 +283,11 @@ export function FieldInputs({
                   current?.$type === "net.shino3.trailcast.post#numberValue"
                     ? current.value
                     : "";
-                const invalid = raw !== "" && !DECIMAL_PATTERN.test(raw);
-                const tooLong = raw.length > MAX_NUMBER_VALUE_LENGTH;
+                // 表示は生のまま。判定は保存時 (sanitizeValue) と同じ正規化後の値で行う
+                const normalized = normalizeDecimalInput(raw);
+                const invalid =
+                  normalized !== "" && !DECIMAL_PATTERN.test(normalized);
+                const tooLong = normalized.length > MAX_NUMBER_VALUE_LENGTH;
                 return (
                   <>
                     <div className="flex items-center gap-2">
@@ -294,7 +302,8 @@ export function FieldInputs({
                           def.scale ? `0.${"0".repeat(def.scale)}` : "0"
                         }
                         onChange={(e) => {
-                          const value = e.target.value.trim();
+                          // IME 変換中に書き換わらないよう、ここでは正規化しない
+                          const value = e.target.value;
                           setValue(
                             def.id,
                             value

@@ -547,7 +547,7 @@ function ThreadEditForm({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             maxLength={100}
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
           />
         </div>
         <div>
@@ -560,7 +560,7 @@ function ThreadEditForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             maxLength={500}
-            className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+            className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base text-white placeholder-white/20 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 md:text-sm"
           />
         </div>
         <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
