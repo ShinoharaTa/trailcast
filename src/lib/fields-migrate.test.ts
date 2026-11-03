@@ -19,6 +19,7 @@ import {
 } from "@/lib/fields-migrate";
 import {
   buildEditedPostFields,
+  buildImportedPostFields,
   fieldValuesFromResolved,
   resolveFieldValues,
 } from "@/lib/fields";
@@ -319,6 +320,55 @@ describe("planFieldMigration (fields あり, #104)", () => {
     const mine = post({ tags: ["解けた"], fields: [] });
     const theirs = post({ tags: ["解けた"], fields: [], repo: OTHER });
     expect(planFieldMigrations([mine, theirs], all, ME).map((p) => p.post)).toEqual([mine]);
+  });
+});
+
+describe("planFieldMigration (同じ名前の選択肢が複数の項目にある)", () => {
+  const a: FieldDef = {
+    id: "a",
+    label: "A",
+    type: "select",
+    options: [
+      { id: "rain", label: "雨" },
+      { id: "sun", label: "晴" },
+    ],
+  };
+  const b: FieldDef = {
+    id: "b",
+    label: "B",
+    type: "select",
+    options: [{ id: "rain", label: "雨" }],
+  };
+  const shared: FieldDef[] = [a, b];
+
+  it("同じ tagKey が複数の項目に一致するタグはどの項目にも書かない", () => {
+    expect(planFieldMigration(post({ tags: ["雨"], fields: [] }), shared)).toBeNull();
+    expect(planFieldMigration(post({ tags: ["雨", "晴"], fields: [] }), shared)).toBeNull();
+  });
+
+  it("1 つの項目にだけある名前は書く", () => {
+    const out = planFieldMigration(post({ tags: ["晴", "雨"], fields: [] }), [
+      { ...a, multiple: true },
+      b,
+    ]);
+    expect(out?.fields).toEqual([select("a", ["sun"])]);
+    expect(out?.tags).toEqual(["雨"]);
+  });
+
+  it("インポート直後の投稿 (buildImportedPostFields) は移行候補に出ない", () => {
+    const cases: [string[], FieldDef[]][] = [
+      [["雨", "晴"], shared],
+      [["雨"], shared],
+      [["晴", "東京"], shared],
+      [["ホール", "ルーム", "成功"], defs],
+      [["ホール", "東京", "失敗"], defs],
+      [["ホール", "ルーム"], [{ ...kind, multiple: true }]],
+    ];
+    for (const [tags, d] of cases) {
+      const imported = buildImportedPostFields(tags, d);
+      const p = post({ tags: imported.tags, fields: imported.fields });
+      expect(planFieldMigration(p, d), tags.join(",")).toBeNull();
+    }
   });
 });
 

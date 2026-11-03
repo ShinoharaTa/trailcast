@@ -26,8 +26,13 @@ export async function uploadImage(file: Uint8Array, mimeType: string) {
   return res.data.blob;
 }
 
+/**
+ * `opts.touch` が false なら touchThread を呼ばない。まとめて作るとき (インポート) に
+ * 呼び出し側で最後に 1 回だけ呼ぶため。既定は true。
+ */
 export async function createPost(
   record: PostRecord,
+  opts?: { touch?: boolean },
 ): Promise<PostWithMeta> {
   const agent = getAgent();
   const rkey = generateTid();
@@ -41,7 +46,7 @@ export async function createPost(
   // 失敗しても投稿自体は成功なので待たない・投げない。
   void notifyPostIndexed(res.data.uri);
   // 一覧を最終活動順に並べるためスレッド側の updatedAt を進める (#47)
-  void touchThread(record.thread);
+  if (opts?.touch ?? true) void touchThread(record.thread);
   return { ...record, uri: res.data.uri, cid: res.data.cid, rkey };
 }
 
