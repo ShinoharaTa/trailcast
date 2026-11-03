@@ -64,7 +64,7 @@ export function FieldFilterBar({
   /** スレッド所有者なら記録項目の編集への導線を出す (#37) */
   canEdit?: boolean;
   onEditFields?: () => void;
-  /** thread.tagGroups が残っている (変換案内の文言用) */
+  /** thread.tagGroups がある (変換案内の文言用) */
   hasLegacyTagGroups?: boolean;
   /** thread.tagGroups。自由タグのチップを見出しごとに分ける */
   tagGroups?: TagGroup[];
