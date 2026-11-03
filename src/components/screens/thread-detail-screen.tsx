@@ -91,6 +91,7 @@ import { BlueskyImportScreen } from "@/components/screens/bsky-import-screen";
 import { ThreadTagChips } from "@/components/ui/thread-tag-chips";
 import { ThreadEditScreen } from "@/components/screens/thread-edit-screen";
 import { LoginModal } from "@/components/auth/login-modal";
+import { useModalHistory } from "@/lib/use-modal-history";
 
 type ModalKind =
   | "share"
@@ -677,8 +678,9 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
 
   // モーダル状態（URL には現れないローカル state）
   const [modal, setModal] = useState<ModalKind | null>(null);
-  // 書き換えパネルの閉じる操作。実行中は閉じずに停止にするため、パネルが握る
-  const migrateCloseRef = useRef<(() => void) | null>(null);
+  // 書き換えパネルの閉じる操作。実行中は閉じずに停止にするため、パネルが握る。
+  // 閉じたら true、停止にとどめたら false を返す
+  const migrateCloseRef = useRef<(() => boolean) | null>(null);
   const [editingPost, setEditingPost] = useState<PostWithMeta | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -984,16 +986,29 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
     }
   };
 
-  const closeModal = useCallback(() => {
+  const resetModal = useCallback(() => {
     setModal(null);
     setEditingPost(null);
   }, []);
 
+  // 端末の「戻る」はモーダルだけを閉じる。書き換えパネルは実行中なら閉じずに停止する
+  const dismissModal = useModalHistory(modal, () => {
+    if (modal === "fields-migrate" && migrateCloseRef.current) {
+      return migrateCloseRef.current();
+    }
+    resetModal();
+  });
+
+  const closeModal = useCallback(() => {
+    dismissModal(resetModal);
+  }, [dismissModal, resetModal]);
+
   const onModalSubmitted = useCallback(() => {
-    setModal(null);
-    setEditingPost(null);
-    void refresh();
-  }, [refresh]);
+    dismissModal(() => {
+      resetModal();
+      void refresh();
+    });
+  }, [dismissModal, resetModal, refresh]);
 
   const openCheckpointEdit = (post: PostWithMeta) => {
     setEditingPost(post);
@@ -1646,8 +1661,10 @@ export function ThreadDetailScreen({ navigate, params }: NavigationProps) {
               onCancel={closeModal}
               onConflict={() => void refresh()}
               onRequestDelete={() => {
-                setModal(null);
-                setConfirmTarget({ type: "thread" });
+                dismissModal(() => {
+                  setModal(null);
+                  setConfirmTarget({ type: "thread" });
+                });
               }}
             />
           )}

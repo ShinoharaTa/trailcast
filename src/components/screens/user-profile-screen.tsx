@@ -16,6 +16,7 @@ import { BlobImage } from "@/components/ui/blob-image";
 import { HomeLink } from "@/components/ui/home-link";
 import { SettingsIcon, ShareIcon } from "@/components/ui/icons";
 import { Modal } from "@/components/ui/modal";
+import { useModalHistory } from "@/lib/use-modal-history";
 import { ProfileShareScreen } from "@/components/screens/profile-share-screen";
 import { ThreadTagChips } from "@/components/ui/thread-tag-chips";
 
@@ -40,6 +41,11 @@ export function UserProfileScreen({ navigate, params }: NavigationProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  // 端末の「戻る」は共有モーダルだけを閉じる
+  const dismissShare = useModalHistory(shareOpen ? "profile-share" : null, () =>
+    setShareOpen(false),
+  );
+  const closeShare = () => dismissShare(() => setShareOpen(false));
 
   const load = useCallback(async () => {
     if (!identifier) return;
@@ -280,7 +286,7 @@ export function UserProfileScreen({ navigate, params }: NavigationProps) {
       )}
 
       {shareOpen && (
-        <Modal open onClose={() => setShareOpen(false)} maxWidth="lg">
+        <Modal open onClose={closeShare} maxWidth="lg">
           <ProfileShareScreen
             identifier={profile?.handle ?? identifier}
             profile={profile}
